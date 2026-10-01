@@ -1,4 +1,4 @@
-import { useState, useCallback, memo, useEffect } from "react";
+import { useState, useCallback, useMemo, memo, useEffect } from "react";
 import {
   Folder,
   File,
@@ -9,6 +9,8 @@ import {
   Loader2,
   FileCode,
   ArrowRight,
+  ArrowUp,
+  ArrowDown,
   Copy,
   Check,
 } from "lucide-react";
@@ -31,6 +33,47 @@ interface FilePaneProps {
   onOpenFile?: (entry: FileEntry) => void;
   disabled?: boolean;
   onTransfer?: (entry: FileEntry) => void;
+}
+
+type SortKey = "name" | "size" | "modified";
+type SortDir = "asc" | "desc";
+
+function SortHeaderCell({
+  label,
+  columnKey,
+  sortKey,
+  sortDir,
+  onSort,
+  className,
+}: {
+  label: string;
+  columnKey: SortKey;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort: (key: SortKey) => void;
+  className?: string;
+}) {
+  const isActive = sortKey === columnKey;
+  return (
+    <th
+      className={`cursor-pointer py-1.5 select-none transition-colors hover:text-[var(--text-primary)] ${
+        className ?? ""
+      }`}
+      onClick={() => onSort(columnKey)}
+      title={`Sort by ${label.toLowerCase()}`}
+      aria-sort={isActive ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+    >
+      <span className="inline-flex items-center gap-1">
+        {label}
+        {isActive &&
+          (sortDir === "asc" ? (
+            <ArrowUp size={10} className="text-[var(--primary)]" />
+          ) : (
+            <ArrowDown size={10} className="text-[var(--primary)]" />
+          ))}
+      </span>
+    </th>
+  );
 }
 
 export function FilePane({
@@ -59,6 +102,37 @@ export function FilePane({
   } | null>(null);
 
   const [copyToast, setCopyToast] = useState<string | null>(null);
+
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const handleSortClick = useCallback(
+    (key: SortKey) => {
+      if (key === sortKey) {
+        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      } else {
+        setSortKey(key);
+        setSortDir("asc");
+      }
+    },
+    [sortKey]
+  );
+
+  const sortedEntries = useMemo(() => {
+    const byName = (a: FileEntry, b: FileEntry) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+    const comparators: Record<SortKey, (a: FileEntry, b: FileEntry) => number> = {
+      name: byName,
+      size: (a, b) => a.size - b.size || byName(a, b),
+      modified: (a, b) => (a.modified ?? 0) - (b.modified ?? 0) || byName(a, b),
+    };
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...entries].sort((a, b) => {
+      // Folders always listed before files
+      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+      return comparators[sortKey](a, b) * dir;
+    });
+  }, [entries, sortKey, sortDir]);
 
   const showCopyToast = useCallback((msg: string) => {
     setCopyToast(msg);
@@ -235,14 +309,35 @@ export function FilePane({
           <table className="w-full table-fixed text-left text-xs">
             <thead className="sticky top-0 bg-[var(--sidebar)] text-[10px] uppercase text-[var(--text-muted)] border-b border-[var(--border)]">
               <tr>
-                <th className="py-1.5 pl-3">Name</th>
-                <th className="py-1.5 pr-2 w-20 text-right">Size</th>
-                <th className="py-1.5 pr-3 w-32 text-right">Modified</th>
+                <SortHeaderCell
+                  label="Name"
+                  columnKey="name"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={handleSortClick}
+                  className="pl-3"
+                />
+                <SortHeaderCell
+                  label="Size"
+                  columnKey="size"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={handleSortClick}
+                  className="pr-2 w-20 text-right"
+                />
+                <SortHeaderCell
+                  label="Modified"
+                  columnKey="modified"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={handleSortClick}
+                  className="pr-3 w-32 text-right"
+                />
                 <th className="py-1.5 pr-2 w-8"></th>
               </tr>
             </thead>
             <tbody>
-              {entries.map((entry) => (
+              {sortedEntries.map((entry) => (
                 <FileRow
                   key={entry.path}
                   entry={entry}
