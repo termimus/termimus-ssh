@@ -20,6 +20,12 @@ import {
 import { api } from "../../lib/api";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useHostStore } from "../../stores/useHostStore";
+import { useTerminalThemeStore } from "../../stores/useTerminalThemeStore";
+import {
+  applyTerminalAppearance,
+  getTerminalTheme,
+} from "../../lib/terminalThemes";
+import { TerminalHighlighter } from "../../lib/terminalHighlighter";
 import { findPaneContainingTab } from "../../lib/layoutTree";
 import { ConnectionProgress, ConnectionLog } from "./ConnectionProgress";
 import { TerminalSearchBar } from "./TerminalSearchBar";
@@ -47,6 +53,8 @@ interface TerminalSessionEntry {
   unlistenFns: Array<() => void>;
   dataDisposable: { dispose: () => void };
   lastSize: { cols: number; rows: number };
+  // Keyword highlighting (decoration overlays — never touches the buffer).
+  highlighter: TerminalHighlighter | null;
   // Persist connection progress state across remounts so logs are never lost
   // when the pane layout changes (e.g. split) while a connection is in progress.
   connectionLogs: ConnectionLog[];
@@ -61,6 +69,41 @@ const terminalPool = new Map<string, TerminalSessionEntry>();
 
 // Shared module-level text encoder to prevent GC pressure during high-speed typing
 const textEncoder = new TextEncoder();
+
+/**
+ * Applies the current theme + font settings from the store to a pooled
+ * terminal instance. Never reconnects SSH and never touches the buffer.
+ */
+function applyAppearanceToEntry(entry: TerminalSessionEntry) {
+  const store = useTerminalThemeStore.getState();
+  const theme = getTerminalTheme(store.themeId);
+  applyTerminalAppearance(entry.term, theme, store.font);
+  try {
+    entry.fitAddon.fit();
+    const cols = entry.term.cols;
+    const rows = entry.term.rows;
+    if (cols >= 20 && rows >= 5) {
+      entry.lastSize = { cols, rows };
+    }
+  } catch {
+    // ignore fit during layout animation
+  }
+  entry.highlighter?.refresh();
+}
+
+/**
+ * Applies current theme/font/highlight settings to every live terminal.
+ * Called whenever the user changes appearance in Settings.
+ */
+export function applyTerminalThemeToAll() {
+  for (const entry of terminalPool.values()) {
+    try {
+      applyAppearanceToEntry(entry);
+    } catch {
+      // one bad instance must not break the rest
+    }
+  }
+}
 
 function checkIsMac(): boolean {
   if (typeof window === "undefined" || typeof navigator === "undefined") return false;
@@ -123,7 +166,12 @@ function adjustTerminalFontSize(
   delta: number | "reset"
 ) {
   const currentSize = term.options.fontSize || 13.5;
-  const newSize = delta === "reset" ? 13.5 : Math.min(Math.max(currentSize + delta, 9), 24);
+  const defaultSize =
+    useTerminalThemeStore.getState().font.fontSize || 13.5;
+  const newSize =
+    delta === "reset"
+      ? defaultSize
+      : Math.min(Math.max(currentSize + delta, 9), 24);
   term.options.fontSize = newSize;
   try {
     fitAddon.fit();
@@ -249,6 +297,13 @@ function bindTerminalShortcuts(
 export function disposeTerminalSession(sessionId: string) {
   const entry = terminalPool.get(sessionId);
   if (!entry) return;
+
+  try {
+    entry.highlighter?.detach();
+  } catch {
+    // ignore
+  }
+  entry.highlighter = null;
 
   try {
     entry.dataDisposable.dispose();
@@ -438,6 +493,12 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       fitAddonRef.current = entry.fitAddon;
       searchAddonRef.current = entry.searchAddon;
       lastSizeRef.current = entry.lastSize;
+      // Appearance may have changed while unmounted — re-apply (no reconnect).
+      try {
+        applyAppearanceToEntry(entry);
+      } catch {
+        // ignore
+      }
       setIsConnected(entry.hasConnected);
       setLogs([...entry.connectionLogs]);
       setCurrentStep(entry.connectionStep);
@@ -454,41 +515,25 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
         containerRef.current.appendChild(entry.element);
       }
     } else {
-      // Create new terminal instance
+      // Create new terminal instance (theme/font come from the store,
+      // falling back to the classic Terminal Obsidian defaults).
+      const themeStore = useTerminalThemeStore.getState();
+      const initialTheme = getTerminalTheme(themeStore.themeId);
+      const initialFont = themeStore.font;
       const domWrapper = document.createElement("div");
       domWrapper.className = "w-full h-full";
       containerRef.current.appendChild(domWrapper);
 
       const term = new Terminal({
-        cursorBlink: true,
-        cursorStyle: "bar",
-        fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace",
-        fontSize: 13.5,
-        lineHeight: 1.35,
+        cursorBlink: initialFont.cursorBlink,
+        cursorStyle: initialFont.cursorStyle,
+        fontFamily: initialFont.fontFamily,
+        fontSize: initialFont.fontSize,
+        lineHeight: initialFont.lineHeight,
         letterSpacing: 0,
         scrollback: 5000,
         theme: {
-          background: "#0a0e14",
-          foreground: "#f0f6fc",
-          cursor: "#00d2b4",
-          cursorAccent: "#0a0e14",
-          selectionBackground: "#00d2b433",
-          black: "#161b22",
-          red: "#f85149",
-          green: "#3fb950",
-          yellow: "#e3b341",
-          blue: "#38bdf8",
-          magenta: "#cbacff",
-          cyan: "#2adec0",
-          white: "#f0f6fc",
-          brightBlack: "#6e7681",
-          brightRed: "#ff7b72",
-          brightGreen: "#56d364",
-          brightYellow: "#e3b341",
-          brightBlue: "#79c0ff",
-          brightMagenta: "#d2a8ff",
-          brightCyan: "#56d4dd",
-          brightWhite: "#f0f6fc",
+          ...initialTheme.xterm,
         },
         allowProposedApi: true,
       });
@@ -613,7 +658,18 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
         connectionLogs: [],
         connectionStep: 1,
         connectionError: null,
+        highlighter: null,
       };
+      // Keyword highlighting overlays (reads live config from the store).
+      const highlighter = new TerminalHighlighter(term, () => {
+        const s = useTerminalThemeStore.getState();
+        return {
+          enabled: s.highlight,
+          colors: getTerminalTheme(s.themeId).semantic,
+        };
+      });
+      entry.highlighter = highlighter;
+      highlighter.attach();
       terminalPool.set(sessionId, entry);
 
       startConnection(initialCols, initialRows);
@@ -703,6 +759,22 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
 
     return () => clearTimeout(timer);
   }, [visible, sessionId]);
+
+  // React to theme/font/highlight changes from Settings without reconnecting.
+  useEffect(() => {
+    const unsub = useTerminalThemeStore.subscribe(() => {
+      const poolEntry = terminalPool.get(sessionId);
+      if (!poolEntry) return;
+      try {
+        applyAppearanceToEntry(poolEntry);
+      } catch {
+        // ignore
+      }
+    });
+    return () => {
+      unsub();
+    };
+  }, [sessionId]);
 
   const handleRetry = () => {
     const cols = lastSizeRef.current.cols || 80;

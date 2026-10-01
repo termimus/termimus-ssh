@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   Info,
   Shield,
+  Palette,
   Cpu,
   Layers,
   Cloud,
@@ -24,6 +25,7 @@ import {
 } from "lucide-react";
 import { BackupRestoreSection } from "../vault/BackupRestoreSection";
 import { SyncSection } from "../sync/SyncSection";
+import { TerminalThemeTab } from "./TerminalThemeTab";
 import { useVaultStore } from "../../stores/useVaultStore";
 import { useKnownHostsStore } from "../../stores/useKnownHostsStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
@@ -38,7 +40,7 @@ import { api } from "../../lib/api";
 import { openExternalUrl } from "../../lib/openUrl";
 import kofiIcon from "../../assets/kofi.png";
 
-type SettingsTab = "security" | "sync" | "known_hosts" | "backup" | "about";
+type SettingsTab = "security" | "terminal" | "sync" | "known_hosts" | "backup" | "about";
 
 export function SettingsView() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("security");
@@ -54,6 +56,7 @@ export function SettingsView() {
     badgeDot?: boolean;
   }[] = [
     { id: "security", label: "Security & Vault", icon: Lock },
+    { id: "terminal", label: "Terminal & Theme", icon: Palette },
     { id: "sync", label: "Self-Hosted Sync", icon: Cloud },
     {
       id: "known_hosts",
@@ -142,6 +145,7 @@ export function SettingsView() {
       >
         <div className="w-full">
           {activeTab === "security" && <SecurityVaultTab />}
+          {activeTab === "terminal" && <TerminalThemeTab />}
           {activeTab === "sync" && <SyncSection />}
           {activeTab === "known_hosts" && <KnownHostsTab />}
           {activeTab === "backup" && <BackupRestoreSection />}
