@@ -35,7 +35,7 @@ interface FilePaneProps {
   onTransfer?: (entry: FileEntry) => void;
 }
 
-type SortKey = "name" | "size" | "modified";
+type SortKey = "name" | "size" | "modified" | "kind";
 type SortDir = "asc" | "desc";
 
 function SortHeaderCell({
@@ -125,11 +125,12 @@ export function FilePane({
       name: byName,
       size: (a, b) => a.size - b.size || byName(a, b),
       modified: (a, b) => (a.modified ?? 0) - (b.modified ?? 0) || byName(a, b),
+      kind: (a, b) => (a.is_dir === b.is_dir ? 0 : a.is_dir ? -1 : 1) || byName(a, b),
     };
     const dir = sortDir === "asc" ? 1 : -1;
     return [...entries].sort((a, b) => {
-      // Folders always listed before files
-      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+      // Folders always listed before files, except when sorting by Kind itself
+      if (sortKey !== "kind" && a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
       return comparators[sortKey](a, b) * dir;
     });
   }, [entries, sortKey, sortDir]);
@@ -333,6 +334,14 @@ export function FilePane({
                   onSort={handleSortClick}
                   className="pr-3 w-32 text-right"
                 />
+                <SortHeaderCell
+                  label="Kind"
+                  columnKey="kind"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={handleSortClick}
+                  className="pr-2 w-20 text-right"
+                />
                 <th className="py-1.5 pr-2 w-8"></th>
               </tr>
             </thead>
@@ -531,6 +540,9 @@ const FileRow = memo(function FileRow({
       </td>
       <td className="py-1.5 pr-3 text-right text-[11px] text-[var(--text-muted)]">
         {formatDate(entry.modified)}
+      </td>
+      <td className="py-1.5 pr-2 text-right text-[11px] text-[var(--text-muted)]">
+        {entry.is_dir ? "Folder" : "File"}
       </td>
       <td className="py-1.5 pr-2 text-right">
         <div className="flex items-center justify-end gap-1">
