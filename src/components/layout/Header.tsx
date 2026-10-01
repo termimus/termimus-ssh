@@ -301,187 +301,32 @@ export function Header({
         data-tauri-drag-region="deep"
         className="flex h-9 w-full select-none items-center bg-[var(--canvas)] border-b border-[var(--border)]"
       >
-        {isMac ? (
-          <>
-            {/* SVG Gradients for Retina/HD macOS Window Controls */}
-            <svg width="0" height="0" className="absolute pointer-events-none">
-              <defs>
-                <linearGradient id="mac-grad-close" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#FF6159" />
-                  <stop offset="100%" stopColor="#E0443E" />
-                </linearGradient>
-                <linearGradient id="mac-grad-min" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#FFBD2E" />
-                  <stop offset="100%" stopColor="#DEA123" />
-                </linearGradient>
-                <linearGradient id="mac-grad-max" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#28C940" />
-                  <stop offset="100%" stopColor="#1B9A31" />
-                </linearGradient>
-              </defs>
-            </svg>
+        {/* macOS: native traffic lights (titleBarStyle: Overlay in
+            tauri.macos.conf.json) are drawn by the system on top of this
+            area — just reserve their space */}
+        {isMac && <div data-tauri-drag-region="false" className="h-full w-[78px] shrink-0" />}
 
-            {/* macOS Window Controls (Traffic Lights) */}
-            <div
-              data-tauri-drag-region="false"
-              className="group/traffic flex items-center gap-2 pl-3.5 pr-3 shrink-0"
-            >
-              {/* Close (Red) */}
-              <button
-                onClick={handleClose}
-                title="Close"
-                className="relative flex h-3 w-3 items-center justify-center rounded-full focus:outline-none active:brightness-90 transition"
-              >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  className="h-3 w-3 overflow-visible pointer-events-none"
-                  shapeRendering="geometricPrecision"
-                >
-                  <circle
-                    cx="6"
-                    cy="6"
-                    r="5.75"
-                    fill="url(#mac-grad-close)"
-                    stroke="rgba(0, 0, 0, 0.2)"
-                    strokeWidth="0.5"
-                  />
-                  <g
-                    className="opacity-0 group-hover/traffic:opacity-100 transition-opacity"
-                    stroke="#4C0000"
-                    strokeWidth="1.2"
-                    strokeLinecap="round"
-                  >
-                    <line x1="3.75" y1="3.75" x2="8.25" y2="8.25" />
-                    <line x1="8.25" y1="3.75" x2="3.75" y2="8.25" />
-                  </g>
-                </svg>
-              </button>
-
-              {/* Minimize (Yellow) */}
-              <button
-                onClick={handleMinimize}
-                title="Minimize"
-                className="relative flex h-3 w-3 items-center justify-center rounded-full focus:outline-none active:brightness-90 transition"
-              >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  className="h-3 w-3 overflow-visible pointer-events-none"
-                  shapeRendering="geometricPrecision"
-                >
-                  <circle
-                    cx="6"
-                    cy="6"
-                    r="5.75"
-                    fill="url(#mac-grad-min)"
-                    stroke="rgba(0, 0, 0, 0.2)"
-                    strokeWidth="0.5"
-                  />
-                  <line
-                    x1="3.25"
-                    y1="6"
-                    x2="8.75"
-                    y2="6"
-                    className="opacity-0 group-hover/traffic:opacity-100 transition-opacity"
-                    stroke="#5C4300"
-                    strokeWidth="1.2"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </button>
-
-              {/* Maximize / Zoom (Green) */}
-              <button
-                onClick={handleToggleMaximize}
-                title={isMaximized ? "Restore" : "Zoom"}
-                className="relative flex h-3 w-3 items-center justify-center rounded-full focus:outline-none active:brightness-90 transition"
-              >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  className="h-3 w-3 overflow-visible pointer-events-none"
-                  shapeRendering="geometricPrecision"
-                >
-                  <circle
-                    cx="6"
-                    cy="6"
-                    r="5.75"
-                    fill="url(#mac-grad-max)"
-                    stroke="rgba(0, 0, 0, 0.2)"
-                    strokeWidth="0.5"
-                  />
-                  {isMaximized ? (
-                    <path
-                      d="M4 4L8 8 M6.5 4H4V6.5 M5.5 8H8V5.5"
-                      className="opacity-0 group-hover/traffic:opacity-100 transition-opacity"
-                      stroke="#004D11"
-                      strokeWidth="1.1"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  ) : (
-                    <path
-                      d="M8 4L4 8 M5.5 4H8V6.5 M6.5 8H4V5.5"
-                      className="opacity-0 group-hover/traffic:opacity-100 transition-opacity"
-                      stroke="#004D11"
-                      strokeWidth="1.1"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  )}
-                </svg>
-              </button>
-            </div>
-
-            {/* Brand Logo & Sidebar Toggle Button */}
-            <div className="flex h-full items-center gap-1 pr-1 shrink-0">
-              <img
-                src="/logo.png"
-                alt="Termimus"
-                title="Termimus"
-                className="h-5 w-5 rounded object-contain pointer-events-none"
-              />
-              <button
-                data-tauri-drag-region="false"
-                onClick={onToggleSidebar}
-                title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                {isSidebarCollapsed ? (
-                  <PanelLeftOpen size={15} />
-                ) : (
-                  <PanelLeftClose size={15} />
-                )}
-              </button>
-            </div>
-          </>
-        ) : (
-          /* Windows / Linux: Brand Logo & Sidebar Toggle Button on Far Left */
-          <div className="flex h-full items-center gap-1 pl-2.5 pr-1 shrink-0">
-            <img
-              src="/logo.png"
-              alt="Termimus"
-              title="Termimus"
-              className="h-5 w-5 rounded object-contain pointer-events-none"
-            />
-            <button
-              data-tauri-drag-region="false"
-              onClick={onToggleSidebar}
-              title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              {isSidebarCollapsed ? (
-                <PanelLeftOpen size={15} />
-              ) : (
-                <PanelLeftClose size={15} />
-              )}
-            </button>
-          </div>
-        )}
+        {/* Brand Logo & Sidebar Toggle Button */}
+        <div className={`flex h-full items-center gap-1 shrink-0 pr-1 ${isMac ? "" : "pl-2.5"}`}>
+          <img
+            src="/logo.png"
+            alt="Termimus"
+            title="Termimus"
+            className="h-5 w-5 rounded object-contain pointer-events-none"
+          />
+          <button
+            data-tauri-drag-region="false"
+            onClick={onToggleSidebar}
+            title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            {isSidebarCollapsed ? (
+              <PanelLeftOpen size={15} />
+            ) : (
+              <PanelLeftClose size={15} />
+            )}
+          </button>
+        </div>
 
         <div className="h-4 w-[1px] bg-[var(--border)] shrink-0 mx-1" />
 
