@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Lock, ShieldCheck, KeyRound, Cloud, Server, Eye, EyeOff } from "lucide-react";
+import { Lock, ShieldCheck, KeyRound, Cloud, Server, Eye, EyeOff, X } from "lucide-react";
 import { useVaultStore } from "../../stores/useVaultStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
 import { useSyncStore } from "../../stores/useSyncStore";
@@ -12,7 +12,17 @@ import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { api } from "../../lib/api";
 
 export function VaultModal() {
-  const { isInitialized, isUnlocked, setup, unlock, refresh, error } = useVaultStore();
+  const {
+    isInitialized,
+    isUnlocked,
+    isUnlockPromptOpen,
+    isUnlockPromptDismissable,
+    setup,
+    unlock,
+    refresh,
+    error,
+    closeUnlockPrompt,
+  } = useVaultStore();
   const [setupMode, setSetupMode] = useState<"new" | "sync">("new");
 
   // New Vault state
@@ -42,7 +52,32 @@ export function VaultModal() {
     }
   }, [isUnlocked]);
 
-  if (isUnlocked) return null;
+  // Escape cancels the prompt, same convention as the other app modals. Only
+  // allowed on in-session prompts: the app-startup prompt and first-run setup
+  // are mandatory, the app is unusable until the vault is unlocked.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (
+        e.key === "Escape" &&
+        isInitialized &&
+        isUnlockPromptDismissable &&
+        isUnlockPromptOpen &&
+        !submitting
+      ) {
+        closeUnlockPrompt();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isInitialized,
+    isUnlockPromptDismissable,
+    isUnlockPromptOpen,
+    submitting,
+    closeUnlockPrompt,
+  ]);
+
+  if (isUnlocked || !isUnlockPromptOpen) return null;
 
   async function handleSubmitNew(e: React.FormEvent) {
     e.preventDefault();
@@ -169,26 +204,38 @@ export function VaultModal() {
         data-tauri-drag-region="false"
         className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-6 shadow-2xl"
       >
-        <div className="mb-4 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--accent)]/15 text-[var(--accent)] shrink-0">
-            {isInitialized ? <Lock size={22} /> : setupMode === "sync" ? <Cloud size={22} /> : <ShieldCheck size={22} />}
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--accent)]/15 text-[var(--accent)] shrink-0">
+              {isInitialized ? <Lock size={22} /> : setupMode === "sync" ? <Cloud size={22} /> : <ShieldCheck size={22} />}
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-[var(--text-primary)]">
+                {isInitialized
+                  ? "Unlock Termimus Vault"
+                  : setupMode === "sync"
+                  ? "Sync from Existing Relay"
+                  : "Create Master Password"}
+              </h2>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                {isInitialized
+                  ? "Enter your master password to decrypt your credentials."
+                  : setupMode === "sync"
+                  ? "Connect to your self-hosted relay to restore your vault and credentials."
+                  : "Your master password protects all SSH keys and secrets with zero-knowledge AES-256."}
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-base font-semibold text-[var(--text-primary)]">
-              {isInitialized
-                ? "Unlock Termimus Vault"
-                : setupMode === "sync"
-                ? "Sync from Existing Relay"
-                : "Create Master Password"}
-            </h2>
-            <p className="text-xs text-[var(--text-muted)] mt-0.5">
-              {isInitialized
-                ? "Enter your master password to decrypt your credentials."
-                : setupMode === "sync"
-                ? "Connect to your self-hosted relay to restore your vault and credentials."
-                : "Your master password protects all SSH keys and secrets with zero-knowledge AES-256."}
-            </p>
-          </div>
+          {isInitialized && isUnlockPromptDismissable && (
+            <button
+              type="button"
+              onClick={closeUnlockPrompt}
+              title="Cancel (vault stays locked)"
+              className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-white transition-colors shrink-0"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         {/* Tab switcher for uninitialized vault */}

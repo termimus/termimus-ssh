@@ -8,7 +8,7 @@ const IDLE_TIMEOUTS: Partial<Record<AutoLockPolicy, number>> = {
 };
 
 export function useAutoLock() {
-  const { isUnlocked, lock } = useVaultStore();
+  const { isUnlocked, autoLock } = useVaultStore();
   const { autoLockPolicy } = useSettingsStore();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -28,7 +28,7 @@ export function useAutoLock() {
     function resetTimer() {
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
-        lock();
+        autoLock();
       }, timeoutMs);
     }
 
@@ -41,19 +41,19 @@ export function useAutoLock() {
       if (timerRef.current) clearTimeout(timerRef.current);
       events.forEach((ev) => window.removeEventListener(ev, resetTimer));
     };
-  }, [isUnlocked, autoLockPolicy, lock]);
+  }, [isUnlocked, autoLockPolicy, autoLock]);
 
   // ── 2. On focus loss policy ──────────────────────────────────────────────
   useEffect(() => {
     if (!isUnlocked || autoLockPolicy !== "on_focus_loss") return;
 
     function handleBlur() {
-      lock();
+      autoLock();
     }
 
     window.addEventListener("blur", handleBlur);
     return () => window.removeEventListener("blur", handleBlur);
-  }, [isUnlocked, autoLockPolicy, lock]);
+  }, [isUnlocked, autoLockPolicy, autoLock]);
 
   // ── 3. On close / unload policy ──────────────────────────────────────────
   useEffect(() => {
@@ -64,7 +64,7 @@ export function useAutoLock() {
       // Note: sync call to navigator.sendBeacon isn't needed since
       // Rust backend locks on process exit anyway, but this ensures
       // in-memory state is zeroized before drop.
-      useVaultStore.getState().lock();
+      useVaultStore.getState().autoLock();
     }
 
     window.addEventListener("beforeunload", handleUnload);

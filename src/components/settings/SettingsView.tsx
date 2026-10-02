@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   Archive,
   Lock,
+  LockOpen,
   ShieldCheck,
   KeyRound,
   Fingerprint,
@@ -161,7 +162,7 @@ export function SettingsView() {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function SecurityVaultTab() {
-  const { isUnlocked, isInitialized, lock: lockVault, refresh: refreshVault } = useVaultStore();
+  const { isUnlocked, isInitialized, lock: lockVault, refresh: refreshVault, openUnlockPrompt } = useVaultStore();
   const { useOsKeyring, setUseOsKeyring, autoLockPolicy, setAutoLockPolicy } = useSettingsStore();
 
   const [keyringLoading, setKeyringLoading] = useState(false);
@@ -252,13 +253,21 @@ function SecurityVaultTab() {
             </div>
           </div>
 
-          {isUnlocked && (
+          {isUnlocked ? (
             <button
               onClick={lockVault}
               className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3.5 py-2 text-xs font-semibold text-[var(--warning)] hover:bg-[var(--surface-highest)] transition-colors shrink-0 self-start sm:self-auto"
             >
               <Lock size={13} />
               Lock Vault
+            </button>
+          ) : (
+            <button
+              onClick={openUnlockPrompt}
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/10 px-3.5 py-2 text-xs font-semibold text-[var(--primary)] hover:bg-[var(--primary)]/20 transition-colors shrink-0 self-start sm:self-auto"
+            >
+              <LockOpen size={13} />
+              Unlock Vault
             </button>
           )}
         </div>
