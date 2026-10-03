@@ -19,6 +19,7 @@ import {
 import { FileEntry } from "../../lib/api";
 import { formatBytes, formatDate, parentPath } from "../../lib/format";
 import { useConfirmStore } from "../../stores/useConfirmStore";
+import { SelectMods } from "../../stores/useSftpStore";
 
 interface FilePaneProps {
   title: string;
@@ -26,15 +27,19 @@ interface FilePaneProps {
   path: string;
   entries: FileEntry[];
   loading: boolean;
-  selectedFile: FileEntry | null;
-  onSelect: (entry: FileEntry | null) => void;
+  selectedFiles: FileEntry[];
+  /** Row click with modifier keys; orderedEntries is the visible sorted list for shift-range */
+  onSelect: (entry: FileEntry, mods: SelectMods, orderedEntries: FileEntry[]) => void;
+  onSelectionReplace: (entries: FileEntry[]) => void;
+  onClearSelection: () => void;
+  onSelectAll: (entries: FileEntry[]) => void;
   onNavigate: (path: string) => void;
   onCreateFolder: (name: string) => Promise<void>;
-  onDeleteItem: (entry: FileEntry) => Promise<void>;
+  onDeleteItems: (entries: FileEntry[]) => Promise<void>;
   onRefresh: () => void;
   onOpenFile?: (entry: FileEntry) => void;
   disabled?: boolean;
-  onTransfer?: (entry: FileEntry) => void;
+  onTransfer?: (entries: FileEntry[]) => void;
 }
 
 type SortKey = "name" | "size" | "modified" | "kind";
@@ -84,11 +89,14 @@ export function FilePane({
   path,
   entries,
   loading,
-  selectedFile,
+  selectedFiles,
   onSelect,
+  onSelectionReplace,
+  onClearSelection,
+  onSelectAll,
   onNavigate,
   onCreateFolder,
-  onDeleteItem,
+  onDeleteItems,
   onRefresh,
   onOpenFile,
   disabled = false,
@@ -111,6 +119,7 @@ export function FilePane({
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
   const filterInputRef = useRef<HTMLInputElement>(null);
+  const paneRef = useRef<HTMLDivElement>(null);
 
   // Filter hanya berlaku untuk listing tempat ia diketik, jadi buang saat pindah direktori
   useEffect(() => {
@@ -153,6 +162,11 @@ export function FilePane({
     });
   }, [filteredEntries, sortKey, sortDir]);
 
+  const selectedPaths = useMemo(
+    () => new Set(selectedFiles.map((f) => f.path)),
+    [selectedFiles]
+  );
+
   const showCopyToast = useCallback((msg: string) => {
     setCopyToast(msg);
     setTimeout(() => {
@@ -160,13 +174,20 @@ export function FilePane({
     }, 1800);
   }, []);
 
-  const handleEntryContextMenu = useCallback((e: React.MouseEvent, entry: FileEntry) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const x = Math.min(e.clientX, window.innerWidth - 220);
-    const y = Math.min(e.clientY, window.innerHeight - 260);
-    setContextMenu({ x, y, type: "entry", entry });
-  }, []);
+  const handleEntryContextMenu = useCallback(
+    (e: React.MouseEvent, entry: FileEntry) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Native behavior: right-clicking an unselected item selects just it
+      if (!selectedPaths.has(entry.path)) {
+        onSelectionReplace([entry]);
+      }
+      const x = Math.min(e.clientX, window.innerWidth - 220);
+      const y = Math.min(e.clientY, window.innerHeight - 260);
+      setContextMenu({ x, y, type: "entry", entry });
+    },
+    [selectedPaths, onSelectionReplace]
+  );
 
   const handlePaneContextMenu = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -177,6 +198,41 @@ export function FilePane({
     const y = Math.min(e.clientY, window.innerHeight - 200);
     setContextMenu({ x, y, type: "background" });
   }, []);
+
+  // Click on empty pane area (outside rows/header) clears the selection
+  const handlePaneClick = useCallback(
+    (e: React.MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("tbody") || target.closest("thead")) return;
+      onClearSelection();
+    },
+    [onClearSelection]
+  );
+
+  // Finder-style keyboard shortcuts, scoped to the pane that has focus
+  const handlePaneKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        onSelectAll(sortedEntries);
+      } else if (e.key === "Escape") {
+        if (contextMenu) {
+          setContextMenu(null);
+          return;
+        }
+        onClearSelection();
+      }
+    },
+    [contextMenu, onClearSelection, onSelectAll, sortedEntries]
+  );
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -201,21 +257,44 @@ export function FilePane({
   }
 
   const handleDeleteClick = useCallback(
-    (e: React.MouseEvent, entry: FileEntry) => {
+    (e: React.MouseEvent, targets: FileEntry[]) => {
       e.stopPropagation();
+      const single = targets.length === 1;
+      const first = targets[0];
+      const subject = single ? `"${first.name}"` : `${targets.length} selected items`;
       useConfirmStore.getState().confirm({
-        title: entry.is_dir ? "Delete Folder" : "Delete File",
-        message: `Are you sure you want to delete "${entry.name}"${
-          entry.is_dir ? " and everything inside it" : ""
+        title: single
+          ? first.is_dir
+            ? "Delete Folder"
+            : "Delete File"
+          : `Delete ${targets.length} Items`,
+        message: `Are you sure you want to delete ${subject}${
+          single && first.is_dir ? " and everything inside it" : ""
         }? This action cannot be undone.`,
         confirmLabel: "Delete",
         isDanger: true,
         onConfirm: async () => {
-          await onDeleteItem(entry);
+          await onDeleteItems(targets);
         },
       });
     },
-    [onDeleteItem]
+    [onDeleteItems]
+  );
+
+  const handleRowClick = useCallback(
+    (entry: FileEntry, mods: SelectMods) => {
+      paneRef.current?.focus({ preventScroll: true });
+      onSelect(entry, mods, sortedEntries);
+    },
+    [onSelect, sortedEntries]
+  );
+
+  // Stable adapter: the row-level trash button always deletes a single entry
+  const handleRowDeleteClick = useCallback(
+    (e: React.MouseEvent, entry: FileEntry) => {
+      handleDeleteClick(e, [entry]);
+    },
+    [handleDeleteClick]
   );
 
   const handleRowDoubleClick = useCallback(
@@ -229,21 +308,50 @@ export function FilePane({
     [onNavigate, onOpenFile]
   );
 
+  // Items the entry context menu acts on. Right-click already ensured the
+  // clicked entry is part of the selection, so this is the selection itself.
+  const menuTargets =
+    contextMenu?.type === "entry" && contextMenu.entry
+      ? selectedPaths.has(contextMenu.entry.path) && selectedFiles.length > 0
+        ? selectedFiles
+        : [contextMenu.entry]
+      : [];
+  const multiMenu = menuTargets.length > 1;
+  const isLocalPane = title === "Local Machine";
+  const transferLabel = multiMenu
+    ? `${isLocalPane ? "Upload" : "Download"} ${menuTargets.length} Selected`
+    : isLocalPane
+      ? "Upload to Remote"
+      : "Download to Local";
+
   return (
     <div
+      ref={paneRef}
+      tabIndex={-1}
+      onKeyDown={handlePaneKeyDown}
       onContextMenu={handlePaneContextMenu}
-      className="flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--sidebar)]"
+      className="flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--sidebar)] outline-none"
     >
       {/* Pane Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--card)] px-3 py-2">
-        <div className="min-w-0">
-          <div className="truncate text-xs font-semibold text-[var(--text-primary)]">
-            {title}
-          </div>
-          {subtitle && (
-            <div className="truncate text-[10px] text-[var(--text-muted)]">
-              {subtitle}
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="min-w-0">
+            <div className="truncate text-xs font-semibold text-[var(--text-primary)]">
+              {title}
             </div>
+            {subtitle && (
+              <div className="truncate text-[10px] text-[var(--text-muted)]">
+                {subtitle}
+              </div>
+            )}
+          </div>
+          {selectedFiles.length > 1 && (
+            <span
+              className="shrink-0 rounded-full bg-[var(--primary)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--primary)]"
+              title={`${selectedFiles.length} items selected (⌘/Ctrl+A to select all, Esc to clear)`}
+            >
+              {selectedFiles.length} selected
+            </span>
           )}
         </div>
         <div className="flex items-center gap-1">
@@ -361,7 +469,7 @@ export function FilePane({
       )}
 
       {/* File Table */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" onClick={handlePaneClick}>
         {loading ? (
           <div className="flex h-40 items-center justify-center text-xs text-[var(--text-muted)]">
             <Loader2 size={18} className="animate-spin mr-2 text-[var(--accent)]" />
@@ -426,11 +534,11 @@ export function FilePane({
                 <FileRow
                   key={entry.path}
                   entry={entry}
-                  isSelected={selectedFile?.path === entry.path}
-                  onSelect={onSelect}
+                  isSelected={selectedPaths.has(entry.path)}
+                  onSelect={handleRowClick}
                   onDoubleClick={handleRowDoubleClick}
                   onOpenFile={onOpenFile}
-                  onDelete={handleDeleteClick}
+                  onDelete={handleRowDeleteClick}
                   onContextMenu={handleEntryContextMenu}
                 />
               ))}
@@ -471,31 +579,39 @@ export function FilePane({
                 )}
               </button>
 
-              {/* Transfer (Upload / Download) */}
-              {onTransfer && !contextMenu.entry.is_dir && (
+              {/* Transfer (Upload / Download), works for files and folders */}
+              {onTransfer && (
                 <button
                   onClick={() => {
-                    onTransfer(contextMenu.entry!);
+                    onTransfer(menuTargets);
                     setContextMenu(null);
                   }}
                   className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
                 >
                   <ArrowRight size={13} />
-                  <span>{title === "Local Machine" ? "Upload to Remote" : "Download to Local"}</span>
+                  <span>{transferLabel}</span>
                 </button>
               )}
 
-              {/* Copy Path */}
+              {/* Copy Path(s) */}
               <button
                 onClick={async () => {
-                  await navigator.clipboard.writeText(contextMenu.entry!.path);
-                  showCopyToast("Copied file path");
+                  const value =
+                    menuTargets.length > 1
+                      ? menuTargets.map((t) => t.path).join("\n")
+                      : menuTargets[0]?.path ?? "";
+                  await navigator.clipboard.writeText(value);
+                  showCopyToast(
+                    menuTargets.length > 1
+                      ? `Copied ${menuTargets.length} paths`
+                      : "Copied file path"
+                  );
                   setContextMenu(null);
                 }}
                 className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
               >
                 <Copy size={13} />
-                <span>Copy Path</span>
+                <span>{multiMenu ? `Copy ${menuTargets.length} Paths` : "Copy Path"}</span>
               </button>
 
               <div className="my-1 h-[1px] bg-[var(--border)]" />
@@ -503,13 +619,19 @@ export function FilePane({
               {/* Delete */}
               <button
                 onClick={(e) => {
-                  handleDeleteClick(e, contextMenu.entry!);
+                  handleDeleteClick(e, menuTargets);
                   setContextMenu(null);
                 }}
                 className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group"
               >
                 <Trash2 size={13} />
-                <span>{contextMenu.entry.is_dir ? "Delete Folder" : "Delete File"}</span>
+                <span>
+                  {multiMenu
+                    ? `Delete ${menuTargets.length} Items`
+                    : contextMenu.entry.is_dir
+                      ? "Delete Folder"
+                      : "Delete File"}
+                </span>
               </button>
             </>
           ) : (
@@ -525,6 +647,19 @@ export function FilePane({
               >
                 <FolderPlus size={13} />
                 <span>New Folder</span>
+              </button>
+
+              {/* Select All */}
+              <button
+                onClick={() => {
+                  onSelectAll(sortedEntries);
+                  setContextMenu(null);
+                }}
+                disabled={disabled || sortedEntries.length === 0}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <Check size={13} />
+                <span>Select All</span>
               </button>
 
               {/* Refresh */}
@@ -576,7 +711,7 @@ export function FilePane({
 interface FileRowProps {
   entry: FileEntry;
   isSelected: boolean;
-  onSelect: (entry: FileEntry) => void;
+  onSelect: (entry: FileEntry, mods: SelectMods) => void;
   onDoubleClick: (entry: FileEntry) => void;
   onOpenFile?: (entry: FileEntry) => void;
   onDelete: (e: React.MouseEvent, entry: FileEntry) => void;
@@ -594,7 +729,9 @@ const FileRow = memo(function FileRow({
 }: FileRowProps) {
   return (
     <tr
-      onClick={() => onSelect(entry)}
+      onClick={(e) =>
+        onSelect(entry, { shift: e.shiftKey, mod: e.metaKey || e.ctrlKey })
+      }
       onDoubleClick={() => onDoubleClick(entry)}
       onContextMenu={(e) => onContextMenu?.(e, entry)}
       className={`group cursor-pointer select-none transition-colors border-b border-[var(--border)]/30 ${

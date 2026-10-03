@@ -6,6 +6,7 @@ import {
   Loader2,
   AlertCircle,
   Unplug,
+  X,
 } from "lucide-react";
 import { useSftpStore } from "../../stores/useSftpStore";
 import { useHostStore } from "../../stores/useHostStore";
@@ -13,6 +14,24 @@ import { FilePane } from "./FilePane";
 import { FileEditorModal } from "./FileEditorModal";
 import { FileEntry } from "../../lib/api";
 import { CustomSelect } from "../ui/CustomSelect";
+
+function transferButtonTitle(files: FileEntry[], verb: "Upload" | "Download"): string {
+  if (files.length === 0) {
+    return `Select ${verb === "Upload" ? "local" : "remote"} items to ${verb.toLowerCase()}`;
+  }
+  if (files.length === 1) {
+    const first = files[0];
+    return first.is_dir
+      ? `${verb} folder "${first.name}" (recursive)`
+      : `${verb} "${first.name}"`;
+  }
+  const dirCount = files.filter((f) => f.is_dir).length;
+  const fileCount = files.length - dirCount;
+  const parts: string[] = [];
+  if (fileCount > 0) parts.push(`${fileCount} file${fileCount > 1 ? "s" : ""}`);
+  if (dirCount > 0) parts.push(`${dirCount} folder${dirCount > 1 ? "s" : ""}`);
+  return `${verb} ${parts.join(" & ")} (folders recursive)`;
+}
 
 export function SftpView() {
   const { hosts } = useHostStore();
@@ -25,27 +44,31 @@ export function SftpView() {
     remotePath,
     remoteEntries,
     remoteLoading,
-    selectedRemoteFile,
+    selectedRemoteFiles,
     localPath,
     localEntries,
     localLoading,
-    selectedLocalFile,
+    selectedLocalFiles,
     transferring,
     transferMessage,
+    transferProgress,
     error,
     initLocal,
     navigateLocal,
-    selectLocalFile,
+    selectFiles,
+    setSelection,
+    clearSelection,
+    selectAll,
     createLocalFolder,
-    deleteLocalItem,
+    deleteLocalItems,
     connectRemote,
     navigateRemote,
-    selectRemoteFile,
     createRemoteFolder,
-    deleteRemoteItem,
+    deleteRemoteItems,
     disconnectRemote,
     uploadSelected,
     downloadSelected,
+    cancelTransfer,
   } = useSftpStore();
 
   useEffect(() => {
@@ -99,15 +122,27 @@ export function SftpView() {
           <div className="flex items-center gap-2 text-xs text-[var(--accent)]">
             <Loader2 size={14} className="animate-spin" />
             <span>{transferMessage}</span>
+            {transferProgress && transferProgress.total > 0 && (
+              <span className="font-mono text-[10px] text-[var(--text-muted)]">
+                {transferProgress.done}/{transferProgress.total}
+              </span>
+            )}
+            <button
+              onClick={cancelTransfer}
+              title="Cancel transfer"
+              className="flex items-center gap-1 rounded bg-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:text-white"
+            >
+              <X size={10} /> Cancel
+            </button>
           </div>
         )}
       </div>
 
       {/* Error alert if any */}
       {error && (
-        <div className="mb-3 flex items-center gap-2 rounded-md border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-xs text-[var(--danger)]">
+        <div className="mb-3 flex items-start gap-2 rounded-md border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-xs text-[var(--danger)]">
           <AlertCircle size={14} className="shrink-0" />
-          <span>{error}</span>
+          <span className="whitespace-pre-wrap">{error}</span>
         </div>
       )}
 
@@ -120,52 +155,38 @@ export function SftpView() {
           path={localPath}
           entries={localEntries}
           loading={localLoading}
-          selectedFile={selectedLocalFile}
-          onSelect={selectLocalFile}
+          selectedFiles={selectedLocalFiles}
+          onSelect={(entry, mods, ordered) => selectFiles("local", entry, mods, ordered)}
+          onSelectionReplace={(entries) => setSelection("local", entries)}
+          onClearSelection={() => clearSelection("local")}
+          onSelectAll={(entries) => selectAll("local", entries)}
           onNavigate={navigateLocal}
           onCreateFolder={createLocalFolder}
-          onDeleteItem={deleteLocalItem}
+          onDeleteItems={deleteLocalItems}
           onRefresh={() => navigateLocal(localPath)}
           onOpenFile={(entry) => setEditingFile({ file: entry, isRemote: false })}
-          onTransfer={(entry) => {
-            selectLocalFile(entry);
-            setTimeout(() => uploadSelected(), 0);
-          }}
+          onTransfer={(entries) => uploadSelected(entries)}
         />
 
         {/* Center Transfer Buttons */}
         <div className="flex shrink-0 flex-col items-center justify-center gap-2 px-1">
           <button
-            onClick={uploadSelected}
+            onClick={() => uploadSelected()}
             disabled={
-              !selectedLocalFile ||
-              selectedLocalFile.is_dir ||
-              !remoteSessionId ||
-              transferring
+              selectedLocalFiles.length === 0 || !remoteSessionId || transferring
             }
-            title={
-              selectedLocalFile && !selectedLocalFile.is_dir
-                ? `Upload "${selectedLocalFile.name}" to remote`
-                : "Select a local file to upload"
-            }
+            title={transferButtonTitle(selectedLocalFiles, "Upload")}
             className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-md transition hover:bg-[var(--accent-hover)] disabled:opacity-20"
           >
             <ArrowRight size={16} />
           </button>
 
           <button
-            onClick={downloadSelected}
+            onClick={() => downloadSelected()}
             disabled={
-              !selectedRemoteFile ||
-              selectedRemoteFile.is_dir ||
-              !remoteSessionId ||
-              transferring
+              selectedRemoteFiles.length === 0 || !remoteSessionId || transferring
             }
-            title={
-              selectedRemoteFile && !selectedRemoteFile.is_dir
-                ? `Download "${selectedRemoteFile.name}" to local`
-                : "Select a remote file to download"
-            }
+            title={transferButtonTitle(selectedRemoteFiles, "Download")}
             className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-md transition hover:bg-[var(--accent-hover)] disabled:opacity-20"
           >
             <ArrowLeft size={16} />
@@ -183,18 +204,18 @@ export function SftpView() {
           path={remotePath}
           entries={remoteEntries}
           loading={remoteLoading}
-          selectedFile={selectedRemoteFile}
-          onSelect={selectRemoteFile}
+          selectedFiles={selectedRemoteFiles}
+          onSelect={(entry, mods, ordered) => selectFiles("remote", entry, mods, ordered)}
+          onSelectionReplace={(entries) => setSelection("remote", entries)}
+          onClearSelection={() => clearSelection("remote")}
+          onSelectAll={(entries) => selectAll("remote", entries)}
           onNavigate={navigateRemote}
           onCreateFolder={createRemoteFolder}
-          onDeleteItem={deleteRemoteItem}
+          onDeleteItems={deleteRemoteItems}
           onRefresh={() => navigateRemote(remotePath)}
           onOpenFile={(entry) => setEditingFile({ file: entry, isRemote: true })}
           disabled={!remoteSessionId}
-          onTransfer={(entry) => {
-            selectRemoteFile(entry);
-            setTimeout(() => downloadSelected(), 0);
-          }}
+          onTransfer={(entries) => downloadSelected(entries)}
         />
       </div>
 
