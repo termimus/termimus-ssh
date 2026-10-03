@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowRight,
   ArrowLeft,
@@ -8,7 +8,8 @@ import {
   Unplug,
   X,
 } from "lucide-react";
-import { useSftpStore } from "../../stores/useSftpStore";
+import { useShallow } from "zustand/react/shallow";
+import { SelectMods, useSftpStore } from "../../stores/useSftpStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { FilePane } from "./FilePane";
 import { FileEditorModal } from "./FileEditorModal";
@@ -34,10 +35,13 @@ function transferButtonTitle(files: FileEntry[], verb: "Upload" | "Download"): s
 }
 
 export function SftpView() {
-  const { hosts } = useHostStore();
+  const hosts = useHostStore((s) => s.hosts);
   const [editingFile, setEditingFile] = useState<{ file: FileEntry; isRemote: boolean } | null>(
     null
   );
+
+  // Shallow subscription: progress ticks during transfers must not re-render
+  // this tree just because the whole state object is new.
   const {
     remoteHost,
     remoteSessionId,
@@ -69,7 +73,101 @@ export function SftpView() {
     uploadSelected,
     downloadSelected,
     cancelTransfer,
-  } = useSftpStore();
+  } = useSftpStore(
+    useShallow((s) => ({
+      remoteHost: s.remoteHost,
+      remoteSessionId: s.remoteSessionId,
+      remotePath: s.remotePath,
+      remoteEntries: s.remoteEntries,
+      remoteLoading: s.remoteLoading,
+      selectedRemoteFiles: s.selectedRemoteFiles,
+      localPath: s.localPath,
+      localEntries: s.localEntries,
+      localLoading: s.localLoading,
+      selectedLocalFiles: s.selectedLocalFiles,
+      transferring: s.transferring,
+      transferMessage: s.transferMessage,
+      transferProgress: s.transferProgress,
+      error: s.error,
+      initLocal: s.initLocal,
+      navigateLocal: s.navigateLocal,
+      selectFiles: s.selectFiles,
+      setSelection: s.setSelection,
+      clearSelection: s.clearSelection,
+      selectAll: s.selectAll,
+      createLocalFolder: s.createLocalFolder,
+      deleteLocalItems: s.deleteLocalItems,
+      connectRemote: s.connectRemote,
+      navigateRemote: s.navigateRemote,
+      createRemoteFolder: s.createRemoteFolder,
+      deleteRemoteItems: s.deleteRemoteItems,
+      disconnectRemote: s.disconnectRemote,
+      uploadSelected: s.uploadSelected,
+      downloadSelected: s.downloadSelected,
+      cancelTransfer: s.cancelTransfer,
+    }))
+  );
+
+  // Stable pane callbacks. FilePane and its rows are memoized on handler
+  // identity, so inline arrows in the JSX below would defeat that and
+  // re-render every visible row on each store update.
+  const handleConnectHost = useCallback(
+    (hostId: string) => {
+      const host = hosts.find((h) => h.id === hostId);
+      if (host) connectRemote(host);
+    },
+    [hosts, connectRemote]
+  );
+
+  const selectLocal = useCallback(
+    (entry: FileEntry, mods: SelectMods, ordered: FileEntry[]) =>
+      selectFiles("local", entry, mods, ordered),
+    [selectFiles]
+  );
+  const selectRemote = useCallback(
+    (entry: FileEntry, mods: SelectMods, ordered: FileEntry[]) =>
+      selectFiles("remote", entry, mods, ordered),
+    [selectFiles]
+  );
+
+  const replaceLocalSelection = useCallback(
+    (entries: FileEntry[]) => setSelection("local", entries),
+    [setSelection]
+  );
+  const replaceRemoteSelection = useCallback(
+    (entries: FileEntry[]) => setSelection("remote", entries),
+    [setSelection]
+  );
+
+  const clearLocalSelection = useCallback(() => clearSelection("local"), [clearSelection]);
+  const clearRemoteSelection = useCallback(() => clearSelection("remote"), [clearSelection]);
+
+  const selectAllLocal = useCallback(
+    (entries: FileEntry[]) => selectAll("local", entries),
+    [selectAll]
+  );
+  const selectAllRemote = useCallback(
+    (entries: FileEntry[]) => selectAll("remote", entries),
+    [selectAll]
+  );
+
+  const refreshLocal = useCallback(() => navigateLocal(localPath), [navigateLocal, localPath]);
+  const refreshRemote = useCallback(() => navigateRemote(remotePath), [navigateRemote, remotePath]);
+
+  const openLocalFile = useCallback(
+    (entry: FileEntry) => setEditingFile({ file: entry, isRemote: false }),
+    []
+  );
+  const openRemoteFile = useCallback(
+    (entry: FileEntry) => setEditingFile({ file: entry, isRemote: true }),
+    []
+  );
+
+  const transferLocal = useCallback((entries: FileEntry[]) => uploadSelected(entries), [uploadSelected]);
+  const transferRemote = useCallback(
+    (entries: FileEntry[]) => downloadSelected(entries),
+    [downloadSelected]
+  );
 
   useEffect(() => {
     initLocal();
@@ -89,10 +187,7 @@ export function SftpView() {
           <div className="w-64 sm:w-80">
             <CustomSelect
               value={remoteHost?.id ?? ""}
-              onChange={(val) => {
-                const host = hosts.find((h) => h.id === val);
-                if (host) connectRemote(host);
-              }}
+              onChange={handleConnectHost}
               disabled={remoteLoading || transferring}
               placeholder="Select a host to connect..."
               options={[
@@ -156,16 +251,16 @@ export function SftpView() {
           entries={localEntries}
           loading={localLoading}
           selectedFiles={selectedLocalFiles}
-          onSelect={(entry, mods, ordered) => selectFiles("local", entry, mods, ordered)}
-          onSelectionReplace={(entries) => setSelection("local", entries)}
-          onClearSelection={() => clearSelection("local")}
-          onSelectAll={(entries) => selectAll("local", entries)}
+          onSelect={selectLocal}
+          onSelectionReplace={replaceLocalSelection}
+          onClearSelection={clearLocalSelection}
+          onSelectAll={selectAllLocal}
           onNavigate={navigateLocal}
           onCreateFolder={createLocalFolder}
           onDeleteItems={deleteLocalItems}
-          onRefresh={() => navigateLocal(localPath)}
-          onOpenFile={(entry) => setEditingFile({ file: entry, isRemote: false })}
-          onTransfer={(entries) => uploadSelected(entries)}
+          onRefresh={refreshLocal}
+          onOpenFile={openLocalFile}
+          onTransfer={transferLocal}
         />
 
         {/* Center Transfer Buttons */}
@@ -205,17 +300,17 @@ export function SftpView() {
           entries={remoteEntries}
           loading={remoteLoading}
           selectedFiles={selectedRemoteFiles}
-          onSelect={(entry, mods, ordered) => selectFiles("remote", entry, mods, ordered)}
-          onSelectionReplace={(entries) => setSelection("remote", entries)}
-          onClearSelection={() => clearSelection("remote")}
-          onSelectAll={(entries) => selectAll("remote", entries)}
+          onSelect={selectRemote}
+          onSelectionReplace={replaceRemoteSelection}
+          onClearSelection={clearRemoteSelection}
+          onSelectAll={selectAllRemote}
           onNavigate={navigateRemote}
           onCreateFolder={createRemoteFolder}
           onDeleteItems={deleteRemoteItems}
-          onRefresh={() => navigateRemote(remotePath)}
-          onOpenFile={(entry) => setEditingFile({ file: entry, isRemote: true })}
+          onRefresh={refreshRemote}
+          onOpenFile={openRemoteFile}
           disabled={!remoteSessionId}
-          onTransfer={(entries) => downloadSelected(entries)}
+          onTransfer={transferRemote}
         />
       </div>
 

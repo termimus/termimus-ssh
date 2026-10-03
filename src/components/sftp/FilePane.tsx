@@ -45,6 +45,13 @@ interface FilePaneProps {
 type SortKey = "name" | "size" | "modified" | "kind";
 type SortDir = "asc" | "desc";
 
+// Fixed row height and a shared grid template keep the virtual window math
+// exact; rows only participate in layout for the visible slice.
+const ROW_HEIGHT = 30;
+const GRID_COLS =
+  "grid grid-cols-[minmax(0,1fr)_5rem_8rem_5rem_2rem] items-center";
+const OVERSCAN_ROWS = 8;
+
 function SortHeaderCell({
   label,
   columnKey,
@@ -62,13 +69,14 @@ function SortHeaderCell({
 }) {
   const isActive = sortKey === columnKey;
   return (
-    <th
-      className={`cursor-pointer py-1.5 select-none transition-colors hover:text-[var(--text-primary)] ${
+    <div
+      role="columnheader"
+      aria-sort={isActive ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+      title={`Sort by ${label.toLowerCase()}`}
+      onClick={() => onSort(columnKey)}
+      className={`cursor-pointer select-none transition-colors hover:text-[var(--text-primary)] ${
         className ?? ""
       }`}
-      onClick={() => onSort(columnKey)}
-      title={`Sort by ${label.toLowerCase()}`}
-      aria-sort={isActive ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
     >
       <span className="inline-flex items-center gap-1">
         {label}
@@ -79,11 +87,11 @@ function SortHeaderCell({
             <ArrowDown size={10} className="text-[var(--primary)]" />
           ))}
       </span>
-    </th>
+    </div>
   );
 }
 
-export function FilePane({
+export const FilePane = memo(function FilePane({
   title,
   subtitle,
   path,
@@ -121,11 +129,32 @@ export function FilePane({
   const filterInputRef = useRef<HTMLInputElement>(null);
   const paneRef = useRef<HTMLDivElement>(null);
 
-  // Filter hanya berlaku untuk listing tempat ia diketik, jadi buang saat pindah direktori
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(600);
+
+  // Filter hanya berlaku untuk listing tempat ia diketik, jadi buang saat pindah direktori.
+  // Scroll ikut di-reset karena pane tidak lagi di-unmount saat loading data baru.
   useEffect(() => {
     setFilterQuery("");
     setIsFilterOpen(false);
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+    setScrollTop(0);
   }, [path]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setViewportHeight(el.clientHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  }, []);
 
   const handleSortClick = useCallback(
     (key: SortKey) => {
@@ -167,6 +196,14 @@ export function FilePane({
     [selectedFiles]
   );
 
+  // Keep the latest values in refs so the row callbacks below can stay
+  // identity-stable. FileRow is memoized on handler identity, so rebuilding
+  // these per keystroke or selection change would re-render all visible rows.
+  const orderedRef = useRef(sortedEntries);
+  orderedRef.current = sortedEntries;
+  const selectedPathsRef = useRef(selectedPaths);
+  selectedPathsRef.current = selectedPaths;
+
   const showCopyToast = useCallback((msg: string) => {
     setCopyToast(msg);
     setTimeout(() => {
@@ -179,20 +216,20 @@ export function FilePane({
       e.preventDefault();
       e.stopPropagation();
       // Native behavior: right-clicking an unselected item selects just it
-      if (!selectedPaths.has(entry.path)) {
+      if (!selectedPathsRef.current.has(entry.path)) {
         onSelectionReplace([entry]);
       }
       const x = Math.min(e.clientX, window.innerWidth - 220);
       const y = Math.min(e.clientY, window.innerHeight - 260);
       setContextMenu({ x, y, type: "entry", entry });
     },
-    [selectedPaths, onSelectionReplace]
+    [onSelectionReplace]
   );
 
   const handlePaneContextMenu = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     // Only trigger on pane background (not on file rows which have their own handler)
-    if (target.closest("tbody")) return;
+    if (target.closest("[data-file-row]")) return;
     e.preventDefault();
     const x = Math.min(e.clientX, window.innerWidth - 220);
     const y = Math.min(e.clientY, window.innerHeight - 200);
@@ -203,7 +240,7 @@ export function FilePane({
   const handlePaneClick = useCallback(
     (e: React.MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (target.closest("tbody") || target.closest("thead")) return;
+      if (target.closest("[data-file-row]") || target.closest("[data-file-header]")) return;
       onClearSelection();
     },
     [onClearSelection]
@@ -222,7 +259,7 @@ export function FilePane({
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
         e.preventDefault();
-        onSelectAll(sortedEntries);
+        onSelectAll(orderedRef.current);
       } else if (e.key === "Escape") {
         if (contextMenu) {
           setContextMenu(null);
@@ -231,7 +268,7 @@ export function FilePane({
         onClearSelection();
       }
     },
-    [contextMenu, onClearSelection, onSelectAll, sortedEntries]
+    [contextMenu, onClearSelection, onSelectAll]
   );
 
   useEffect(() => {
@@ -284,9 +321,9 @@ export function FilePane({
   const handleRowClick = useCallback(
     (entry: FileEntry, mods: SelectMods) => {
       paneRef.current?.focus({ preventScroll: true });
-      onSelect(entry, mods, sortedEntries);
+      onSelect(entry, mods, orderedRef.current);
     },
-    [onSelect, sortedEntries]
+    [onSelect]
   );
 
   // Stable adapter: the row-level trash button always deletes a single entry
@@ -323,6 +360,16 @@ export function FilePane({
     : isLocalPane
       ? "Upload to Remote"
       : "Download to Local";
+
+  // Virtual window: only rows intersecting the viewport (+ overscan) mount,
+  // which is what keeps directories with thousands of entries responsive.
+  const totalRows = sortedEntries.length;
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS);
+  const endIdx = Math.min(
+    totalRows,
+    Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN_ROWS
+  );
+  const visibleRows = sortedEntries.slice(startIdx, endIdx);
 
   return (
     <div
@@ -468,8 +515,13 @@ export function FilePane({
         </form>
       )}
 
-      {/* File Table */}
-      <div className="flex-1 overflow-y-auto" onClick={handlePaneClick}>
+      {/* File List */}
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto"
+        onClick={handlePaneClick}
+        onScroll={handleScroll}
+      >
         {loading ? (
           <div className="flex h-40 items-center justify-center text-xs text-[var(--text-muted)]">
             <Loader2 size={18} className="animate-spin mr-2 text-[var(--accent)]" />
@@ -491,59 +543,72 @@ export function FilePane({
             </span>
           </div>
         ) : (
-          <table className="w-full table-fixed text-left text-xs">
-            <thead className="sticky top-0 bg-[var(--sidebar)] text-[10px] uppercase text-[var(--text-muted)] border-b border-[var(--border)]">
-              <tr>
-                <SortHeaderCell
-                  label="Name"
-                  columnKey="name"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={handleSortClick}
-                  className="pl-3"
-                />
-                <SortHeaderCell
-                  label="Size"
-                  columnKey="size"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={handleSortClick}
-                  className="pr-2 w-20 text-right"
-                />
-                <SortHeaderCell
-                  label="Modified"
-                  columnKey="modified"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={handleSortClick}
-                  className="pr-3 w-32 text-right"
-                />
-                <SortHeaderCell
-                  label="Kind"
-                  columnKey="kind"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={handleSortClick}
-                  className="pr-2 w-20 text-right"
-                />
-                <th className="py-1.5 pr-2 w-8"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedEntries.map((entry) => (
-                <FileRow
-                  key={entry.path}
-                  entry={entry}
-                  isSelected={selectedPaths.has(entry.path)}
-                  onSelect={handleRowClick}
-                  onDoubleClick={handleRowDoubleClick}
-                  onOpenFile={onOpenFile}
-                  onDelete={handleRowDeleteClick}
-                  onContextMenu={handleEntryContextMenu}
-                />
-              ))}
-            </tbody>
-          </table>
+          <div role="grid" aria-rowcount={totalRows} className="w-full text-xs">
+            <div
+              role="row"
+              data-file-header=""
+              className={`sticky top-0 z-10 h-8 border-b border-[var(--border)] bg-[var(--sidebar)] text-[10px] uppercase text-[var(--text-muted)] ${GRID_COLS}`}
+            >
+              <SortHeaderCell
+                label="Name"
+                columnKey="name"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSortClick}
+                className="pl-3"
+              />
+              <SortHeaderCell
+                label="Size"
+                columnKey="size"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSortClick}
+                className="pr-2 text-right"
+              />
+              <SortHeaderCell
+                label="Modified"
+                columnKey="modified"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSortClick}
+                className="pr-3 text-right"
+              />
+              <SortHeaderCell
+                label="Kind"
+                columnKey="kind"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSortClick}
+                className="pr-2 text-right"
+              />
+              <div role="columnheader" />
+            </div>
+            <div role="presentation" style={{ height: totalRows * ROW_HEIGHT, position: "relative" }}>
+              <div
+                role="presentation"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  transform: `translateY(${startIdx * ROW_HEIGHT}px)`,
+                }}
+              >
+                {visibleRows.map((entry) => (
+                  <FileRow
+                    key={entry.path}
+                    entry={entry}
+                    isSelected={selectedPaths.has(entry.path)}
+                    onSelect={handleRowClick}
+                    onDoubleClick={handleRowDoubleClick}
+                    onOpenFile={onOpenFile}
+                    onDelete={handleRowDeleteClick}
+                    onContextMenu={handleEntryContextMenu}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
@@ -702,11 +767,7 @@ export function FilePane({
       )}
     </div>
   );
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// MEMOIZED FILE ROW COMPONENT (High performance in directories with 1000+ items)
-// ══════════════════════════════════════════════════════════════════════════════
+});
 
 interface FileRowProps {
   entry: FileEntry;
@@ -718,6 +779,8 @@ interface FileRowProps {
   onContextMenu?: (e: React.MouseEvent, entry: FileEntry) => void;
 }
 
+// Rows are memoized on handler identity; keep the callbacks passed in stable
+// or the whole visible window re-renders on every interaction.
 const FileRow = memo(function FileRow({
   entry,
   isSelected,
@@ -728,36 +791,38 @@ const FileRow = memo(function FileRow({
   onContextMenu,
 }: FileRowProps) {
   return (
-    <tr
+    <div
+      role="row"
+      data-file-row=""
       onClick={(e) =>
         onSelect(entry, { shift: e.shiftKey, mod: e.metaKey || e.ctrlKey })
       }
       onDoubleClick={() => onDoubleClick(entry)}
       onContextMenu={(e) => onContextMenu?.(e, entry)}
-      className={`group cursor-pointer select-none transition-colors border-b border-[var(--border)]/30 ${
+      className={`group ${GRID_COLS} h-[30px] cursor-pointer select-none border-b border-[var(--border)]/30 transition-colors ${
         isSelected
           ? "bg-[var(--accent)]/20 text-[var(--text-primary)]"
           : "hover:bg-[var(--card)] text-[var(--text-primary)]"
       }`}
     >
-      <td className="py-1.5 pl-3 flex min-w-0 items-center gap-2">
+      <div role="gridcell" className="flex min-w-0 items-center gap-2 pl-3">
         {entry.is_dir ? (
           <Folder size={14} className="shrink-0 text-[var(--accent)]" />
         ) : (
           <File size={14} className="shrink-0 text-[var(--text-muted)]" />
         )}
         <span className="truncate">{entry.name}</span>
-      </td>
-      <td className="py-1.5 pr-2 text-right text-[11px] text-[var(--text-muted)]">
+      </div>
+      <div role="gridcell" className="pr-2 text-right text-[11px] text-[var(--text-muted)]">
         {entry.is_dir ? "-" : formatBytes(entry.size)}
-      </td>
-      <td className="py-1.5 pr-3 text-right text-[11px] text-[var(--text-muted)]">
+      </div>
+      <div role="gridcell" className="pr-3 text-right text-[11px] text-[var(--text-muted)]">
         {formatDate(entry.modified)}
-      </td>
-      <td className="py-1.5 pr-2 text-right text-[11px] text-[var(--text-muted)]">
+      </div>
+      <div role="gridcell" className="pr-2 text-right text-[11px] text-[var(--text-muted)]">
         {entry.is_dir ? "Folder" : "File"}
-      </td>
-      <td className="py-1.5 pr-2 text-right">
+      </div>
+      <div role="gridcell" className="pr-2 text-right">
         <div className="flex items-center justify-end gap-1">
           {!entry.is_dir && onOpenFile && (
             <button
@@ -779,7 +844,7 @@ const FileRow = memo(function FileRow({
             <Trash2 size={12} />
           </button>
         </div>
-      </td>
-    </tr>
+      </div>
+    </div>
   );
 });
