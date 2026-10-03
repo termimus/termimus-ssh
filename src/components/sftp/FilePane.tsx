@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, memo, useEffect } from "react";
+import { useState, useCallback, useMemo, memo, useEffect, useRef } from "react";
 import {
   Folder,
   File,
@@ -13,6 +13,8 @@ import {
   ArrowDown,
   Copy,
   Check,
+  Search,
+  X,
 } from "lucide-react";
 import { FileEntry } from "../../lib/api";
 import { formatBytes, formatDate, parentPath } from "../../lib/format";
@@ -106,6 +108,16 @@ export function FilePane({
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [filterQuery, setFilterQuery] = useState("");
+  const filterInputRef = useRef<HTMLInputElement>(null);
+
+  // Filter hanya berlaku untuk listing tempat ia diketik, jadi buang saat pindah direktori
+  useEffect(() => {
+    setFilterQuery("");
+    setIsFilterOpen(false);
+  }, [path]);
+
   const handleSortClick = useCallback(
     (key: SortKey) => {
       if (key === sortKey) {
@@ -118,6 +130,12 @@ export function FilePane({
     [sortKey]
   );
 
+  const filteredEntries = useMemo(() => {
+    const q = filterQuery.trim().toLowerCase();
+    if (!q) return entries;
+    return entries.filter((e) => e.name.toLowerCase().includes(q));
+  }, [entries, filterQuery]);
+
   const sortedEntries = useMemo(() => {
     const byName = (a: FileEntry, b: FileEntry) =>
       a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
@@ -128,12 +146,12 @@ export function FilePane({
       kind: (a, b) => (a.is_dir === b.is_dir ? 0 : a.is_dir ? -1 : 1) || byName(a, b),
     };
     const dir = sortDir === "asc" ? 1 : -1;
-    return [...entries].sort((a, b) => {
+    return [...filteredEntries].sort((a, b) => {
       // Folders always listed before files, except when sorting by Kind itself
       if (sortKey !== "kind" && a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
       return comparators[sortKey](a, b) * dir;
     });
-  }, [entries, sortKey, sortDir]);
+  }, [filteredEntries, sortKey, sortDir]);
 
   const showCopyToast = useCallback((msg: string) => {
     setCopyToast(msg);
@@ -219,7 +237,7 @@ export function FilePane({
       {/* Pane Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--card)] px-3 py-2">
         <div className="min-w-0">
-          <div className="text-xs font-semibold text-[var(--text-primary)]">
+          <div className="truncate text-xs font-semibold text-[var(--text-primary)]">
             {title}
           </div>
           {subtitle && (
@@ -229,6 +247,57 @@ export function FilePane({
           )}
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              if (isFilterOpen) {
+                setIsFilterOpen(false);
+                setFilterQuery("");
+              } else {
+                setIsFilterOpen(true);
+              }
+            }}
+            disabled={disabled}
+            title="Filter files"
+            aria-label="Filter files"
+            className={`rounded p-1 hover:bg-[var(--border)] hover:text-white disabled:opacity-30 ${
+              isFilterOpen ? "text-[var(--primary)]" : "text-[var(--text-muted)]"
+            }`}
+          >
+            <Search size={14} />
+          </button>
+          {isFilterOpen && (
+            <div className="relative flex items-center">
+              <input
+                ref={filterInputRef}
+                type="text"
+                autoFocus
+                value={filterQuery}
+                onChange={(e) => setFilterQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setFilterQuery("");
+                    setIsFilterOpen(false);
+                  }
+                }}
+                placeholder="Filter..."
+                aria-label="Filter files by name"
+                className="w-28 rounded border border-[var(--border)] bg-[var(--background)] py-1 pl-2 pr-6 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none sm:w-40"
+              />
+              {filterQuery && (
+                <button
+                  onClick={() => {
+                    setFilterQuery("");
+                    filterInputRef.current?.focus();
+                  }}
+                  title="Clear filter"
+                  aria-label="Clear filter"
+                  className="absolute right-1 rounded p-0.5 text-[var(--text-muted)] hover:text-white"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          )}
           <button
             onClick={() => onNavigate(parentPath(path))}
             disabled={disabled || path === "/" || !path}
@@ -305,6 +374,13 @@ export function FilePane({
         ) : entries.length === 0 ? (
           <div className="flex h-40 items-center justify-center text-xs text-[var(--text-muted)]">
             Empty directory
+          </div>
+        ) : filteredEntries.length === 0 ? (
+          <div className="flex h-40 flex-col items-center justify-center gap-1 text-xs text-[var(--text-muted)]">
+            <Search size={16} className="opacity-50" />
+            <span>
+              No files matching "{filterQuery.trim()}"
+            </span>
           </div>
         ) : (
           <table className="w-full table-fixed text-left text-xs">
