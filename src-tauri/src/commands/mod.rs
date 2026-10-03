@@ -1072,43 +1072,62 @@ pub async fn sftp_write_file(
     state.sftp.write_text_file(&session_id, &path, &content).await
 }
 
-// Local filesystem helpers
+// Local filesystem helpers.
+// These can block on slow disks (network mounts, huge directories), so they
+// run on the blocking pool instead of the main thread to keep the UI alive.
+async fn run_blocking<T, F>(f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    match tauri::async_runtime::spawn_blocking(f).await {
+        Ok(result) => result,
+        Err(e) => Err(format!("Background task failed: {e}")),
+    }
+}
+
 #[tauri::command]
 pub fn local_home_dir() -> String {
     sftp::get_user_home()
 }
 
 #[tauri::command]
-pub fn local_list(path: Option<String>) -> Result<Vec<FileEntry>, String> {
+pub async fn local_list(path: Option<String>) -> Result<Vec<FileEntry>, String> {
     let p = match path {
         Some(s) if !s.trim().is_empty() => Path::new(&s).to_path_buf(),
         _ => Path::new(&sftp::get_user_home()).to_path_buf(),
     };
-    sftp::list_local_directory(&p)
+    run_blocking(move || sftp::list_local_directory(&p)).await
 }
 
 #[tauri::command]
-pub fn local_read_file(path: String) -> Result<String, String> {
-    sftp::read_local_text_file(Path::new(&path))
+pub async fn local_read_file(path: String) -> Result<String, String> {
+    run_blocking(move || sftp::read_local_text_file(Path::new(&path))).await
 }
 
 #[tauri::command]
-pub fn local_write_file(path: String, content: String) -> Result<(), String> {
-    sftp::write_local_text_file(Path::new(&path), &content)
+pub async fn local_write_file(path: String, content: String) -> Result<(), String> {
+    run_blocking(move || sftp::write_local_text_file(Path::new(&path), &content)).await
 }
 
 #[tauri::command]
-pub fn local_mkdir(path: String) -> Result<(), String> {
-    std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create local directory: {e}"))
+pub async fn local_mkdir(path: String) -> Result<(), String> {
+    run_blocking(move || {
+        std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create local directory: {e}"))
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn local_delete(path: String, is_dir: bool) -> Result<(), String> {
-    if is_dir {
-        std::fs::remove_dir_all(&path).map_err(|e| format!("Failed to delete local folder: {e}"))
-    } else {
-        std::fs::remove_file(&path).map_err(|e| format!("Failed to delete local file: {e}"))
-    }
+pub async fn local_delete(path: String, is_dir: bool) -> Result<(), String> {
+    run_blocking(move || {
+        if is_dir {
+            std::fs::remove_dir_all(&path).map_err(|e| format!("Failed to delete local folder: {e}"))
+        } else {
+            std::fs::remove_file(&path).map_err(|e| format!("Failed to delete local file: {e}"))
+        }
+    })
+    .await
 }
 
 // ================= TUNNEL COMMANDS =================
