@@ -43,6 +43,17 @@ impl SftpManager {
         }
     }
 
+    // Clone the handle out of the map so slow IO runs without holding the
+    // manager lock; holding it would serialize every SFTP call behind the
+    // longest-running transfer.
+    async fn connection(&self, session_id: &str) -> Result<Arc<SftpConnection>, String> {
+        let connections = self.connections.lock().await;
+        connections
+            .get(session_id)
+            .cloned()
+            .ok_or_else(|| "SFTP session not found. Please connect first.".to_string())
+    }
+
     pub async fn connect(
         &self,
         db: Arc<Database>,
@@ -119,10 +130,7 @@ impl SftpManager {
     }
 
     pub async fn list(&self, session_id: &str, path: &str) -> Result<Vec<FileEntry>, String> {
-        let connections = self.connections.lock().await;
-        let conn = connections
-            .get(session_id)
-            .ok_or_else(|| "SFTP session not found. Please connect first.".to_string())?;
+        let conn = self.connection(session_id).await?;
 
         let entries = conn
             .sftp
@@ -174,10 +182,7 @@ impl SftpManager {
     }
 
     pub async fn mkdir(&self, session_id: &str, path: &str) -> Result<(), String> {
-        let connections = self.connections.lock().await;
-        let conn = connections
-            .get(session_id)
-            .ok_or_else(|| "SFTP session not found".to_string())?;
+        let conn = self.connection(session_id).await?;
         conn.sftp
             .create_dir(path)
             .await
@@ -185,10 +190,7 @@ impl SftpManager {
     }
 
     pub async fn delete(&self, session_id: &str, path: &str, is_dir: bool) -> Result<(), String> {
-        let connections = self.connections.lock().await;
-        let conn = connections
-            .get(session_id)
-            .ok_or_else(|| "SFTP session not found".to_string())?;
+        let conn = self.connection(session_id).await?;
         if is_dir {
             conn.sftp
                 .remove_dir(path)
@@ -203,10 +205,7 @@ impl SftpManager {
     }
 
     pub async fn rename(&self, session_id: &str, old_path: &str, new_path: &str) -> Result<(), String> {
-        let connections = self.connections.lock().await;
-        let conn = connections
-            .get(session_id)
-            .ok_or_else(|| "SFTP session not found".to_string())?;
+        let conn = self.connection(session_id).await?;
         conn.sftp
             .rename(old_path, new_path)
             .await
@@ -219,10 +218,7 @@ impl SftpManager {
         local_path: &str,
         remote_path: &str,
     ) -> Result<(), String> {
-        let connections = self.connections.lock().await;
-        let conn = connections
-            .get(session_id)
-            .ok_or_else(|| "SFTP session not found".to_string())?;
+        let conn = self.connection(session_id).await?;
 
         let mut local_file = tokio::fs::File::open(local_path)
             .await
@@ -269,10 +265,7 @@ impl SftpManager {
         remote_path: &str,
         local_path: &str,
     ) -> Result<(), String> {
-        let connections = self.connections.lock().await;
-        let conn = connections
-            .get(session_id)
-            .ok_or_else(|| "SFTP session not found".to_string())?;
+        let conn = self.connection(session_id).await?;
 
         let mut remote_file = conn
             .sftp
@@ -311,10 +304,7 @@ impl SftpManager {
         session_id: &str,
         remote_path: &str,
     ) -> Result<String, String> {
-        let connections = self.connections.lock().await;
-        let conn = connections
-            .get(session_id)
-            .ok_or_else(|| "SFTP session not found".to_string())?;
+        let conn = self.connection(session_id).await?;
 
         let metadata = conn
             .sftp
@@ -349,10 +339,7 @@ impl SftpManager {
         remote_path: &str,
         content: &str,
     ) -> Result<(), String> {
-        let connections = self.connections.lock().await;
-        let conn = connections
-            .get(session_id)
-            .ok_or_else(|| "SFTP session not found".to_string())?;
+        let conn = self.connection(session_id).await?;
 
         let mut file = conn
             .sftp

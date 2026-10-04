@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, memo, useEffect } from "react";
+import { useState, useCallback, useMemo, memo, useEffect, useRef } from "react";
 import {
   Folder,
   File,
@@ -13,10 +13,13 @@ import {
   ArrowDown,
   Copy,
   Check,
+  Search,
+  X,
 } from "lucide-react";
 import { FileEntry } from "../../lib/api";
 import { formatBytes, formatDate, parentPath } from "../../lib/format";
 import { useConfirmStore } from "../../stores/useConfirmStore";
+import { SelectMods } from "../../stores/useSftpStore";
 
 interface FilePaneProps {
   title: string;
@@ -24,19 +27,30 @@ interface FilePaneProps {
   path: string;
   entries: FileEntry[];
   loading: boolean;
-  selectedFile: FileEntry | null;
-  onSelect: (entry: FileEntry | null) => void;
+  selectedFiles: FileEntry[];
+  /** Row click with modifier keys; orderedEntries is the visible sorted list for shift-range */
+  onSelect: (entry: FileEntry, mods: SelectMods, orderedEntries: FileEntry[]) => void;
+  onSelectionReplace: (entries: FileEntry[]) => void;
+  onClearSelection: () => void;
+  onSelectAll: (entries: FileEntry[]) => void;
   onNavigate: (path: string) => void;
   onCreateFolder: (name: string) => Promise<void>;
-  onDeleteItem: (entry: FileEntry) => Promise<void>;
+  onDeleteItems: (entries: FileEntry[]) => Promise<void>;
   onRefresh: () => void;
   onOpenFile?: (entry: FileEntry) => void;
   disabled?: boolean;
-  onTransfer?: (entry: FileEntry) => void;
+  onTransfer?: (entries: FileEntry[]) => void;
 }
 
 type SortKey = "name" | "size" | "modified" | "kind";
 type SortDir = "asc" | "desc";
+
+// Fixed row height and a shared grid template keep the virtual window math
+// exact; rows only participate in layout for the visible slice.
+const ROW_HEIGHT = 30;
+const GRID_COLS =
+  "grid grid-cols-[minmax(0,1fr)_5rem_8rem_5rem_2rem] items-center";
+const OVERSCAN_ROWS = 8;
 
 function SortHeaderCell({
   label,
@@ -55,13 +69,14 @@ function SortHeaderCell({
 }) {
   const isActive = sortKey === columnKey;
   return (
-    <th
-      className={`cursor-pointer py-1.5 select-none transition-colors hover:text-[var(--text-primary)] ${
+    <div
+      role="columnheader"
+      aria-sort={isActive ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+      title={`Sort by ${label.toLowerCase()}`}
+      onClick={() => onSort(columnKey)}
+      className={`cursor-pointer select-none transition-colors hover:text-[var(--text-primary)] ${
         className ?? ""
       }`}
-      onClick={() => onSort(columnKey)}
-      title={`Sort by ${label.toLowerCase()}`}
-      aria-sort={isActive ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
     >
       <span className="inline-flex items-center gap-1">
         {label}
@@ -72,21 +87,24 @@ function SortHeaderCell({
             <ArrowDown size={10} className="text-[var(--primary)]" />
           ))}
       </span>
-    </th>
+    </div>
   );
 }
 
-export function FilePane({
+export const FilePane = memo(function FilePane({
   title,
   subtitle,
   path,
   entries,
   loading,
-  selectedFile,
+  selectedFiles,
   onSelect,
+  onSelectionReplace,
+  onClearSelection,
+  onSelectAll,
   onNavigate,
   onCreateFolder,
-  onDeleteItem,
+  onDeleteItems,
   onRefresh,
   onOpenFile,
   disabled = false,
@@ -106,6 +124,38 @@ export function FilePane({
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [filterQuery, setFilterQuery] = useState("");
+  const filterInputRef = useRef<HTMLInputElement>(null);
+  const paneRef = useRef<HTMLDivElement>(null);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(600);
+
+  // Filter hanya berlaku untuk listing tempat ia diketik, jadi buang saat pindah direktori.
+  // Scroll ikut di-reset karena pane tidak lagi di-unmount saat loading data baru.
+  useEffect(() => {
+    setFilterQuery("");
+    setIsFilterOpen(false);
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
+    }
+    setScrollTop(0);
+  }, [path]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setViewportHeight(el.clientHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  }, []);
+
   const handleSortClick = useCallback(
     (key: SortKey) => {
       if (key === sortKey) {
@@ -118,6 +168,12 @@ export function FilePane({
     [sortKey]
   );
 
+  const filteredEntries = useMemo(() => {
+    const q = filterQuery.trim().toLowerCase();
+    if (!q) return entries;
+    return entries.filter((e) => e.name.toLowerCase().includes(q));
+  }, [entries, filterQuery]);
+
   const sortedEntries = useMemo(() => {
     const byName = (a: FileEntry, b: FileEntry) =>
       a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
@@ -128,12 +184,25 @@ export function FilePane({
       kind: (a, b) => (a.is_dir === b.is_dir ? 0 : a.is_dir ? -1 : 1) || byName(a, b),
     };
     const dir = sortDir === "asc" ? 1 : -1;
-    return [...entries].sort((a, b) => {
+    return [...filteredEntries].sort((a, b) => {
       // Folders always listed before files, except when sorting by Kind itself
       if (sortKey !== "kind" && a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
       return comparators[sortKey](a, b) * dir;
     });
-  }, [entries, sortKey, sortDir]);
+  }, [filteredEntries, sortKey, sortDir]);
+
+  const selectedPaths = useMemo(
+    () => new Set(selectedFiles.map((f) => f.path)),
+    [selectedFiles]
+  );
+
+  // Keep the latest values in refs so the row callbacks below can stay
+  // identity-stable. FileRow is memoized on handler identity, so rebuilding
+  // these per keystroke or selection change would re-render all visible rows.
+  const orderedRef = useRef(sortedEntries);
+  orderedRef.current = sortedEntries;
+  const selectedPathsRef = useRef(selectedPaths);
+  selectedPathsRef.current = selectedPaths;
 
   const showCopyToast = useCallback((msg: string) => {
     setCopyToast(msg);
@@ -142,23 +211,65 @@ export function FilePane({
     }, 1800);
   }, []);
 
-  const handleEntryContextMenu = useCallback((e: React.MouseEvent, entry: FileEntry) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const x = Math.min(e.clientX, window.innerWidth - 220);
-    const y = Math.min(e.clientY, window.innerHeight - 260);
-    setContextMenu({ x, y, type: "entry", entry });
-  }, []);
+  const handleEntryContextMenu = useCallback(
+    (e: React.MouseEvent, entry: FileEntry) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // Native behavior: right-clicking an unselected item selects just it
+      if (!selectedPathsRef.current.has(entry.path)) {
+        onSelectionReplace([entry]);
+      }
+      const x = Math.min(e.clientX, window.innerWidth - 220);
+      const y = Math.min(e.clientY, window.innerHeight - 260);
+      setContextMenu({ x, y, type: "entry", entry });
+    },
+    [onSelectionReplace]
+  );
 
   const handlePaneContextMenu = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     // Only trigger on pane background (not on file rows which have their own handler)
-    if (target.closest("tbody")) return;
+    if (target.closest("[data-file-row]")) return;
     e.preventDefault();
     const x = Math.min(e.clientX, window.innerWidth - 220);
     const y = Math.min(e.clientY, window.innerHeight - 200);
     setContextMenu({ x, y, type: "background" });
   }, []);
+
+  // Click on empty pane area (outside rows/header) clears the selection
+  const handlePaneClick = useCallback(
+    (e: React.MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("[data-file-row]") || target.closest("[data-file-header]")) return;
+      onClearSelection();
+    },
+    [onClearSelection]
+  );
+
+  // Finder-style keyboard shortcuts, scoped to the pane that has focus
+  const handlePaneKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        onSelectAll(orderedRef.current);
+      } else if (e.key === "Escape") {
+        if (contextMenu) {
+          setContextMenu(null);
+          return;
+        }
+        onClearSelection();
+      }
+    },
+    [contextMenu, onClearSelection, onSelectAll]
+  );
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -183,21 +294,44 @@ export function FilePane({
   }
 
   const handleDeleteClick = useCallback(
-    (e: React.MouseEvent, entry: FileEntry) => {
+    (e: React.MouseEvent, targets: FileEntry[]) => {
       e.stopPropagation();
+      const single = targets.length === 1;
+      const first = targets[0];
+      const subject = single ? `"${first.name}"` : `${targets.length} selected items`;
       useConfirmStore.getState().confirm({
-        title: entry.is_dir ? "Delete Folder" : "Delete File",
-        message: `Are you sure you want to delete "${entry.name}"${
-          entry.is_dir ? " and everything inside it" : ""
+        title: single
+          ? first.is_dir
+            ? "Delete Folder"
+            : "Delete File"
+          : `Delete ${targets.length} Items`,
+        message: `Are you sure you want to delete ${subject}${
+          single && first.is_dir ? " and everything inside it" : ""
         }? This action cannot be undone.`,
         confirmLabel: "Delete",
         isDanger: true,
         onConfirm: async () => {
-          await onDeleteItem(entry);
+          await onDeleteItems(targets);
         },
       });
     },
-    [onDeleteItem]
+    [onDeleteItems]
+  );
+
+  const handleRowClick = useCallback(
+    (entry: FileEntry, mods: SelectMods) => {
+      paneRef.current?.focus({ preventScroll: true });
+      onSelect(entry, mods, orderedRef.current);
+    },
+    [onSelect]
+  );
+
+  // Stable adapter: the row-level trash button always deletes a single entry
+  const handleRowDeleteClick = useCallback(
+    (e: React.MouseEvent, entry: FileEntry) => {
+      handleDeleteClick(e, [entry]);
+    },
+    [handleDeleteClick]
   );
 
   const handleRowDoubleClick = useCallback(
@@ -211,24 +345,114 @@ export function FilePane({
     [onNavigate, onOpenFile]
   );
 
+  // Items the entry context menu acts on. Right-click already ensured the
+  // clicked entry is part of the selection, so this is the selection itself.
+  const menuTargets =
+    contextMenu?.type === "entry" && contextMenu.entry
+      ? selectedPaths.has(contextMenu.entry.path) && selectedFiles.length > 0
+        ? selectedFiles
+        : [contextMenu.entry]
+      : [];
+  const multiMenu = menuTargets.length > 1;
+  const isLocalPane = title === "Local Machine";
+  const transferLabel = multiMenu
+    ? `${isLocalPane ? "Upload" : "Download"} ${menuTargets.length} Selected`
+    : isLocalPane
+      ? "Upload to Remote"
+      : "Download to Local";
+
+  // Virtual window: only rows intersecting the viewport (+ overscan) mount,
+  // which is what keeps directories with thousands of entries responsive.
+  const totalRows = sortedEntries.length;
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS);
+  const endIdx = Math.min(
+    totalRows,
+    Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN_ROWS
+  );
+  const visibleRows = sortedEntries.slice(startIdx, endIdx);
+
   return (
     <div
+      ref={paneRef}
+      tabIndex={-1}
+      onKeyDown={handlePaneKeyDown}
       onContextMenu={handlePaneContextMenu}
-      className="flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--sidebar)]"
+      className="flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--sidebar)] outline-none"
     >
       {/* Pane Header */}
       <div className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--card)] px-3 py-2">
-        <div className="min-w-0">
-          <div className="text-xs font-semibold text-[var(--text-primary)]">
-            {title}
-          </div>
-          {subtitle && (
-            <div className="truncate text-[10px] text-[var(--text-muted)]">
-              {subtitle}
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="min-w-0">
+            <div className="truncate text-xs font-semibold text-[var(--text-primary)]">
+              {title}
             </div>
+            {subtitle && (
+              <div className="truncate text-[10px] text-[var(--text-muted)]">
+                {subtitle}
+              </div>
+            )}
+          </div>
+          {selectedFiles.length > 1 && (
+            <span
+              className="shrink-0 rounded-full bg-[var(--primary)]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[var(--primary)]"
+              title={`${selectedFiles.length} items selected (⌘/Ctrl+A to select all, Esc to clear)`}
+            >
+              {selectedFiles.length} selected
+            </span>
           )}
         </div>
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              if (isFilterOpen) {
+                setIsFilterOpen(false);
+                setFilterQuery("");
+              } else {
+                setIsFilterOpen(true);
+              }
+            }}
+            disabled={disabled}
+            title="Filter files"
+            aria-label="Filter files"
+            className={`rounded p-1 hover:bg-[var(--border)] hover:text-white disabled:opacity-30 ${
+              isFilterOpen ? "text-[var(--primary)]" : "text-[var(--text-muted)]"
+            }`}
+          >
+            <Search size={14} />
+          </button>
+          {isFilterOpen && (
+            <div className="relative flex items-center">
+              <input
+                ref={filterInputRef}
+                type="text"
+                autoFocus
+                value={filterQuery}
+                onChange={(e) => setFilterQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setFilterQuery("");
+                    setIsFilterOpen(false);
+                  }
+                }}
+                placeholder="Filter..."
+                aria-label="Filter files by name"
+                className="w-28 rounded border border-[var(--border)] bg-[var(--background)] py-1 pl-2 pr-6 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none sm:w-40"
+              />
+              {filterQuery && (
+                <button
+                  onClick={() => {
+                    setFilterQuery("");
+                    filterInputRef.current?.focus();
+                  }}
+                  title="Clear filter"
+                  aria-label="Clear filter"
+                  className="absolute right-1 rounded p-0.5 text-[var(--text-muted)] hover:text-white"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          )}
           <button
             onClick={() => onNavigate(parentPath(path))}
             disabled={disabled || path === "/" || !path}
@@ -291,8 +515,13 @@ export function FilePane({
         </form>
       )}
 
-      {/* File Table */}
-      <div className="flex-1 overflow-y-auto">
+      {/* File List */}
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto"
+        onClick={handlePaneClick}
+        onScroll={handleScroll}
+      >
         {loading ? (
           <div className="flex h-40 items-center justify-center text-xs text-[var(--text-muted)]">
             <Loader2 size={18} className="animate-spin mr-2 text-[var(--accent)]" />
@@ -306,60 +535,80 @@ export function FilePane({
           <div className="flex h-40 items-center justify-center text-xs text-[var(--text-muted)]">
             Empty directory
           </div>
+        ) : filteredEntries.length === 0 ? (
+          <div className="flex h-40 flex-col items-center justify-center gap-1 text-xs text-[var(--text-muted)]">
+            <Search size={16} className="opacity-50" />
+            <span>
+              No files matching "{filterQuery.trim()}"
+            </span>
+          </div>
         ) : (
-          <table className="w-full table-fixed text-left text-xs">
-            <thead className="sticky top-0 bg-[var(--sidebar)] text-[10px] uppercase text-[var(--text-muted)] border-b border-[var(--border)]">
-              <tr>
-                <SortHeaderCell
-                  label="Name"
-                  columnKey="name"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={handleSortClick}
-                  className="pl-3"
-                />
-                <SortHeaderCell
-                  label="Size"
-                  columnKey="size"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={handleSortClick}
-                  className="pr-2 w-20 text-right"
-                />
-                <SortHeaderCell
-                  label="Modified"
-                  columnKey="modified"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={handleSortClick}
-                  className="pr-3 w-32 text-right"
-                />
-                <SortHeaderCell
-                  label="Kind"
-                  columnKey="kind"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={handleSortClick}
-                  className="pr-2 w-20 text-right"
-                />
-                <th className="py-1.5 pr-2 w-8"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedEntries.map((entry) => (
-                <FileRow
-                  key={entry.path}
-                  entry={entry}
-                  isSelected={selectedFile?.path === entry.path}
-                  onSelect={onSelect}
-                  onDoubleClick={handleRowDoubleClick}
-                  onOpenFile={onOpenFile}
-                  onDelete={handleDeleteClick}
-                  onContextMenu={handleEntryContextMenu}
-                />
-              ))}
-            </tbody>
-          </table>
+          <div role="grid" aria-rowcount={totalRows} className="w-full text-xs">
+            <div
+              role="row"
+              data-file-header=""
+              className={`sticky top-0 z-10 h-8 border-b border-[var(--border)] bg-[var(--sidebar)] text-[10px] uppercase text-[var(--text-muted)] ${GRID_COLS}`}
+            >
+              <SortHeaderCell
+                label="Name"
+                columnKey="name"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSortClick}
+                className="pl-3"
+              />
+              <SortHeaderCell
+                label="Size"
+                columnKey="size"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSortClick}
+                className="pr-2 text-right"
+              />
+              <SortHeaderCell
+                label="Modified"
+                columnKey="modified"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSortClick}
+                className="pr-3 text-right"
+              />
+              <SortHeaderCell
+                label="Kind"
+                columnKey="kind"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSortClick}
+                className="pr-2 text-right"
+              />
+              <div role="columnheader" />
+            </div>
+            <div role="presentation" style={{ height: totalRows * ROW_HEIGHT, position: "relative" }}>
+              <div
+                role="presentation"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  transform: `translateY(${startIdx * ROW_HEIGHT}px)`,
+                }}
+              >
+                {visibleRows.map((entry) => (
+                  <FileRow
+                    key={entry.path}
+                    entry={entry}
+                    isSelected={selectedPaths.has(entry.path)}
+                    onSelect={handleRowClick}
+                    onDoubleClick={handleRowDoubleClick}
+                    onOpenFile={onOpenFile}
+                    onDelete={handleRowDeleteClick}
+                    onContextMenu={handleEntryContextMenu}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
@@ -395,31 +644,39 @@ export function FilePane({
                 )}
               </button>
 
-              {/* Transfer (Upload / Download) */}
-              {onTransfer && !contextMenu.entry.is_dir && (
+              {/* Transfer (Upload / Download), works for files and folders */}
+              {onTransfer && (
                 <button
                   onClick={() => {
-                    onTransfer(contextMenu.entry!);
+                    onTransfer(menuTargets);
                     setContextMenu(null);
                   }}
                   className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
                 >
                   <ArrowRight size={13} />
-                  <span>{title === "Local Machine" ? "Upload to Remote" : "Download to Local"}</span>
+                  <span>{transferLabel}</span>
                 </button>
               )}
 
-              {/* Copy Path */}
+              {/* Copy Path(s) */}
               <button
                 onClick={async () => {
-                  await navigator.clipboard.writeText(contextMenu.entry!.path);
-                  showCopyToast("Copied file path");
+                  const value =
+                    menuTargets.length > 1
+                      ? menuTargets.map((t) => t.path).join("\n")
+                      : menuTargets[0]?.path ?? "";
+                  await navigator.clipboard.writeText(value);
+                  showCopyToast(
+                    menuTargets.length > 1
+                      ? `Copied ${menuTargets.length} paths`
+                      : "Copied file path"
+                  );
                   setContextMenu(null);
                 }}
                 className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
               >
                 <Copy size={13} />
-                <span>Copy Path</span>
+                <span>{multiMenu ? `Copy ${menuTargets.length} Paths` : "Copy Path"}</span>
               </button>
 
               <div className="my-1 h-[1px] bg-[var(--border)]" />
@@ -427,13 +684,19 @@ export function FilePane({
               {/* Delete */}
               <button
                 onClick={(e) => {
-                  handleDeleteClick(e, contextMenu.entry!);
+                  handleDeleteClick(e, menuTargets);
                   setContextMenu(null);
                 }}
                 className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group"
               >
                 <Trash2 size={13} />
-                <span>{contextMenu.entry.is_dir ? "Delete Folder" : "Delete File"}</span>
+                <span>
+                  {multiMenu
+                    ? `Delete ${menuTargets.length} Items`
+                    : contextMenu.entry.is_dir
+                      ? "Delete Folder"
+                      : "Delete File"}
+                </span>
               </button>
             </>
           ) : (
@@ -449,6 +712,19 @@ export function FilePane({
               >
                 <FolderPlus size={13} />
                 <span>New Folder</span>
+              </button>
+
+              {/* Select All */}
+              <button
+                onClick={() => {
+                  onSelectAll(sortedEntries);
+                  setContextMenu(null);
+                }}
+                disabled={disabled || sortedEntries.length === 0}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <Check size={13} />
+                <span>Select All</span>
               </button>
 
               {/* Refresh */}
@@ -491,22 +767,20 @@ export function FilePane({
       )}
     </div>
   );
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// MEMOIZED FILE ROW COMPONENT (High performance in directories with 1000+ items)
-// ══════════════════════════════════════════════════════════════════════════════
+});
 
 interface FileRowProps {
   entry: FileEntry;
   isSelected: boolean;
-  onSelect: (entry: FileEntry) => void;
+  onSelect: (entry: FileEntry, mods: SelectMods) => void;
   onDoubleClick: (entry: FileEntry) => void;
   onOpenFile?: (entry: FileEntry) => void;
   onDelete: (e: React.MouseEvent, entry: FileEntry) => void;
   onContextMenu?: (e: React.MouseEvent, entry: FileEntry) => void;
 }
 
+// Rows are memoized on handler identity; keep the callbacks passed in stable
+// or the whole visible window re-renders on every interaction.
 const FileRow = memo(function FileRow({
   entry,
   isSelected,
@@ -517,34 +791,38 @@ const FileRow = memo(function FileRow({
   onContextMenu,
 }: FileRowProps) {
   return (
-    <tr
-      onClick={() => onSelect(entry)}
+    <div
+      role="row"
+      data-file-row=""
+      onClick={(e) =>
+        onSelect(entry, { shift: e.shiftKey, mod: e.metaKey || e.ctrlKey })
+      }
       onDoubleClick={() => onDoubleClick(entry)}
       onContextMenu={(e) => onContextMenu?.(e, entry)}
-      className={`group cursor-pointer select-none transition-colors border-b border-[var(--border)]/30 ${
+      className={`group ${GRID_COLS} h-[30px] cursor-pointer select-none border-b border-[var(--border)]/30 transition-colors ${
         isSelected
           ? "bg-[var(--accent)]/20 text-[var(--text-primary)]"
           : "hover:bg-[var(--card)] text-[var(--text-primary)]"
       }`}
     >
-      <td className="py-1.5 pl-3 flex min-w-0 items-center gap-2">
+      <div role="gridcell" className="flex min-w-0 items-center gap-2 pl-3">
         {entry.is_dir ? (
           <Folder size={14} className="shrink-0 text-[var(--accent)]" />
         ) : (
           <File size={14} className="shrink-0 text-[var(--text-muted)]" />
         )}
         <span className="truncate">{entry.name}</span>
-      </td>
-      <td className="py-1.5 pr-2 text-right text-[11px] text-[var(--text-muted)]">
+      </div>
+      <div role="gridcell" className="pr-2 text-right text-[11px] text-[var(--text-muted)]">
         {entry.is_dir ? "-" : formatBytes(entry.size)}
-      </td>
-      <td className="py-1.5 pr-3 text-right text-[11px] text-[var(--text-muted)]">
+      </div>
+      <div role="gridcell" className="pr-3 text-right text-[11px] text-[var(--text-muted)]">
         {formatDate(entry.modified)}
-      </td>
-      <td className="py-1.5 pr-2 text-right text-[11px] text-[var(--text-muted)]">
+      </div>
+      <div role="gridcell" className="pr-2 text-right text-[11px] text-[var(--text-muted)]">
         {entry.is_dir ? "Folder" : "File"}
-      </td>
-      <td className="py-1.5 pr-2 text-right">
+      </div>
+      <div role="gridcell" className="pr-2 text-right">
         <div className="flex items-center justify-end gap-1">
           {!entry.is_dir && onOpenFile && (
             <button
@@ -566,7 +844,7 @@ const FileRow = memo(function FileRow({
             <Trash2 size={12} />
           </button>
         </div>
-      </td>
-    </tr>
+      </div>
+    </div>
   );
 });
