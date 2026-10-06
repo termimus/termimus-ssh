@@ -375,6 +375,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
               sessionId={tab.id}
               hostId={tab.hostId}
               visible={visible && isTabActive}
+              isFocused={isFocused && isTabActive}
             />
           );
         })}

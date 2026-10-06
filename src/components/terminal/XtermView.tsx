@@ -34,6 +34,7 @@ interface XtermViewProps {
   sessionId: string;
   hostId: string;
   visible: boolean;
+  isFocused?: boolean;
 }
 
 interface SshProgressEvent {
@@ -53,6 +54,7 @@ interface TerminalSessionEntry {
   unlistenFns: Array<() => void>;
   dataDisposable: { dispose: () => void };
   lastSize: { cols: number; rows: number };
+  lastPixelSize?: { width: number; height: number };
   // Keyword highlighting (decoration overlays — never touches the buffer).
   highlighter: TerminalHighlighter | null;
   // Persist connection progress state across remounts so logs are never lost
@@ -349,7 +351,7 @@ export function disposeTerminalSession(sessionId: string) {
   terminalPool.delete(sessionId);
 }
 
-export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
+export function XtermView({ sessionId, hostId, visible, isFocused = true }: XtermViewProps) {
   const themeId = useTerminalThemeStore((s) => s.themeId);
   const currentTheme = getTerminalTheme(themeId);
   const themeBg = currentTheme.xterm.background ?? "#0a0e14";
@@ -540,16 +542,7 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
       fitAddonRef.current = entry.fitAddon;
       searchAddonRef.current = entry.searchAddon;
       lastSizeRef.current = entry.lastSize;
-      // Appearance may have changed while unmounted — re-apply (no reconnect).
-      try {
-        applyAppearanceToEntry(entry, sessionId);
-      } catch {
-        // ignore
-      }
-      setIsConnected(entry.hasConnected);
-      setLogs([...entry.connectionLogs]);
-      setCurrentStep(entry.connectionStep);
-      setConnectionError(entry.connectionError);
+
       bindTerminalShortcuts(
         entry.term,
         entry.fitAddon,
@@ -720,6 +713,10 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
         unlistenFns,
         dataDisposable,
         lastSize: { cols: initialCols, rows: initialRows },
+        lastPixelSize: {
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
+        },
         connectionLogs: [],
         connectionStep: 1,
         connectionError: null,
@@ -757,6 +754,9 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
           const rows = termRef.current.rows;
 
           if (cols >= 20 && rows >= 5) {
+            if (entry) {
+              entry.lastPixelSize = { width, height };
+            }
             if (
               lastSizeRef.current.cols !== cols ||
               lastSizeRef.current.rows !== rows
@@ -790,40 +790,57 @@ export function XtermView({ sessionId, hostId, visible }: XtermViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  // When tab becomes visible again after switching from another tab or view
+  // When tab becomes visible/focused after switching from another tab or view
   useEffect(() => {
-    if (!visible || !termRef.current || !fitAddonRef.current || !containerRef.current) return;
+    if (!visible || !termRef.current) return;
 
-    const timer = setTimeout(() => {
+    // Immediately focus active terminal without artificial delay
+    if (isFocused) {
+      termRef.current.focus();
+    }
+
+    // Check if container geometry changed while hidden (e.g. window resized while on another tab)
+    const frame = requestAnimationFrame(() => {
       if (!containerRef.current || !termRef.current || !fitAddonRef.current) return;
       const width = containerRef.current.clientWidth;
       const height = containerRef.current.clientHeight;
       if (width < 100 || height < 100) return;
+
+      const entry = terminalPool.get(sessionId);
+      if (
+        entry &&
+        entry.lastPixelSize &&
+        entry.lastPixelSize.width === width &&
+        entry.lastPixelSize.height === height
+      ) {
+        // Pixel dimensions unchanged — terminal buffer is already rendered and valid
+        return;
+      }
 
       try {
         fitAddonRef.current.fit();
         const cols = termRef.current.cols;
         const rows = termRef.current.rows;
         if (cols >= 20 && rows >= 5) {
+          if (entry) {
+            entry.lastPixelSize = { width, height };
+          }
           if (
             lastSizeRef.current.cols !== cols ||
             lastSizeRef.current.rows !== rows
           ) {
             lastSizeRef.current = { cols, rows };
-            const entry = terminalPool.get(sessionId);
             if (entry) entry.lastSize = { cols, rows };
             (isLocal ? api.resizeLocalPty : api.resizeSsh)(sessionId, cols, rows).catch(() => {});
           }
         }
-        termRef.current.refresh(0, termRef.current.rows - 1);
-        termRef.current.focus();
       } catch {
         // ignore
       }
-    }, 40);
+    });
 
-    return () => clearTimeout(timer);
-  }, [visible, sessionId]);
+    return () => cancelAnimationFrame(frame);
+  }, [visible, isFocused, sessionId, isLocal]);
 
   // React to theme/font/highlight changes from Settings without reconnecting.
   useEffect(() => {

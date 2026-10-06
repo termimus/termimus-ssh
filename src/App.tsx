@@ -49,11 +49,12 @@ function App() {
   const [activeNav, setActiveNav] = useState<ActiveTab>("hosts");
   const [visitedTabs, setVisitedTabs] = useState<Set<ActiveTab>>(() => new Set(["hosts"]));
 
-  const { isUnlocked, refresh: refreshVault } = useVaultStore();
-  const { refresh: refreshHosts } = useHostStore();
-  const { refresh: refreshKeychain } = useKeychainStore();
-  const { activeTabId, activeGroupId, tabs } = useSessionStore();
-  const prevTabsCountRef = useRef(tabs.length);
+  const isUnlocked = useVaultStore((s) => s.isUnlocked);
+  const refreshVault = useVaultStore((s) => s.refresh);
+  const refreshHosts = useHostStore((s) => s.refresh);
+  const refreshKeychain = useKeychainStore((s) => s.refresh);
+  const tabsCount = useSessionStore((s) => s.tabs.length);
+  const prevTabsCountRef = useRef(tabsCount);
 
   const handleNavChange = useCallback((tab: ActiveTab) => {
     setActiveNav(tab);
@@ -64,6 +65,14 @@ function App() {
       return next;
     });
   }, []);
+
+  const openHosts = useCallback(() => handleNavChange("hosts"), [handleNavChange]);
+  const openTerminal = useCallback(() => handleNavChange("terminal"), [handleNavChange]);
+  const openSftp = useCallback(() => handleNavChange("sftp"), [handleNavChange]);
+  const openTunnels = useCallback(() => handleNavChange("tunnels"), [handleNavChange]);
+  const openWorkspaces = useCallback(() => handleNavChange("workspaces"), [handleNavChange]);
+  const openKeychain = useCallback(() => handleNavChange("keychain"), [handleNavChange]);
+  const openSettings = useCallback(() => handleNavChange("settings"), [handleNavChange]);
 
   // Active auto-lock watcher based on user settings (idle timer, focus loss, on-close).
   useAutoLock();
@@ -96,20 +105,17 @@ function App() {
     }
   }, [isUnlocked, refreshHosts, refreshKeychain]);
 
-  // When a new tab/group is opened, automatically switch to the terminal view
+  // When a new tab/session is opened, switch to the terminal view;
+  // when all tabs close, automatically return to hosts view.
+  // Note: Only tracks tabsCount changes, so switching active tabs causes ZERO App re-renders.
   useEffect(() => {
-    if (activeGroupId || activeTabId) {
+    if (tabsCount > prevTabsCountRef.current) {
       handleNavChange("terminal");
-    }
-  }, [activeGroupId, activeTabId, handleNavChange]);
-
-  // When all terminal tabs have been closed (e.g. via Ctrl+D or exit), return to hosts view
-  useEffect(() => {
-    if (prevTabsCountRef.current > 0 && tabs.length === 0 && activeNav === "terminal") {
+    } else if (prevTabsCountRef.current > 0 && tabsCount === 0 && activeNav === "terminal") {
       handleNavChange("hosts");
     }
-    prevTabsCountRef.current = tabs.length;
-  }, [tabs.length, activeNav, handleNavChange]);
+    prevTabsCountRef.current = tabsCount;
+  }, [tabsCount, activeNav, handleNavChange]);
 
   // Disable default browser context menu across the app (sidebar, empty areas, cards).
   // Dedicated custom context menus (Terminal in XtermView, Tabs in Header) handle their own events.
@@ -135,9 +141,9 @@ function App() {
       {/* Top Unified Frameless Window Bar (Termius-style: Menu + Tabs + Window Controls) */}
       <Header
         activeNav={activeNav}
-        onGoHome={() => handleNavChange("hosts")}
-        onSelectTab={() => handleNavChange("terminal")}
-        onOpenSyncSettings={() => handleNavChange("settings")}
+        onGoHome={openHosts}
+        onSelectTab={openTerminal}
+        onOpenSyncSettings={openSettings}
         isTerminalActive={showTerminal}
       />
 
@@ -157,7 +163,7 @@ function App() {
               preventing bogus SIGWINCH resize events (which breaks htop/curses TUIs). */}
           <TerminalWorkspace
             visible={showTerminal}
-            onOpenWorkspaces={() => handleNavChange("workspaces")}
+            onOpenWorkspaces={openWorkspaces}
           />
 
           {/* Lazy-mounted Native-Grade Keep-Alive Views:
@@ -166,16 +172,16 @@ function App() {
               and inputs/folder drill-downs stay intact. */}
           {visitedTabs.has("workspaces") && (
             <PageView active={activeNav === "workspaces"}>
-              <WorkspaceView onOpenTerminal={() => handleNavChange("terminal")} />
+              <WorkspaceView onOpenTerminal={openTerminal} />
             </PageView>
           )}
 
           {visitedTabs.has("hosts") && (
             <PageView active={activeNav === "hosts"}>
               <HostList
-                onOpenTerminal={() => handleNavChange("terminal")}
-                onOpenSftp={() => handleNavChange("sftp")}
-                onOpenTunnels={() => handleNavChange("tunnels")}
+                onOpenTerminal={openTerminal}
+                onOpenSftp={openSftp}
+                onOpenTunnels={openTunnels}
               />
             </PageView>
           )}
@@ -216,7 +222,7 @@ function App() {
       {!isUnlocked && <VaultModal />}
 
       {/* Host Create/Edit Modal */}
-      <HostModal onOpenKeychain={() => handleNavChange("keychain")} />
+      <HostModal onOpenKeychain={openKeychain} />
 
       {/* Snippet Create/Edit Modal */}
       <SnippetModal />

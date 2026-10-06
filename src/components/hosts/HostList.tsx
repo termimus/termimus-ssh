@@ -54,17 +54,30 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
     openCreateFolderModal,
     openEditFolderModal,
     deleteFolder,
-  } = useHostStore();
+  } = useHostStore(
+    useShallow((s) => ({
+      hosts: s.hosts,
+      folders: s.folders,
+      searchQuery: s.searchQuery,
+      setSearchQuery: s.setSearchQuery,
+      openCreateModal: s.openCreateModal,
+      openDuplicateModal: s.openDuplicateModal,
+      openEditModal: s.openEditModal,
+      deleteHost: s.deleteHost,
+      openCreateFolderModal: s.openCreateFolderModal,
+      openEditFolderModal: s.openEditFolderModal,
+      deleteFolder: s.deleteFolder,
+    }))
+  );
 
-  const { openSession, openSessionInSplit, tabs, activePaneId } = useSessionStore(
+  const { openSession, openSessionInSplit, tabs } = useSessionStore(
     useShallow((s) => ({
       openSession: s.openSession,
       openSessionInSplit: s.openSessionInSplit,
       tabs: s.tabs,
-      activePaneId: s.activePaneId,
     }))
   );
-  const { connectRemote } = useSftpStore();
+  const connectRemote = useSftpStore((s) => s.connectRemote);
   const { pingAll, statusByHostId } = usePingStore(
     useShallow((s) => ({ pingAll: s.pingAll, statusByHostId: s.statusByHostId }))
   );
@@ -255,10 +268,10 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
         return;
       }
       onOpenTerminal?.();
-      const targetPane = activePaneId ?? "root";
+      const targetPane = useSessionStore.getState().activePaneId ?? "root";
       openSessionInSplit(host, targetPane, direction);
     },
-    [onOpenTerminal, openSessionInSplit, activePaneId]
+    [onOpenTerminal, openSessionInSplit]
   );
 
   const handleSftpClick = useCallback(

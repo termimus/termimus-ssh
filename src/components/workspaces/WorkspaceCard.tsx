@@ -142,9 +142,9 @@ export function WorkspaceCard({
   onDelete,
   onContextMenu,
 }: WorkspaceCardProps) {
-  const { hosts } = useHostStore();
-  const { statusByHostId } = usePingStore();
-  const { confirm } = useConfirmStore();
+  const hosts = useHostStore((s) => s.hosts);
+  const statusByHostId = usePingStore((s) => s.statusByHostId);
+  const confirm = useConfirmStore((s) => s.confirm);
   const [isLaunching, setIsLaunching] = useState(false);
 
   const layoutMeta = getLayoutMeta(preset.layout);
