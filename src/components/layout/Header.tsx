@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
-  PanelLeftClose,
-  PanelLeftOpen,
+  Home,
   PanelRightClose,
   PanelRightOpen,
   Braces,
@@ -28,6 +27,7 @@ import { useSyncStore } from "../../stores/useSyncStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { getAllSessionIdsInTree, getAllLeafPanes } from "../../lib/layoutTree";
 import { QuickConnectModal } from "./QuickConnectModal";
+import { ActiveTab } from "./Sidebar";
 
 const appWindow = getCurrentWindow();
 
@@ -45,17 +45,17 @@ function checkIsMac(): boolean {
 }
 
 interface HeaderProps {
+  activeNav?: ActiveTab;
+  onGoHome?: () => void;
   onSelectTab?: () => void;
-  onToggleSidebar?: () => void;
-  isSidebarCollapsed?: boolean;
   onOpenSyncSettings?: () => void;
   isTerminalActive?: boolean;
 }
 
 export function Header({
+  activeNav,
+  onGoHome,
   onSelectTab,
-  onToggleSidebar,
-  isSidebarCollapsed,
   onOpenSyncSettings,
   isTerminalActive,
 }: HeaderProps) {
@@ -87,6 +87,9 @@ export function Header({
 
   const isSnippetSidebarOpen = useSnippetStore((s) => s.isSidebarOpen);
   const toggleSnippetSidebar = useSnippetStore((s) => s.toggleSidebar);
+  const onGoHomeRef = useRef(onGoHome);
+  onGoHomeRef.current = onGoHome;
+  const isHomeActive = activeNav ? activeNav === "hosts" : !isTerminalActive;
 
   const [isMaximized, setIsMaximized] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -233,6 +236,9 @@ export function Header({
       ) {
         e.preventDefault();
         handleToggleFullscreen();
+      } else if (e.altKey && e.key.toLowerCase() === "h") {
+        e.preventDefault();
+        onGoHomeRef.current?.();
       }
     }
     window.addEventListener("keydown", handleGlobalKeyDown);
@@ -327,31 +333,19 @@ export function Header({
             so the 78px spacer is only needed in windowed mode */}
         {isMac && !isFullscreen && <div data-tauri-drag-region="false" className="h-full w-[78px] shrink-0" />}
 
-        {/* Brand Logo & Sidebar Toggle Button */}
-        <div className={`flex h-full items-center gap-1 shrink-0 pr-1 ${isMac ? "" : "pl-2.5"}`}>
+        {/* Brand Logo */}
+        <div className={`flex h-full items-center shrink-0 pr-1.5 ${isMac ? "" : "pl-2.5"}`}>
           <img
             src="/logo.png"
             alt="Termimus"
             title="Termimus"
             className="h-5 w-5 rounded object-contain pointer-events-none"
           />
-          <button
-            data-tauri-drag-region="false"
-            onClick={onToggleSidebar}
-            title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            {isSidebarCollapsed ? (
-              <PanelLeftOpen size={15} />
-            ) : (
-              <PanelLeftClose size={15} />
-            )}
-          </button>
         </div>
 
         <div className="h-4 w-[1px] bg-[var(--border)] shrink-0 mx-1" />
 
-        {/* Tabs Row (Each tab represents a Workspace / Split Screen Group).
+        {/* Tabs Row (Persistent Home Button + Workspace / Split Screen Group Tabs).
             flex-1 + min-w-0 (instead of a shrink-0 + hardcoded max-width) lets
             this row yield space to the Snippets toggle / Sync indicator /
             window controls on the right; overflow-x-auto scrolls internally
@@ -362,6 +356,30 @@ export function Header({
           onContextMenu={(e) => handleTabContextMenu(e)}
           className="flex h-full min-w-0 shrink items-center gap-1 overflow-x-auto px-1"
         >
+          {/* Persistent Home Tab / Button */}
+          <button
+            type="button"
+            data-tauri-drag-region="false"
+            onClick={onGoHome}
+            onContextMenu={(e) => e.stopPropagation()}
+            title="Home / Hosts (Alt+H)"
+            className={`group relative flex h-7.5 items-center gap-1.5 rounded-lg px-2.5 text-xs shrink-0 cursor-pointer transition-all select-none ${
+              isHomeActive
+                ? "bg-[var(--surface-container)] text-[var(--text-primary)] border border-[var(--border)] shadow-xs font-semibold"
+                : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container)]/60 border border-transparent hover:border-[var(--border)]/40 font-medium"
+            }`}
+          >
+            <Home
+              size={13}
+              className={`shrink-0 transition-colors ${
+                isHomeActive
+                  ? "text-[var(--primary)]"
+                  : "text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
+              }`}
+            />
+            <span>Home</span>
+          </button>
+
           {groups.map((group) => {
             const sessionIds = getAllSessionIdsInTree(group.rootPane);
             const groupTabs = sessionIds
@@ -370,7 +388,7 @@ export function Header({
 
             if (groupTabs.length === 0) return null;
 
-            const isActive = group.id === activeGroupId;
+            const isActive = isTerminalActive && group.id === activeGroupId;
             const primaryTab = groupTabs[0];
             const count = groupTabs.length;
 

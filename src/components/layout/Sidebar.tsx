@@ -25,13 +25,9 @@ export type ActiveTab = "hosts" | "workspaces" | "terminal" | "sftp" | "keychain
 interface SidebarProps {
   activeNav: ActiveTab;
   onNavChange: (tab: ActiveTab) => void;
-  isCollapsed: boolean;
 }
 
-// Snappy desktop transition curve for responsive sidebar collapse
-const TRANSITION = "duration-150 ease-out";
-
-export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
+export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
   const { isUnlocked, lock: lockVault } = useVaultStore();
   const { hosts } = useHostStore();
   const { snippets } = useSnippetStore();
@@ -56,11 +52,7 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
   ];
 
   return (
-    <aside
-      className={`flex h-full shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--canvas)] select-none transition-[width] ${TRANSITION} ${
-        isCollapsed ? "w-[64px]" : "w-56"
-      }`}
-    >
+    <aside className="flex h-full w-56 shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--canvas)] select-none">
       {/* Navigation Items */}
       <nav className="flex flex-1 flex-col w-full overflow-y-auto gap-1 px-3 pt-3 pb-1">
         {navItems.map(({ icon: Icon, label, id, badge, badgeDot }, idx) => {
@@ -69,7 +61,6 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
             <button
               key={`${id}-${idx}`}
               onClick={() => onNavChange(id)}
-              title={isCollapsed ? label : undefined}
               className={`group relative flex h-10 w-full items-center rounded-xl transition-colors text-left overflow-hidden ${
                 active
                   ? "bg-[var(--surface-high)] text-[var(--primary)] font-semibold shadow-sm"
@@ -87,18 +78,14 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
                 />
               </div>
               <span
-                className={`flex-1 text-left truncate text-[13px] transition-opacity ${TRANSITION} ${
-                  isCollapsed ? "opacity-0" : active ? "font-bold opacity-100" : "font-medium opacity-100"
+                className={`flex-1 text-left truncate text-[13px] ${
+                  active ? "font-bold" : "font-medium"
                 }`}
               >
                 {label}
               </span>
               {(badge !== undefined || badgeDot) && (
-                <div
-                  className={`flex shrink-0 items-center pr-2.5 transition-opacity ${TRANSITION} ${
-                    isCollapsed ? "opacity-0" : "opacity-100"
-                  }`}
-                >
+                <div className="flex shrink-0 items-center pr-2.5">
                   {badge !== undefined && (
                     <span
                       className={`rounded px-1.5 py-0.5 text-[10px] font-mono ${
@@ -115,9 +102,6 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
                   )}
                 </div>
               )}
-              {isCollapsed && badgeDot && (
-                <span className="absolute top-2.5 right-2.5 h-1.5 w-1.5 rounded-full bg-[var(--secondary)]" />
-              )}
             </button>
           );
         })}
@@ -129,7 +113,6 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
         <div className="w-full px-3 pt-2 pb-0.5">
           <button
             onClick={() => onNavChange("settings")}
-            title={isCollapsed ? (hasUpdate ? `Settings • Update v${latestVersion} available` : "Settings") : undefined}
             className={`group relative flex h-10 w-full items-center rounded-xl transition-colors text-left overflow-hidden ${
               activeNav === "settings"
                 ? "bg-[var(--surface-high)] text-[var(--primary)] font-semibold shadow-sm"
@@ -145,18 +128,11 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
                     : "text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
                 }`}
               />
-              {isCollapsed && hasUpdate && (
-                <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-[var(--primary)] animate-pulse" />
-              )}
             </div>
-            <span
-              className={`flex-1 text-left truncate text-[13px] font-medium transition-opacity ${TRANSITION} ${
-                isCollapsed ? "opacity-0 hidden" : "opacity-100"
-              }`}
-            >
+            <span className="flex-1 text-left truncate text-[13px] font-medium">
               Settings
             </span>
-            {!isCollapsed && hasUpdate && (
+            {hasUpdate && (
               <span className="mr-2 rounded bg-[var(--primary)]/15 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-[var(--primary)] border border-[var(--primary)]/30 animate-pulse">
                 Update
               </span>
@@ -177,15 +153,11 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
                   <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-[var(--primary)] animate-pulse" />
                 )}
               </div>
-              <span
-                className={`ml-2 text-[11px] font-semibold text-[var(--text-primary)] truncate transition-opacity ${TRANSITION} ${
-                  isCollapsed ? "opacity-0 hidden" : "opacity-100"
-                }`}
-              >
+              <span className="ml-2 text-[11px] font-semibold text-[var(--text-primary)] truncate">
                 {isUnlocked ? "Vault Unlocked" : "Vault Locked"}
               </span>
             </div>
-            {!isCollapsed && isUnlocked && (
+            {isUnlocked && (
               <button
                 onClick={lockVault}
                 title="Lock vault"
@@ -197,11 +169,7 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
           </div>
 
           {/* Micro Footer: Version / Update (left) + Mini Ko-fi pill (right) */}
-          <div
-            className={`flex items-center justify-between overflow-hidden whitespace-nowrap px-1 pt-1.5 border-t border-[var(--border)]/40 transition-opacity ${TRANSITION} ${
-              isCollapsed ? "opacity-0 h-0 hidden" : "opacity-100 mt-1"
-            }`}
-          >
+          <div className="flex items-center justify-between overflow-hidden whitespace-nowrap px-1 pt-1.5 border-t border-[var(--border)]/40 mt-1">
             {hasUpdate ? (
               <button
                 type="button"
@@ -243,24 +211,6 @@ export function Sidebar({ activeNav, onNavChange, isCollapsed }: SidebarProps) {
             </button>
           </div>
         </div>
-
-        {/* Collapsed Ko-fi Icon button */}
-        {isCollapsed && (
-          <div className="w-full flex justify-center pb-2">
-            <button
-              type="button"
-              onClick={() => openExternalUrl("https://ko-fi.com/termimus")}
-              title="Support on Ko-fi"
-              className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[var(--surface-container)] transition-colors cursor-pointer"
-            >
-              <img
-                src={kofiIcon}
-                alt="Ko-fi"
-                className="w-4.5 h-auto object-contain transition-transform hover:scale-110 drop-shadow-xs"
-              />
-            </button>
-          </div>
-        )}
       </div>
     </aside>
   );

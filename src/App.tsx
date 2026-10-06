@@ -45,23 +45,9 @@ function PageView({ active, children }: { active: boolean; children: React.React
   );
 }
 
-// Below this window width, the sidebar auto-collapses to give the main
-// content area enough room (independent of the user's manual toggle).
-const AUTO_COLLAPSE_WIDTH = 820;
-
 function App() {
   const [activeNav, setActiveNav] = useState<ActiveTab>("hosts");
   const [visitedTabs, setVisitedTabs] = useState<Set<ActiveTab>>(() => new Set(["hosts"]));
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem("termimus_sidebar_collapsed") === "true";
-    } catch {
-      return false;
-    }
-  });
-  const [isNarrowWindow, setIsNarrowWindow] = useState(
-    () => window.innerWidth < AUTO_COLLAPSE_WIDTH
-  );
 
   const { isUnlocked, refresh: refreshVault } = useVaultStore();
   const { refresh: refreshHosts } = useHostStore();
@@ -110,24 +96,6 @@ function App() {
     }
   }, [isUnlocked, refreshHosts, refreshKeychain]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem("termimus_sidebar_collapsed", String(isSidebarCollapsed));
-    } catch {
-      // ignore
-    }
-  }, [isSidebarCollapsed]);
-
-  // Auto-collapse the sidebar once the window gets too narrow, so the main
-  // content area (terminal, SFTP panes, etc) always keeps usable width.
-  useEffect(() => {
-    function handleWindowResize() {
-      setIsNarrowWindow(window.innerWidth < AUTO_COLLAPSE_WIDTH);
-    }
-    window.addEventListener("resize", handleWindowResize);
-    return () => window.removeEventListener("resize", handleWindowResize);
-  }, []);
-
   // When a new tab/group is opened, automatically switch to the terminal view
   useEffect(() => {
     if (activeGroupId || activeTabId) {
@@ -166,22 +134,22 @@ function App() {
 
       {/* Top Unified Frameless Window Bar (Termius-style: Menu + Tabs + Window Controls) */}
       <Header
+        activeNav={activeNav}
+        onGoHome={() => handleNavChange("hosts")}
         onSelectTab={() => handleNavChange("terminal")}
-        onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
-        isSidebarCollapsed={isSidebarCollapsed}
         onOpenSyncSettings={() => handleNavChange("settings")}
         isTerminalActive={showTerminal}
       />
 
       {/* Main Workspace Body */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Obsidian Sidebar — collapses if the user toggled it manually,
-            or automatically once the window is too narrow to fit it comfortably. */}
-        <Sidebar
-          activeNav={activeNav}
-          onNavChange={handleNavChange}
-          isCollapsed={isSidebarCollapsed || isNarrowWindow}
-        />
+        {/* Left Obsidian Sidebar — hidden when terminal is active so terminal gets fullscreen width */}
+        {!showTerminal && (
+          <Sidebar
+            activeNav={activeNav}
+            onNavChange={handleNavChange}
+          />
+        )}
 
         {/* Viewport Content Area */}
         <main className="relative flex flex-1 overflow-hidden bg-[var(--canvas)]">
