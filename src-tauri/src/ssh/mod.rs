@@ -278,13 +278,14 @@ impl SessionManager {
         }
 
         // Clean up any stale existing session with this ID before starting fresh
-        {
+        let old_session = {
             let mut sessions = self.sessions.write().await;
-            if let Some(old_session) = sessions.remove(&session_id) {
-                let _ = old_session.handle.disconnect(Disconnect::ByApplication, "", "en").await;
-                if let Some(ref jump) = old_session._jump_handle {
-                    let _ = jump.disconnect(Disconnect::ByApplication, "", "en").await;
-                }
+            sessions.remove(&session_id)
+        };
+        if let Some(old_session) = old_session {
+            let _ = old_session.handle.disconnect(Disconnect::ByApplication, "", "en").await;
+            if let Some(ref jump) = old_session._jump_handle {
+                let _ = jump.disconnect(Disconnect::ByApplication, "", "en").await;
             }
         }
 
@@ -730,8 +731,12 @@ impl SessionManager {
     }
 
     pub async fn disconnect(&self, session_id: &str) -> Result<(), String> {
-        let mut sessions = self.sessions.write().await;
-        if let Some(session) = sessions.remove(session_id) {
+        let session = {
+            let mut sessions = self.sessions.write().await;
+            sessions.remove(session_id)
+        };
+
+        if let Some(session) = session {
             let _ = session
                 .handle
                 .disconnect(Disconnect::ByApplication, "", "en")
@@ -751,16 +756,30 @@ impl SessionManager {
         Ok(())
     }
 
-    /// Disconnects every live SSH session. Used for a clean shutdown when the
-    /// application exits, so servers see a proper SSH disconnect message
+    /// Disconnects every live SSH session concurrently. Used for a clean shutdown
+    /// when the application exits, so servers see a proper SSH disconnect message
     /// instead of a dropped TCP socket.
     pub async fn disconnect_all(&self) {
-        let ids: Vec<String> = {
-            let sessions = self.sessions.read().await;
-            sessions.keys().cloned().collect()
+        let sessions: Vec<Arc<SshSession>> = {
+            let mut sessions = self.sessions.write().await;
+            sessions.drain().map(|(_, s)| s).collect()
         };
-        for id in ids {
-            let _ = self.disconnect(&id).await;
+
+        let mut tasks = Vec::with_capacity(sessions.len());
+        for session in sessions {
+            tasks.push(tokio::spawn(async move {
+                let _ = session
+                    .handle
+                    .disconnect(Disconnect::ByApplication, "", "en")
+                    .await;
+                if let Some(ref jump) = session._jump_handle {
+                    let _ = jump.disconnect(Disconnect::ByApplication, "", "en").await;
+                }
+            }));
+        }
+
+        for task in tasks {
+            let _ = task.await;
         }
     }
 }
