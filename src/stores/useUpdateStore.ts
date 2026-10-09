@@ -31,7 +31,7 @@ export function isNewerVersion(latest: string, current: string): boolean {
 }
 
 export const useUpdateStore = create<UpdateState>((set, get) => ({
-  currentVersion: "0.6.2",
+  currentVersion: "0.7.0",
   latestVersion: null,
   hasUpdate: false,
   releaseUrl: "https://github.com/termimus/termimus-ssh/releases",
