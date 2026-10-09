@@ -223,6 +223,10 @@ pub struct SshSession {
 pub struct SessionManager {
     sessions: RwLock<HashMap<String, Arc<SshSession>>>,
     connecting: Mutex<HashSet<String>>,
+    /// Session ids whose connect is in flight but whose tab was already closed.
+    /// `disconnect()` marks them here so the running `do_connect` aborts at its
+    /// next checkpoint instead of leaving a zombie connection behind.
+    cancelled: Mutex<HashSet<String>>,
 }
 
 impl SessionManager {
@@ -230,6 +234,7 @@ impl SessionManager {
         SessionManager {
             sessions: RwLock::new(HashMap::new()),
             connecting: Mutex::new(HashSet::new()),
+            cancelled: Mutex::new(HashSet::new()),
         }
     }
 
@@ -256,6 +261,13 @@ impl SessionManager {
             connecting.insert(session_id.clone());
         }
 
+        // Fresh attempt (e.g. Retry after a cancelled connect): drop any stale
+        // cancel mark left behind by a previous aborted attempt for this id.
+        {
+            let mut cancelled = self.cancelled.lock().await;
+            cancelled.remove(&session_id);
+        }
+
         // Clean up any stale existing session with this ID before starting fresh
         {
             let mut sessions = self.sessions.write().await;
@@ -276,7 +288,31 @@ impl SessionManager {
             connecting.remove(&session_id);
         }
 
-        res
+        // A cancel can land in the gap between the last checkpoint inside
+        // do_connect and the session being registered in the map. If so, the
+        // session was fully established for a tab that no longer exists —
+        // close it immediately instead of leaking the connection.
+        let was_cancelled = {
+            let mut cancelled = self.cancelled.lock().await;
+            cancelled.remove(&session_id)
+        };
+        match res {
+            Ok(()) if was_cancelled => {
+                let _ = self.disconnect(&session_id).await;
+                Err("Connection cancelled".to_string())
+            }
+            other => other,
+        }
+    }
+
+    /// Returns `Err` when the tab for this session was closed while the
+    /// connect was still in flight (`disconnect()` marked it as cancelled).
+    async fn check_cancelled(&self, session_id: &str) -> Result<(), String> {
+        if self.cancelled.lock().await.contains(session_id) {
+            Err("Connection cancelled".to_string())
+        } else {
+            Ok(())
+        }
     }
 
     async fn do_connect(
@@ -293,6 +329,8 @@ impl SessionManager {
         rows: u16,
         jump_host: Option<JumpHostConfig>,
     ) -> Result<(), String> {
+        self.check_cancelled(&session_id).await?;
+
         let progress_event = format!("ssh-progress-{session_id}");
         let emit_progress = |step: u8, step_name: &str, message: &str, is_error: bool| {
             let _ = app.emit(
@@ -325,6 +363,8 @@ impl SessionManager {
                 }
             };
 
+            self.check_cancelled(&session_id).await?;
+
             let jump_config = default_client_config();
             let jump_handler = SshClientHandler {
                 address: jump.address.clone(),
@@ -340,6 +380,8 @@ impl SessionManager {
                     return Err(msg);
                 }
             };
+
+            self.check_cancelled(&session_id).await?;
 
             emit_progress(1, "authenticating", &format!("Authenticating to Jump Host as {}...", jump.username), false);
 
@@ -377,6 +419,8 @@ impl SessionManager {
                 return Err(msg);
             }
 
+            self.check_cancelled(&session_id).await?;
+
             emit_progress(1, "connecting", &format!("Tunneling via Jump Host to {address}:{port}..."), false);
 
             let channel = match j_handle.channel_open_direct_tcpip(
@@ -393,6 +437,8 @@ impl SessionManager {
                 }
             };
 
+            self.check_cancelled(&session_id).await?;
+
             (SshStream::Tunneled(channel.into_stream()), Some(j_handle))
         } else {
             emit_progress(1, "connecting", &format!("Resolving and connecting to {address}:{port}..."), false);
@@ -408,6 +454,8 @@ impl SessionManager {
                     return Err(msg);
                 }
             };
+            self.check_cancelled(&session_id).await?;
+
             (SshStream::Direct(s), None)
         };
 
@@ -427,6 +475,8 @@ impl SessionManager {
                 return Err(msg);
             }
         };
+
+        self.check_cancelled(&session_id).await?;
 
         emit_progress(2, "host_key", "Verifying target host key (Trust On First Use)...", false);
 
@@ -466,6 +516,8 @@ impl SessionManager {
             return Err(msg);
         }
 
+        self.check_cancelled(&session_id).await?;
+
         emit_progress(4, "opening_channel", "Opening shell channel...", false);
 
         let channel = match handle.channel_open_session().await {
@@ -476,6 +528,8 @@ impl SessionManager {
                 return Err(msg);
             }
         };
+
+        self.check_cancelled(&session_id).await?;
 
         if let Err(e) = channel
             .request_pty(true, "xterm-256color", cols as u32, rows as u32, 0, 0, &[])
@@ -491,6 +545,10 @@ impl SessionManager {
             emit_progress(4, "error", &msg, true);
             return Err(msg);
         }
+
+        // Last checkpoint before registration: past this point the session is
+        // live in the map, so a late cancel is handled by the connect() wrapper.
+        self.check_cancelled(&session_id).await?;
 
         emit_progress(5, "ready", "Shell session ready.", false);
 
@@ -669,8 +727,32 @@ impl SessionManager {
                 .handle
                 .disconnect(Disconnect::ByApplication, "", "en")
                 .await;
+            // Close the bastion connection too (mirrors the stale-session
+            // cleanup in connect()), instead of relying on drop alone.
+            if let Some(ref jump) = session._jump_handle {
+                let _ = jump.disconnect(Disconnect::ByApplication, "", "en").await;
+            }
+        } else if self.connecting.lock().await.contains(session_id) {
+            // No registered session, but a connect is in flight for this id —
+            // the tab was closed mid-connect. Mark it so do_connect aborts at
+            // its next checkpoint (and so a session established in the gap
+            // between checkpoints is caught by connect()'s final check).
+            self.cancelled.lock().await.insert(session_id.to_string());
         }
         Ok(())
+    }
+
+    /// Disconnects every live SSH session. Used for a clean shutdown when the
+    /// application exits, so servers see a proper SSH disconnect message
+    /// instead of a dropped TCP socket.
+    pub async fn disconnect_all(&self) {
+        let ids: Vec<String> = {
+            let sessions = self.sessions.read().await;
+            sessions.keys().cloned().collect()
+        };
+        for id in ids {
+            let _ = self.disconnect(&id).await;
+        }
     }
 }
 

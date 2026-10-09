@@ -14,6 +14,7 @@ use pty::PtyManager;
 use sftp::SftpManager;
 use ssh::SessionManager;
 use std::sync::Arc;
+use tauri::Manager;
 use tunnel::TunnelManager;
 use vault::VaultManager;
 
@@ -110,6 +111,21 @@ pub fn run() {
             commands::sync_pull,
             commands::sync_get_devices,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running termimus application");
+        .build(tauri::generate_context!())
+        .expect("error while building termimus application")
+        .run(|app_handle, event| {
+            // Best-effort graceful shutdown: send a proper SSH disconnect for
+            // every live session before the process exits. Bounded by a timeout
+            // so quitting never hangs on dead sockets.
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                let ssh = app_handle.state::<AppState>().ssh.clone();
+                tauri::async_runtime::block_on(async move {
+                    let _ = tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        ssh.disconnect_all(),
+                    )
+                    .await;
+                });
+            }
+        });
 }
