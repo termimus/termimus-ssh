@@ -26,7 +26,7 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
     pointerPos,
     updateDragPos,
     endDragTab,
-    isGroupBroadcastActive,
+    broadcastGroupIds,
     toggleGroupBroadcast,
   } = useSessionStore(
     useShallow((s) => ({
@@ -40,7 +40,7 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
       pointerPos: s.pointerPos,
       updateDragPos: s.updateDragPos,
       endDragTab: s.endDragTab,
-      isGroupBroadcastActive: s.isGroupBroadcastActive,
+      broadcastGroupIds: s.broadcastGroupIds,
       toggleGroupBroadcast: s.toggleGroupBroadcast,
     }))
   );
@@ -120,7 +120,7 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
       name: `Active Cluster (${leaves.length} Nodes)`,
       layout: layoutType,
       nodes: capturedNodes,
-      broadcastOnLaunch: isGroupBroadcastActive(group.id),
+      broadcastOnLaunch: broadcastGroupIds.includes(group.id),
     });
   };
 
@@ -160,7 +160,7 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
           groups.map((group) => {
             const isGroupActive = group.id === activeGroupId;
             const groupLeaves = getAllLeafPanes(group.rootPane);
-            const isBroadcast = isGroupBroadcastActive(group.id);
+            const isBroadcast = broadcastGroupIds.includes(group.id);
             const connectedLeafCount = groupLeaves.filter((l) => {
               const tab = tabs.find((t) => t.id === l.activeTabId);
               return tab && tab.connected;

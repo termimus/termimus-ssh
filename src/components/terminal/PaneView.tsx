@@ -8,7 +8,7 @@ import {
   Radio,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
-import { PaneLeaf } from "../../lib/layoutTree";
+import { PaneLeaf, findPaneById } from "../../lib/layoutTree";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { useTerminalThemeStore } from "../../stores/useTerminalThemeStore";
@@ -24,6 +24,7 @@ interface PaneViewProps {
 export function PaneView({ pane, visible = true }: PaneViewProps) {
   const {
     tabs,
+    groups,
     rootPane,
     activePaneId,
     activeGroupId,
@@ -35,11 +36,12 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
     splitPane,
     startDragTab,
     openSessionInSplit,
-    isGroupBroadcastActive,
+    broadcastGroupIds,
     toggleGroupBroadcast,
   } = useSessionStore(
     useShallow((s) => ({
       tabs: s.tabs,
+      groups: s.groups,
       rootPane: s.rootPane,
       activePaneId: s.activePaneId,
       activeGroupId: s.activeGroupId,
@@ -51,7 +53,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
       splitPane: s.splitPane,
       startDragTab: s.startDragTab,
       openSessionInSplit: s.openSessionInSplit,
-      isGroupBroadcastActive: s.isGroupBroadcastActive,
+      broadcastGroupIds: s.broadcastGroupIds,
       toggleGroupBroadcast: s.toggleGroupBroadcast,
     }))
   );
@@ -86,12 +88,16 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
     : isLight
       ? "rgba(0, 0, 0, 0.12)"
       : "rgba(255, 255, 255, 0.08)";
-  const isBroadcast = isGroupBroadcastActive(activeGroupId || undefined);
+
+  const currentGroup = groups.find((g) => findPaneById(g.rootPane, pane.id));
+  const groupId = currentGroup ? currentGroup.id : (activeGroupId || undefined);
+  const isBroadcast = groupId ? broadcastGroupIds.includes(groupId) : false;
 
   // The pane header is only shown when the workspace is actually split into multiple panes.
   // When there's only 1 pane (or when a pane is maximized), the top window Header acts as the sole tab bar,
   // preventing double/duplicate tab UI and maximizing terminal vertical space.
-  const isSplit = rootPane?.type === "split" && !maximizedPaneId;
+  const currentRootPane = currentGroup ? currentGroup.rootPane : rootPane;
+  const isSplit = currentRootPane?.type === "split" && !maximizedPaneId;
 
   const activeTab = tabs.find((t) => t.id === pane.activeTabId);
   const paneTabs = pane.tabIds
@@ -230,7 +236,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                         }`}
                       />
                     )}
-                    <span className="truncate flex-1 min-w-0">{tab.hostLabel}</span>
+                    <span className="truncate flex-1 min-w-0 text-center leading-none translate-y-[0.5px]">{tab.hostLabel}</span>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -285,7 +291,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                toggleGroupBroadcast(activeGroupId || undefined);
+                toggleGroupBroadcast(groupId);
               }}
               title={
                 isBroadcast

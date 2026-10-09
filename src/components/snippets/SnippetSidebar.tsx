@@ -43,7 +43,7 @@ export function SnippetSidebar() {
     rootPane,
     activeTabId,
     activeGroupId,
-    isGroupBroadcastActive,
+    broadcastGroupIds,
     toggleGroupBroadcast,
     sendSnippetToTerminals,
   } = useSessionStore(
@@ -52,7 +52,7 @@ export function SnippetSidebar() {
       rootPane: s.rootPane,
       activeTabId: s.activeTabId,
       activeGroupId: s.activeGroupId,
-      isGroupBroadcastActive: s.isGroupBroadcastActive,
+      broadcastGroupIds: s.broadcastGroupIds,
       toggleGroupBroadcast: s.toggleGroupBroadcast,
       sendSnippetToTerminals: s.sendSnippetToTerminals,
     }))
@@ -111,7 +111,7 @@ export function SnippetSidebar() {
 
   // Terminal state evaluation
   const activeTab = tabs.find((t) => t.id === activeTabId);
-  const isBroadcast = isGroupBroadcastActive(activeGroupId || undefined);
+  const isBroadcast = activeGroupId ? broadcastGroupIds.includes(activeGroupId) : false;
 
   const leafPanes = rootPane ? getAllLeafPanes(rootPane) : [];
   const connectedLeafTabs = leafPanes

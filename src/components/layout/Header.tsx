@@ -458,7 +458,7 @@ export function Header({
                   />
                 )}
 
-                <span className="truncate flex-1 min-w-0">{displayLabel}</span>
+                <span className="truncate flex-1 min-w-0 text-center leading-none translate-y-[1px]">{displayLabel}</span>
 
                 {broadcastGroupIds.includes(group.id) && (
                   <span title="Input Broadcast Active (Interconnected)" className="flex items-center shrink-0">
