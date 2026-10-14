@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { listen } from "@tauri-apps/api/event";
 import { api, FileEntry, Host } from "../lib/api";
 import { parentPath } from "../lib/format";
 
@@ -11,13 +12,63 @@ export interface SelectMods {
   mod: boolean;
 }
 
+/** A directory to create or a file to transfer inside a bulk transfer */
+export interface TransferItem {
+  from: string;
+  to: string;
+  name: string;
+  /** 0 for directories */
+  size: number;
+}
+
 interface TransferPlan {
   /** Destination directories to create, parents before children */
-  dirs: string[];
+  dirs: TransferItem[];
   /** Files to transfer with structure preserved under the target dir */
-  files: { from: string; to: string; name: string }[];
+  files: TransferItem[];
   /** Items that could not be scanned (unreadable subtrees etc.) */
   scanErrors: string[];
+}
+
+export type ConflictDecision = "ignore" | "replace";
+export type ConflictAction = ConflictDecision | "replaceAll" | "cancel";
+
+/** A planned destination that already exists on the other side */
+export interface ConflictItem {
+  /** Destination path; unique across the queue */
+  key: string;
+  name: string;
+  from: string;
+  to: string;
+  isDir: boolean;
+  size: number;
+  existing: FileEntry | null;
+}
+
+interface ConflictQueue {
+  items: ConflictItem[];
+  index: number;
+  decisions: Record<string, ConflictDecision>;
+  resolve: (decisions: Record<string, ConflictDecision> | null) => void;
+}
+
+export interface TransferProgress {
+  done: number;
+  total: number;
+  bytesDone: number;
+  bytesTotal: number;
+  /** Bytes of files already finished; byte events for the current file add on top */
+  completedBytes: number;
+  currentFile: { path: string; name: string; size: number } | null;
+  currentFileDone: number;
+  currentFileTotal: number;
+}
+
+interface TransferProgressEvent {
+  sessionId: string;
+  path: string;
+  bytesDone: number;
+  bytesTotal: number;
 }
 
 // Guard against symlink loops / pathological trees during recursive scans
@@ -37,8 +88,8 @@ async function buildTransferPlan(
   roots: FileEntry[],
   targetDir: string
 ): Promise<TransferPlan> {
-  const dirs: string[] = [];
-  const files: { from: string; to: string; name: string }[] = [];
+  const dirs: TransferItem[] = [];
+  const files: TransferItem[] = [];
   const scanErrors: string[] = [];
   const visited = new Set<string>();
 
@@ -54,7 +105,7 @@ async function buildTransferPlan(
     visited.add(entry.path);
 
     const dest = joinPath(destDir, entry.name);
-    dirs.push(dest);
+    dirs.push({ from: entry.path, to: dest, name: entry.name, size: 0 });
 
     let children: FileEntry[];
     try {
@@ -67,7 +118,12 @@ async function buildTransferPlan(
       if (child.is_dir) {
         await walkDir(child, dest, depth + 1);
       } else {
-        files.push({ from: child.path, to: joinPath(dest, child.name), name: child.name });
+        files.push({
+          from: child.path,
+          to: joinPath(dest, child.name),
+          name: child.name,
+          size: child.size,
+        });
       }
     }
   };
@@ -76,7 +132,12 @@ async function buildTransferPlan(
     if (root.is_dir) {
       await walkDir(root, targetDir, 0);
     } else {
-      files.push({ from: root.path, to: joinPath(targetDir, root.name), name: root.name });
+      files.push({
+        from: root.path,
+        to: joinPath(targetDir, root.name),
+        name: root.name,
+        size: root.size,
+      });
     }
   }
 
@@ -109,6 +170,82 @@ async function ensureDir(
   }
 }
 
+/**
+ * Stat every planned destination and, for the ones that already exist, let the
+ * user decide via the conflict modal (queued through `pendingConflicts`).
+ * Returns the pruned plan, or null when the whole transfer is cancelled.
+ */
+async function resolveTransferConflicts(
+  direction: "upload" | "download",
+  sessionId: string,
+  plan: TransferPlan,
+  openQueue: (items: ConflictItem[]) => Promise<Record<string, ConflictDecision> | null>
+): Promise<{ dirs: TransferItem[]; files: TransferItem[] } | null> {
+  const dests = [...plan.dirs.map((d) => d.to), ...plan.files.map((f) => f.to)];
+  let stats: (FileEntry | null)[];
+  try {
+    stats =
+      direction === "upload"
+        ? await api.sftpStatMany(sessionId, dests)
+        : await api.localStatMany(dests);
+  } catch {
+    // Without the existence check there is nothing to prompt about; transfer
+    // anyway and let per-file errors surface during the transfer itself.
+    return { dirs: plan.dirs, files: plan.files };
+  }
+
+  // Directories first (they are planned parents-before-children), then files —
+  // ignoring a folder must prune its subtree before file conflicts are asked.
+  const items: ConflictItem[] = [];
+  plan.dirs.forEach((dir, i) => {
+    if (stats[i]) {
+      items.push({
+        key: dir.to,
+        name: dir.name,
+        from: dir.from,
+        to: dir.to,
+        isDir: true,
+        size: 0,
+        existing: stats[i],
+      });
+    }
+  });
+  plan.files.forEach((file, i) => {
+    const stat = stats[plan.dirs.length + i];
+    if (stat) {
+      items.push({
+        key: file.to,
+        name: file.name,
+        from: file.from,
+        to: file.to,
+        isDir: false,
+        size: file.size,
+        existing: stat,
+      });
+    }
+  });
+
+  if (items.length === 0) {
+    return { dirs: plan.dirs, files: plan.files };
+  }
+
+  const decisions = await openQueue(items);
+  if (!decisions) return null;
+
+  // Ignoring a folder also drops everything planned inside it, including
+  // destinations that did not exist and therefore never entered the queue.
+  const ignoredPrefixes = Object.entries(decisions)
+    .filter(([, d]) => d === "ignore")
+    .map(([key]) => `${key.replace(/\/+$/, "")}/`);
+  const isIgnored = (dest: string) =>
+    decisions[dest] === "ignore" || ignoredPrefixes.some((p) => dest.startsWith(p));
+
+  return {
+    dirs: plan.dirs.filter((d) => !isIgnored(d.to)),
+    files: plan.files.filter((f) => !isIgnored(f.to)),
+  };
+}
+
 interface SftpState {
   // Remote state
   remoteHost: Host | null;
@@ -129,8 +266,10 @@ interface SftpState {
   // Transfer state
   transferring: boolean;
   transferMessage: string | null;
-  transferProgress: { done: number; total: number } | null;
+  transferProgress: TransferProgress | null;
   cancelRequested: boolean;
+  /** Queued destination collisions waiting for a user decision in the modal */
+  pendingConflicts: ConflictQueue | null;
   error: string | null;
 
   initLocal: () => Promise<void>;
@@ -156,6 +295,9 @@ interface SftpState {
   uploadSelected: (entries?: FileEntry[]) => Promise<void>;
   downloadSelected: (entries?: FileEntry[]) => Promise<void>;
   cancelTransfer: () => void;
+
+  resolveConflict: (action: ConflictAction) => void;
+  applyTransferBytes: (event: TransferProgressEvent) => void;
 }
 
 export const useSftpStore = create<SftpState>((set, get) => {
@@ -187,48 +329,79 @@ export const useSftpStore = create<SftpState>((set, get) => {
     try {
       const plan = await buildTransferPlan(direction, sessionId, roots, targetDir);
       const failed: string[] = [...plan.scanErrors];
-      const total = plan.files.length;
+
+      const effective = await resolveTransferConflicts(direction, sessionId, plan, (items) =>
+        new Promise<Record<string, ConflictDecision> | null>((resolve) =>
+          set({ pendingConflicts: { items, index: 0, decisions: {}, resolve } })
+        )
+      );
+      if (!effective) {
+        set({ error: "Transfer cancelled." });
+        return;
+      }
+      const { dirs, files } = effective;
+
+      // Progress totals are computed after conflict pruning so the bar
+      // reflects only what will actually be written.
+      const total = files.length;
+      const bytesTotal = files.reduce((sum, f) => sum + f.size, 0);
       let doneCount = 0;
-      set({ transferProgress: { done: 0, total } });
+      let completedBytes = 0;
+      const baseProgress = (): TransferProgress => ({
+        done: doneCount,
+        total,
+        bytesDone: completedBytes,
+        bytesTotal,
+        completedBytes,
+        currentFile: null,
+        currentFileDone: 0,
+        currentFileTotal: 0,
+      });
+      set({ transferProgress: baseProgress() });
 
       let cancelled = false;
 
       // 1) Create the directory structure (parents before children)
-      for (const dir of plan.dirs) {
+      for (const dir of dirs) {
         if (get().cancelRequested) {
           cancelled = true;
           break;
         }
-        set({ transferMessage: `${mkDirVerb}: ${dir}` });
+        set({ transferMessage: `${mkDirVerb}: ${dir.to}` });
         try {
-          await ensureDir(direction, sessionId, dir);
+          await ensureDir(direction, sessionId, dir.to);
         } catch (e) {
-          failed.push(`${dir}: ${String(e)}`);
+          failed.push(`${dir.to}: ${String(e)}`);
         }
       }
 
       // 2) Transfer files sequentially so the message tracks real progress
       if (!cancelled) {
-        for (const file of plan.files) {
+        for (const file of files) {
           if (get().cancelRequested) {
             cancelled = true;
             break;
           }
           set({
             transferMessage: `${verb}: ${file.name}`,
-            transferProgress: { done: doneCount, total },
+            transferProgress: {
+              ...baseProgress(),
+              currentFile: { path: file.from, name: file.name, size: file.size },
+              currentFileTotal: file.size,
+            },
           });
           try {
             if (direction === "upload") await api.uploadSftp(sessionId, file.from, file.to);
             else await api.downloadSftp(sessionId, file.from, file.to);
             doneCount++;
+            completedBytes += file.size;
           } catch (e) {
             failed.push(`${file.from}: ${String(e)}`);
           }
         }
       }
 
-      set({ transferProgress: { done: doneCount, total } });
+      set({ transferProgress: baseProgress() });
       await refresh();
 
       if (cancelled) {
@@ -266,6 +439,7 @@ export const useSftpStore = create<SftpState>((set, get) => {
     transferMessage: null,
     transferProgress: null,
     cancelRequested: false,
+    pendingConflicts: null,
     error: null,
 
     initLocal: async () => {
@@ -490,5 +664,83 @@ export const useSftpStore = create<SftpState>((set, get) => {
     },
 
     cancelTransfer: () => set({ cancelRequested: true }),
+
+    resolveConflict: (action) => {
+      const queue = get().pendingConflicts;
+      if (!queue) return;
+
+      if (action === "cancel") {
+        queue.resolve(null);
+        set({ pendingConflicts: null });
+        return;
+      }
+
+      const item = queue.items[queue.index];
+      const decisions: Record<string, ConflictDecision> = { ...queue.decisions };
+
+      if (action === "replaceAll") {
+        // Every conflict still unasked from here on is replaced without prompting
+        for (let i = queue.index; i < queue.items.length; i++) {
+          if (!decisions[queue.items[i].key]) decisions[queue.items[i].key] = "replace";
+        }
+        queue.resolve(decisions);
+        set({ pendingConflicts: null });
+        return;
+      }
+
+      decisions[item.key] = action;
+      if (action === "ignore" && item.isDir) {
+        // Skipping a folder skips everything planned inside it
+        const prefix = `${item.key.replace(/\/+$/, "")}/`;
+        for (const q of queue.items) {
+          if (q.key.startsWith(prefix)) decisions[q.key] = "ignore";
+        }
+      }
+
+      // Advance to the next conflict that has no decision yet (dir ignores
+      // pre-mark their subtree, so those are jumped over silently)
+      let next = queue.index + 1;
+      while (next < queue.items.length && decisions[queue.items[next].key]) next++;
+      if (next >= queue.items.length) {
+        queue.resolve(decisions);
+        set({ pendingConflicts: null });
+      } else {
+        set({
+          pendingConflicts: {
+            items: queue.items,
+            index: next,
+            decisions,
+            resolve: queue.resolve,
+          },
+        });
+      }
+    },
+
+    applyTransferBytes: (event) => {
+      const state = get();
+      const prog = state.transferProgress;
+      if (!prog?.currentFile) return;
+      if (event.sessionId !== state.remoteSessionId) return;
+      if (event.path !== prog.currentFile.path) return;
+      // The plan size comes from a directory listing taken moments ago; trust
+      // the live stat when the file changed in between.
+      const currentTotal = Math.max(prog.currentFile.size, event.bytesTotal);
+      const done = Math.min(event.bytesDone, currentTotal);
+      set({
+        transferProgress: {
+          ...prog,
+          bytesTotal: prog.bytesTotal - prog.currentFile.size + currentTotal,
+          bytesDone: prog.completedBytes + done,
+          currentFileDone: done,
+          currentFileTotal: currentTotal,
+        },
+      });
+    },
   };
 });
+
+// Byte-level progress is emitted from the Rust side while a transfer runs;
+// transfers are sequential, so events map onto the current plan file.
+listen<TransferProgressEvent>("sftp-transfer-progress", (e) => {
+  useSftpStore.getState().applyTransferBytes(e.payload);
+}).catch(() => {});

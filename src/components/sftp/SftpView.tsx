@@ -3,16 +3,16 @@ import {
   ArrowRight,
   ArrowLeft,
   Server,
-  Loader2,
   AlertCircle,
   Unplug,
-  X,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { SelectMods, useSftpStore } from "../../stores/useSftpStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { FilePane } from "./FilePane";
 import { FileEditorModal } from "./FileEditorModal";
+import { TransferConflictModal } from "./TransferConflictModal";
+import { TransferProgressOverlay } from "./TransferProgressOverlay";
 import { FileEntry } from "../../lib/api";
 import { CustomSelect } from "../ui/CustomSelect";
 
@@ -54,8 +54,6 @@ export function SftpView() {
     localLoading,
     selectedLocalFiles,
     transferring,
-    transferMessage,
-    transferProgress,
     error,
     initLocal,
     navigateLocal,
@@ -72,7 +70,6 @@ export function SftpView() {
     disconnectRemote,
     uploadSelected,
     downloadSelected,
-    cancelTransfer,
   } = useSftpStore(
     useShallow((s) => ({
       remoteHost: s.remoteHost,
@@ -86,8 +83,6 @@ export function SftpView() {
       localLoading: s.localLoading,
       selectedLocalFiles: s.selectedLocalFiles,
       transferring: s.transferring,
-      transferMessage: s.transferMessage,
-      transferProgress: s.transferProgress,
       error: s.error,
       initLocal: s.initLocal,
       navigateLocal: s.navigateLocal,
@@ -104,7 +99,6 @@ export function SftpView() {
       disconnectRemote: s.disconnectRemote,
       uploadSelected: s.uploadSelected,
       downloadSelected: s.downloadSelected,
-      cancelTransfer: s.cancelTransfer,
     }))
   );
 
@@ -174,7 +168,10 @@ export function SftpView() {
   }, [initLocal]);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] p-3">
+    <div className="relative flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] p-3">
+      {/* Floating transfer progress widget (top-right, self-subscribing) */}
+      <TransferProgressOverlay />
+
       {/* Top SFTP Control Bar */}
       <div className="mb-3 flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-2.5">
         <div className="flex items-center gap-3">
@@ -190,6 +187,7 @@ export function SftpView() {
               onChange={handleConnectHost}
               disabled={remoteLoading || transferring}
               placeholder="Select a host to connect..."
+              searchable
               options={[
                 { value: "", label: "Select a host to connect..." },
                 ...hosts.map((h) => ({
@@ -211,26 +209,6 @@ export function SftpView() {
             </button>
           )}
         </div>
-
-        {/* Transfer Status Banner */}
-        {transferring && (
-          <div className="flex items-center gap-2 text-xs text-[var(--accent)]">
-            <Loader2 size={14} className="animate-spin" />
-            <span>{transferMessage}</span>
-            {transferProgress && transferProgress.total > 0 && (
-              <span className="font-mono text-[10px] text-[var(--text-muted)]">
-                {transferProgress.done}/{transferProgress.total}
-              </span>
-            )}
-            <button
-              onClick={cancelTransfer}
-              title="Cancel transfer"
-              className="flex items-center gap-1 rounded bg-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:text-white"
-            >
-              <X size={10} /> Cancel
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Error alert if any */}
@@ -313,6 +291,9 @@ export function SftpView() {
           onTransfer={transferRemote}
         />
       </div>
+
+      {/* Transfer-conflict modal (self-subscribing, renders null when idle) */}
+      <TransferConflictModal />
 
       {/* In-App SFTP File Editor Modal */}
       {editingFile && (

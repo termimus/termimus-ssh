@@ -10,7 +10,7 @@ use keyring::Entry as KeyringEntry;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 pub struct AppState {
@@ -1025,24 +1025,63 @@ pub async fn sftp_rename(
     state.sftp.rename(&session_id, &old_path, &new_path).await
 }
 
+/// Byte-level progress for a single file transfer, emitted as
+/// `sftp-transfer-progress` so the frontend can render a percentage bar.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TransferProgressEvent {
+    session_id: String,
+    path: String,
+    bytes_done: u64,
+    bytes_total: u64,
+}
+
 #[tauri::command]
 pub async fn sftp_upload(
     state: State<'_, AppState>,
+    app: AppHandle,
     session_id: String,
     local_path: String,
     remote_path: String,
 ) -> Result<(), String> {
-    state.sftp.upload_file(&session_id, &local_path, &remote_path).await
+    state
+        .sftp
+        .upload_file(&session_id, &local_path, &remote_path, &|done, total| {
+            let _ = app.emit(
+                "sftp-transfer-progress",
+                TransferProgressEvent {
+                    session_id: session_id.clone(),
+                    path: local_path.clone(),
+                    bytes_done: done,
+                    bytes_total: total,
+                },
+            );
+        })
+        .await
 }
 
 #[tauri::command]
 pub async fn sftp_download(
     state: State<'_, AppState>,
+    app: AppHandle,
     session_id: String,
     remote_path: String,
     local_path: String,
 ) -> Result<(), String> {
-    state.sftp.download_file(&session_id, &remote_path, &local_path).await
+    state
+        .sftp
+        .download_file(&session_id, &remote_path, &local_path, &|done, total| {
+            let _ = app.emit(
+                "sftp-transfer-progress",
+                TransferProgressEvent {
+                    session_id: session_id.clone(),
+                    path: remote_path.clone(),
+                    bytes_done: done,
+                    bytes_total: total,
+                },
+            );
+        })
+        .await
 }
 
 #[tauri::command]
@@ -1070,6 +1109,24 @@ pub async fn sftp_write_file(
     content: String,
 ) -> Result<(), String> {
     state.sftp.write_text_file(&session_id, &path, &content).await
+}
+
+/// Stats a batch of remote paths (missing entries -> null) so the frontend can
+/// detect name collisions before starting a transfer.
+#[tauri::command]
+pub async fn sftp_stat_many(
+    state: State<'_, AppState>,
+    session_id: String,
+    paths: Vec<String>,
+) -> Result<Vec<Option<FileEntry>>, String> {
+    state.sftp.stat_many(&session_id, &paths).await
+}
+
+/// Stats a batch of local paths (missing entries -> null), the download-side
+/// counterpart of `sftp_stat_many`.
+#[tauri::command]
+pub async fn local_stat_many(paths: Vec<String>) -> Result<Vec<Option<FileEntry>>, String> {
+    run_blocking(move || sftp::stat_local_paths(&paths)).await
 }
 
 // Local filesystem helpers.

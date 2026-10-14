@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, Instant, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 
@@ -212,13 +212,46 @@ impl SftpManager {
             .map_err(|e| format!("Failed to rename: {e}"))
     }
 
+    /// Stat each path for the transfer-conflict check. A path that does not
+    /// exist (or cannot be stat'ed) maps to `None` rather than failing the
+    /// whole batch, so one unreadable entry never blocks the transfer.
+    pub async fn stat_many(
+        &self,
+        session_id: &str,
+        paths: &[String],
+    ) -> Result<Vec<Option<FileEntry>>, String> {
+        let conn = self.connection(session_id).await?;
+        let mut result = Vec::with_capacity(paths.len());
+        for path in paths {
+            let entry = conn.sftp.metadata(path).await.ok().map(|md| FileEntry {
+                name: Path::new(path)
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.clone()),
+                path: path.clone(),
+                is_dir: md.is_dir(),
+                size: md.size.unwrap_or(0),
+                modified: md.mtime.map(|t| t as u64),
+                permissions: md.permissions,
+            });
+            result.push(entry);
+        }
+        Ok(result)
+    }
+
     pub async fn upload_file(
         &self,
         session_id: &str,
         local_path: &str,
         remote_path: &str,
+        on_progress: &(dyn Fn(u64, u64) + Send + Sync),
     ) -> Result<(), String> {
         let conn = self.connection(session_id).await?;
+
+        let total_bytes = tokio::fs::metadata(local_path)
+            .await
+            .map(|m| m.len())
+            .map_err(|e| format!("Failed to read local file metadata: {e}"))?;
 
         let mut local_file = tokio::fs::File::open(local_path)
             .await
@@ -233,6 +266,11 @@ impl SftpManager {
             .await
             .map_err(|e| format!("Failed to create remote file: {e}"))?;
 
+        on_progress(0, total_bytes);
+        let mut bytes_done: u64 = 0;
+        // One event per 64KB chunk would flood the IPC channel; ~10 updates
+        // per second is smooth enough for a progress bar.
+        let mut last_emit = Instant::now();
         let mut buffer = vec![0u8; 64 * 1024]; // 64KB chunks
         loop {
             let bytes_read = local_file
@@ -246,6 +284,11 @@ impl SftpManager {
                 .write_all(&buffer[..bytes_read])
                 .await
                 .map_err(|e| format!("Error writing to remote file: {e}"))?;
+            bytes_done += bytes_read as u64;
+            if last_emit.elapsed() >= Duration::from_millis(100) {
+                on_progress(bytes_done, total_bytes);
+                last_emit = Instant::now();
+            }
         }
         remote_file
             .flush()
@@ -255,6 +298,7 @@ impl SftpManager {
             .shutdown()
             .await
             .map_err(|e| format!("Error closing remote file: {e}"))?;
+        on_progress(total_bytes, total_bytes);
 
         Ok(())
     }
@@ -264,8 +308,17 @@ impl SftpManager {
         session_id: &str,
         remote_path: &str,
         local_path: &str,
+        on_progress: &(dyn Fn(u64, u64) + Send + Sync),
     ) -> Result<(), String> {
         let conn = self.connection(session_id).await?;
+
+        let total_bytes = conn
+            .sftp
+            .metadata(remote_path)
+            .await
+            .ok()
+            .and_then(|md| md.size)
+            .unwrap_or(0);
 
         let mut remote_file = conn
             .sftp
@@ -277,6 +330,9 @@ impl SftpManager {
             .await
             .map_err(|e| format!("Failed to create local file: {e}"))?;
 
+        on_progress(0, total_bytes);
+        let mut bytes_done: u64 = 0;
+        let mut last_emit = Instant::now();
         let mut buffer = vec![0u8; 64 * 1024]; // 64KB chunks
         loop {
             let bytes_read = remote_file
@@ -290,11 +346,17 @@ impl SftpManager {
                 .write_all(&buffer[..bytes_read])
                 .await
                 .map_err(|e| format!("Error writing to local file: {e}"))?;
+            bytes_done += bytes_read as u64;
+            if last_emit.elapsed() >= Duration::from_millis(100) {
+                on_progress(bytes_done, total_bytes);
+                last_emit = Instant::now();
+            }
         }
         local_file
             .flush()
             .await
             .map_err(|e| format!("Error flushing local file: {e}"))?;
+        on_progress(total_bytes, total_bytes);
 
         Ok(())
     }
@@ -417,6 +479,32 @@ pub fn get_user_home() -> String {
     dirs::home_dir()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| "/".to_string())
+}
+
+/// Stat each path for the transfer-conflict check; missing paths map to `None`.
+pub fn stat_local_paths(paths: &[String]) -> Result<Vec<Option<FileEntry>>, String> {
+    Ok(paths
+        .iter()
+        .map(|p| {
+            let path = Path::new(p);
+            let metadata = fs::metadata(path).ok()?;
+            Some(FileEntry {
+                name: path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| p.clone()),
+                path: p.clone(),
+                is_dir: metadata.is_dir(),
+                size: metadata.len(),
+                modified: metadata
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs()),
+                permissions: None,
+            })
+        })
+        .collect())
 }
 
 pub fn read_local_text_file(path: &Path) -> Result<String, String> {

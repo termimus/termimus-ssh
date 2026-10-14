@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
+import { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown, Check, Search } from "lucide-react";
 
 export interface SelectOption {
   value: string;
@@ -16,6 +16,8 @@ interface CustomSelectProps {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  /** Shows a search box that filters options by label/description as you type */
+  searchable?: boolean;
 }
 
 export function CustomSelect({
@@ -25,10 +27,14 @@ export function CustomSelect({
   placeholder = "Select an option...",
   disabled = false,
   className = "",
+  searchable = false,
 }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const [query, setQuery] = useState("");
+  const [highlightIdx, setHighlightIdx] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const [coords, setCoords] = useState<{
     top?: number;
@@ -41,6 +47,53 @@ export function CustomSelect({
   const selectedOption = options.find((opt) => opt.value === value);
 
   const handleClose = useCallback(() => setIsOpen(false), []);
+
+  // With a query typed, the empty-value entry is the inert "Select a host..."
+  // placeholder rather than a real choice, so it drops out of the results.
+  const filteredOptions = useMemo(() => {
+    if (!searchable) return options;
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter(
+      (opt) =>
+        opt.value !== "" &&
+        (opt.label.toLowerCase().includes(q) ||
+          (opt.description ?? "").toLowerCase().includes(q))
+    );
+  }, [searchable, options, query]);
+
+  const handleSearchKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (filteredOptions.length === 0) return;
+        const delta = e.key === "ArrowDown" ? 1 : -1;
+        setHighlightIdx(
+          (i) => (i + delta + filteredOptions.length) % filteredOptions.length
+        );
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const opt = filteredOptions[highlightIdx];
+        if (opt) {
+          onChange(opt.value);
+          setIsOpen(false);
+        }
+      } else if (e.key === "Escape" && query) {
+        // First Escape clears the query; the window-level handler closes the dropdown
+        e.stopPropagation();
+        setQuery("");
+      }
+    },
+    [filteredOptions, highlightIdx, onChange, query]
+  );
+
+  // Keep the keyboard-highlighted option visible while arrowing through a long list
+  useEffect(() => {
+    if (!isOpen) return;
+    popoverRef.current
+      ?.querySelector('[data-highlighted="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [highlightIdx, isOpen, query]);
 
   const updatePosition = useCallback(() => {
     if (!containerRef.current) return;
@@ -81,6 +134,8 @@ export function CustomSelect({
     if (disabled) return;
     if (!isOpen) {
       updatePosition();
+      setQuery("");
+      setHighlightIdx(0);
       setIsOpen(true);
     } else {
       setIsOpen(false);
@@ -199,47 +254,83 @@ export function CustomSelect({
               maxHeight: `${coords.maxHeight}px`,
               zIndex: 9999,
             }}
-            className="overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface-low)]/98 p-1.5 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-75 text-xs select-none"
+            className="flex flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-low)]/98 p-1.5 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-75 text-xs select-none"
           >
-            {options.length === 0 ? (
-              <div className="px-3 py-2 text-center text-xs text-[var(--text-muted)]">
-                No options available
+            {searchable && (
+              <div className="relative shrink-0 pb-1.5">
+                <Search
+                  size={12}
+                  className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+                />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  autoFocus
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setHighlightIdx(0);
+                  }}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Search..."
+                  aria-label="Search options"
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] py-1.5 pl-7 pr-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--primary)] focus:outline-none"
+                />
               </div>
-            ) : (
-              options.map((opt) => {
-                const isSelected = opt.value === value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => {
-                      onChange(opt.value);
-                      setIsOpen(false);
-                    }}
-                    title={`${opt.label}${opt.description ? ` ${opt.description}` : ""}`}
-                    className={`flex w-full items-center justify-between gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors cursor-pointer ${
-                      isSelected
-                        ? "bg-[var(--primary)]/15 text-[var(--primary)] font-semibold"
-                        : "text-[var(--text-primary)] hover:bg-[var(--surface-high)]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      {opt.icon && <span className="shrink-0">{opt.icon}</span>}
-                      <span className="truncate">{opt.label}</span>
-                      {opt.description && (
-                        <span className="truncate text-[10px] font-mono text-[var(--text-muted)]">
-                          {opt.description}
-                        </span>
-                      )}
-                    </div>
-
-                    {isSelected && (
-                      <Check size={13} className="shrink-0 text-[var(--primary)]" />
-                    )}
-                  </button>
-                );
-              })
             )}
+
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {options.length === 0 ? (
+                <div className="px-3 py-2 text-center text-xs text-[var(--text-muted)]">
+                  No options available
+                </div>
+              ) : filteredOptions.length === 0 ? (
+                <div className="px-3 py-2 text-center text-xs text-[var(--text-muted)]">
+                  No matches for &quot;{query.trim()}&quot;
+                </div>
+              ) : (
+                filteredOptions.map((opt, idx) => {
+                  const isSelected = opt.value === value;
+                  const isHighlighted = idx === highlightIdx && searchable;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      data-highlighted={isHighlighted || undefined}
+                      onClick={() => {
+                        onChange(opt.value);
+                        setIsOpen(false);
+                      }}
+                      onMouseEnter={() => {
+                        if (searchable) setHighlightIdx(idx);
+                      }}
+                      title={`${opt.label}${opt.description ? ` ${opt.description}` : ""}`}
+                      className={`flex w-full items-center justify-between gap-2.5 rounded-lg px-2.5 py-1.5 text-left transition-colors cursor-pointer ${
+                        isSelected
+                          ? "bg-[var(--primary)]/15 text-[var(--primary)] font-semibold"
+                          : isHighlighted
+                            ? "bg-[var(--surface-high)] text-[var(--text-primary)]"
+                            : "text-[var(--text-primary)] hover:bg-[var(--surface-high)]"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {opt.icon && <span className="shrink-0">{opt.icon}</span>}
+                        <span className="truncate">{opt.label}</span>
+                        {opt.description && (
+                          <span className="truncate text-[10px] font-mono text-[var(--text-muted)]">
+                            {opt.description}
+                          </span>
+                        )}
+                      </div>
+
+                      {isSelected && (
+                        <Check size={13} className="shrink-0 text-[var(--primary)]" />
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </div>,
           document.body
         )}
