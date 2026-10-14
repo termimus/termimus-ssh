@@ -18,6 +18,7 @@ import {
   XCircle,
   CopyPlus,
   Laptop,
+  Lock,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useShallow } from "zustand/react/shallow";
@@ -25,6 +26,7 @@ import { useSessionStore, SshTab } from "../../stores/useSessionStore";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSyncStore } from "../../stores/useSyncStore";
 import { useHostStore } from "../../stores/useHostStore";
+import { useVaultStore } from "../../stores/useVaultStore";
 import { getAllSessionIdsInTree, getAllLeafPanes } from "../../lib/layoutTree";
 import { QuickConnectModal } from "./QuickConnectModal";
 import { ActiveTab } from "./Sidebar";
@@ -87,6 +89,8 @@ export function Header({
 
   const isSnippetSidebarOpen = useSnippetStore((s) => s.isSidebarOpen);
   const toggleSnippetSidebar = useSnippetStore((s) => s.toggleSidebar);
+  const isVaultInitialized = useVaultStore((s) => s.isInitialized);
+  const lockApp = useVaultStore((s) => s.lockApp);
   const onGoHomeRef = useRef(onGoHome);
   onGoHomeRef.current = onGoHome;
   const isHomeActive = activeNav ? activeNav === "hosts" : !isTerminalActive;
@@ -502,6 +506,22 @@ export function Header({
 
         {/* Drag region filler */}
         <div data-tauri-drag-region className="h-full flex-1 cursor-default" />
+
+        {/* App Lock Button — zeroizes the vault key AND covers the UI with the
+            AppLockScreen until re-authentication. SSH sessions and terminal
+            buffers keep running in the background while locked. Hidden until
+            the vault is set up (no master password = no way back in). */}
+        {isVaultInitialized && (
+          <button
+            type="button"
+            data-tauri-drag-region="false"
+            onClick={lockApp}
+            title="Lock App"
+            className="flex h-7 w-7 items-center justify-center rounded-md mr-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container)] transition-colors cursor-pointer"
+          >
+            <Lock size={13} />
+          </button>
+        )}
 
         {/* Snippets Right Sidebar Collapse/Expand Toggle Button (Visible when Terminal is active) */}
         {isTerminalActive && (

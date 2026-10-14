@@ -13,6 +13,7 @@ import { ResizeHandles } from "./components/layout/ResizeHandles";
 import { HostList } from "./components/hosts/HostList";
 import { HostModal } from "./components/hosts/HostModal";
 import { VaultModal } from "./components/vault/VaultModal";
+import { AppLockScreen } from "./components/vault/AppLockScreen";
 import { TerminalWorkspace } from "./components/terminal/TerminalWorkspace";
 import { WorkspaceView } from "./components/workspaces/WorkspaceView";
 import { SftpView } from "./components/sftp/SftpView";
@@ -50,6 +51,7 @@ function App() {
   const [visitedTabs, setVisitedTabs] = useState<Set<ActiveTab>>(() => new Set(["hosts"]));
 
   const isUnlocked = useVaultStore((s) => s.isUnlocked);
+  const isAppLocked = useVaultStore((s) => s.isAppLocked);
   const refreshVault = useVaultStore((s) => s.refresh);
   const refreshHosts = useHostStore((s) => s.refresh);
   const refreshKeychain = useKeychainStore((s) => s.refresh);
@@ -218,8 +220,12 @@ function App() {
         </main>
       </div>
 
-      {/* Vault Setup/Unlock Modal */}
-      {!isUnlocked && <VaultModal />}
+      {/* Full App Lock Screen (Header padlock): opaque overlay above everything,
+          sessions/terminals keep running underneath */}
+      {isAppLocked && <AppLockScreen />}
+
+      {/* Vault Setup/Unlock Modal (superseded by AppLockScreen while app-locked) */}
+      {!isUnlocked && !isAppLocked && <VaultModal />}
 
       {/* Host Create/Edit Modal */}
       <HostModal onOpenKeychain={openKeychain} />

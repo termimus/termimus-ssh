@@ -12,6 +12,10 @@ interface VaultState {
    *  mandatory (the vault must be unlocked to use the app); prompts raised
    *  in-session (manual lock, reopened from Settings) are cancellable. */
   isUnlockPromptDismissable: boolean;
+  /** Full app lock (Header padlock): the UI is covered by the AppLockScreen
+   *  overlay until the user re-authenticates. SSH/SFTP sessions and terminal
+   *  buffers stay alive underneath; only the vault key is zeroized. */
+  isAppLocked: boolean;
   isLoading: boolean;
   error: string | null;
   isBiometricSupported: boolean;
@@ -20,16 +24,18 @@ interface VaultState {
   unlock: (password: string) => Promise<void>;
   unlockWithBiometric: () => Promise<boolean>;
   lock: () => Promise<void>;
+  lockApp: () => Promise<void>;
   autoLock: () => Promise<void>;
   openUnlockPrompt: () => void;
   closeUnlockPrompt: () => void;
 }
 
-export const useVaultStore = create<VaultState>((set) => ({
+export const useVaultStore = create<VaultState>((set, get) => ({
   isInitialized: false,
   isUnlocked: false,
   isUnlockPromptOpen: true,
   isUnlockPromptDismissable: false,
+  isAppLocked: false,
   isLoading: true,
   error: null,
   isBiometricSupported: false,
@@ -43,8 +49,10 @@ export const useVaultStore = create<VaultState>((set) => ({
       ]);
 
       // If vault is initialized but locked, attempt silent unlock via OS keyring
-      // before surfacing the password modal to the user.
-      if (status.is_initialized && !status.is_unlocked) {
+      // before surfacing the password modal to the user. Skipped while the app
+      // is manually locked: returning from the lock screen must be a conscious
+      // authentication (password/biometric), never a silent keyring hit.
+      if (status.is_initialized && !status.is_unlocked && !get().isAppLocked) {
         const { useOsKeyring } = useSettingsStore.getState();
         if (useOsKeyring) {
           try {
@@ -106,7 +114,7 @@ export const useVaultStore = create<VaultState>((set) => ({
     set({ error: null });
     try {
       await api.unlockVault(password);
-      set({ isUnlocked: true, isUnlockPromptOpen: false });
+      set({ isUnlocked: true, isAppLocked: false, isUnlockPromptOpen: false });
 
       // Refresh keyring entry after a successful manual unlock.
       const { useOsKeyring, useBiometrics } = useSettingsStore.getState();
@@ -128,7 +136,7 @@ export const useVaultStore = create<VaultState>((set) => ({
     try {
       const unlocked = await api.unlockVaultBiometric();
       if (unlocked) {
-        set({ isUnlocked: true, isUnlockPromptOpen: false, error: null });
+        set({ isUnlocked: true, isAppLocked: false, isUnlockPromptOpen: false, error: null });
         return true;
       }
       return false;
@@ -143,6 +151,15 @@ export const useVaultStore = create<VaultState>((set) => ({
   lock: async () => {
     await api.lockVault();
     set({ isUnlocked: false, isUnlockPromptOpen: false });
+  },
+
+  // Full app lock (Header padlock): zeroize the vault key AND cover the UI
+  // with the AppLockScreen until re-authentication. Deliberately does NOT
+  // touch SSH/SFTP/tunnel sessions or terminal buffers — remote tasks keep
+  // running while the user is away.
+  lockApp: async () => {
+    await api.lockVault();
+    set({ isAppLocked: true, isUnlocked: false, isUnlockPromptOpen: false });
   },
 
   // System-initiated lock (idle timeout, focus loss): the user is away, so
