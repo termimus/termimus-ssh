@@ -11,7 +11,10 @@ pub struct Database {
 
 impl Database {
     pub fn new() -> Result<Self> {
-        let db_path = get_database_path();
+        Self::new_with_path(get_database_path())
+    }
+
+    pub fn new_with_path(db_path: PathBuf) -> Result<Self> {
         if let Some(parent) = db_path.parent() {
             let _ = fs::create_dir_all(parent);
         }
@@ -1247,8 +1250,31 @@ impl Database {
     }
 }
 
-fn get_database_path() -> PathBuf {
+pub fn get_database_path() -> PathBuf {
+    #[cfg(target_os = "android")]
+    {
+        let candidate_dirs = [
+            PathBuf::from("/data/user/0/com.termimus.app/files"),
+            PathBuf::from("/data/data/com.termimus.app/files"),
+        ];
+        for dir in candidate_dirs {
+            if fs::create_dir_all(&dir).is_ok() {
+                return dir.join("termimus.db");
+            }
+        }
+    }
+
+    #[cfg(target_os = "ios")]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            let doc_dir = PathBuf::from(home).join("Documents");
+            let _ = fs::create_dir_all(&doc_dir);
+            return doc_dir.join("termimus.db");
+        }
+    }
+
     let base_dir = dirs::config_dir()
+        .or_else(dirs::data_dir)
         .unwrap_or_else(|| PathBuf::from("."))
         .join("termimus");
     base_dir.join("termimus.db")

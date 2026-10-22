@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Terminal as TerminalIcon, Minimize2, Radio, Unlink, Layers, BookmarkPlus } from "lucide-react";
+import { Terminal as TerminalIcon, Minimize2, Radio, Unlink, Layers, BookmarkPlus, Keyboard } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useSnippetStore } from "../../stores/useSnippetStore";
@@ -9,6 +9,12 @@ import { findPaneById, getAllLeafPanes } from "../../lib/layoutTree";
 import { PaneContainer } from "./PaneContainer";
 import { PaneView } from "./PaneView";
 import { SnippetSidebar } from "../snippets/SnippetSidebar";
+import { useDeviceLayout } from "../../hooks/useDeviceLayout";
+import { useVirtualKeyboard } from "../../hooks/useVirtualKeyboard";
+import { MobileAccessoryBar } from "../mobile/MobileAccessoryBar";
+import { api } from "../../lib/api";
+
+const textEncoder = new TextEncoder();
 
 interface TerminalWorkspaceProps {
   visible: boolean;
@@ -46,6 +52,32 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
       toggleGroupBroadcast: s.toggleGroupBroadcast,
     }))
   );
+
+  const { isAndroidOrIos, isTouchDevice } = useDeviceLayout();
+  const isVirtualKeyboardOpen = useVirtualKeyboard();
+  const [manualAccessoryBarOpen, setManualAccessoryBarOpen] = useState(false);
+
+  const shouldShowAccessoryBar =
+    (isAndroidOrIos || isTouchDevice) &&
+    (isVirtualKeyboardOpen || manualAccessoryBarOpen);
+
+  const handleSendInput = useCallback((data: string) => {
+    const { activeTabId, tabs, getBroadcastTargetSessionIds } = useSessionStore.getState();
+    const activeTab = tabs.find((t) => t.id === activeTabId);
+    if (!activeTabId || !activeTab) return;
+
+    const bytes = Array.from(textEncoder.encode(data));
+    const targetSessionIds = getBroadcastTargetSessionIds(activeTabId);
+
+    targetSessionIds.forEach((sid) => {
+      const targetTab = tabs.find((t) => t.id === sid);
+      if (targetTab?.isLocal) {
+        api.writeLocalPty(sid, bytes).catch(() => {});
+      } else {
+        api.writeSsh(sid, bytes).catch(() => {});
+      }
+    });
+  }, []);
 
   // Global pointer tracking for tab drag-and-drop
   useEffect(() => {
@@ -128,15 +160,17 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
 
   return (
     <div
-      className="absolute inset-0 flex overflow-hidden select-none"
+      className="absolute inset-0 flex flex-col overflow-hidden select-none"
       style={{
         visibility: visible ? "visible" : "hidden",
         pointerEvents: visible ? "auto" : "none",
         zIndex: visible ? 10 : 0,
       }}
     >
-      {/* Main Terminal Viewport Area */}
-      <div className="relative flex flex-1 flex-col overflow-hidden min-w-0">
+      {/* Upper Area: Terminal Panes + Optional Snippets Sidebar */}
+      <div className="relative flex flex-1 overflow-hidden min-w-0">
+        {/* Main Terminal Viewport Area */}
+        <div className="relative flex flex-1 flex-col overflow-hidden min-w-0">
         {groups.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center text-[var(--text-muted)] gap-3 p-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--surface-container)] text-[var(--text-muted)] border border-[var(--border)]">
@@ -244,10 +278,47 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
             );
           })
         )}
+        </div>
+
+        {/* Snippets Right Sidebar (Collapsible) */}
+        {isSidebarOpen && <SnippetSidebar />}
       </div>
 
-      {/* Snippets Right Sidebar (Collapsible) */}
-      {isSidebarOpen && <SnippetSidebar />}
+      {/* ─── Tablet / Touch Virtual Keyboard Accessory Bar ───────────────────
+          Appears horizontally at the bottom, directly above the soft keyboard:
+          1. Running on a touch device (Android/iOS tablet or phone)
+          2. Full width (w-full), spanning across all split panes
+          3. Sits at the bottom of the viewport directly above the soft keyboard */}
+      {(isAndroidOrIos || isTouchDevice) && (
+        <div
+          className="flex w-full shrink-0 flex-col z-30"
+          style={{ display: visible ? "flex" : "none" }}
+        >
+          {/* Manual toggle button — visible when keyboard bar is NOT auto-shown */}
+          {!isVirtualKeyboardOpen && (
+            <div className="flex justify-end border-t border-[var(--border)] bg-[var(--canvas)] px-2 py-0.5">
+              <button
+                type="button"
+                onClick={() => setManualAccessoryBarOpen((prev) => !prev)}
+                className={`flex h-6 items-center gap-1.5 rounded-lg px-2 text-[11px] font-medium transition-colors ${
+                  manualAccessoryBarOpen
+                    ? "bg-[var(--primary)]/15 text-[var(--primary)] border border-[var(--primary)]/30"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-container)]"
+                }`}
+                title={manualAccessoryBarOpen ? "Hide key toolbar" : "Show Esc / Ctrl / Arrow key toolbar"}
+              >
+                <Keyboard size={12} />
+                <span>{manualAccessoryBarOpen ? "Hide Keys" : "Keys"}</span>
+              </button>
+            </div>
+          )}
+
+          {/* Accessory Bar: only render when visible */}
+          {shouldShowAccessoryBar && (
+            <MobileAccessoryBar onSendInput={handleSendInput} />
+          )}
+        </div>
+      )}
 
       {/* Floating Drag Badge that follows the cursor during tab drag */}
       {isDraggingTab && draggedTab && (

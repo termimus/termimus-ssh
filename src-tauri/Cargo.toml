@@ -38,15 +38,22 @@ russh-sftp = "3.0.0"
 anyhow = "1.0.104"
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2.4.0"
-portable-pty = "0.8"
+tauri-plugin-haptics = "2"
+tauri-plugin-os = "2"
 socket2 = "0.6"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+portable-pty = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString"] }
 block2 = "0.6"
 
+
+[patch.crates-io]
+russh-cryptovec = { path = "patches/russh-cryptovec" }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

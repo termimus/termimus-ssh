@@ -1,0 +1,24 @@
+[package]
+authors = ["Pierre-Étienne Meunier <pe@pijul.org>", "Eugeny <e@ajenti.org"]
+description = "A vector which zeroes its memory on clears and reallocations."
+documentation = "https://docs.rs/russh-cryptovec"
+edition = "2021"
+license = "Apache-2.0"
+name = "russh-cryptovec"
+repository = "https://github.com/warp-tech/russh"
+version = "0.50.2"
+rust-version = "1.75"
+
+[dependencies]
+libc = "0.2"
+ssh-encoding = { workspace = true, optional = true }
+log.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = {version = "0.3", features = ["basetsd", "minwindef", "memoryapi"]}
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.46"
+
+[features]
+ssh-encoding = ["dep:ssh-encoding"]

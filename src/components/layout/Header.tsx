@@ -47,12 +47,21 @@ function checkIsMac(): boolean {
   return /Macintosh|Mac OS X/i.test(navigator.userAgent);
 }
 
+function checkIsMobileOrTablet(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return (
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0))
+  );
+}
+
 interface HeaderProps {
   activeNav?: ActiveTab;
   onGoHome?: () => void;
   onSelectTab?: () => void;
   onOpenSyncSettings?: () => void;
   isTerminalActive?: boolean;
+  hideWindowActions?: boolean;
 }
 
 export function Header({
@@ -61,7 +70,9 @@ export function Header({
   onSelectTab,
   onOpenSyncSettings,
   isTerminalActive,
+  hideWindowActions,
 }: HeaderProps) {
+  const isMobileOrTablet = hideWindowActions || checkIsMobileOrTablet();
   const {
     tabs,
     groups,
@@ -365,7 +376,7 @@ export function Header({
 
       <header
         data-tauri-drag-region="deep"
-        className="flex h-9 w-full select-none items-center bg-[var(--canvas)] border-b border-[var(--border)]"
+        className="flex h-10 w-full select-none items-center bg-[var(--canvas)] border-b border-[var(--border)] px-2"
       >
         {/* macOS: native traffic lights (titleBarStyle: Overlay in
             tauri.macos.conf.json) are drawn by the system on top of this
@@ -590,8 +601,8 @@ export function Header({
         {/* Sync Status Indicator */}
         <HeaderSyncIndicator onOpenSyncSettings={onOpenSyncSettings} />
 
-        {/* Windows / Linux Window Controls (Omitted on macOS) */}
-        {!isMac && (
+        {/* Windows / Linux Window Controls (Omitted on macOS and Tablets/Mobile) */}
+        {!isMac && !isMobileOrTablet && (
           <div data-tauri-drag-region="false" className="flex h-full items-stretch shrink-0">
             <button
               onClick={handleMinimize}
@@ -616,6 +627,7 @@ export function Header({
             </button>
           </div>
         )}
+        {isMobileOrTablet && <div className="w-2 shrink-0" />}
       </header>
 
       {/* Top Bar Tabs Right-Click Context Menu */}

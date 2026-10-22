@@ -179,4 +179,13 @@
     transform: translateZ(0);
     backface-visibility: hidden;
   }
+
+  /* Hide scrollbar for clean mobile accessory toolbar and tab strip */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }

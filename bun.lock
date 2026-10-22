@@ -12,7 +12,9 @@
         "@tauri-apps/api": "^2.12.0",
         "@tauri-apps/plugin-clipboard-manager": "^2.4.0",
         "@tauri-apps/plugin-dialog": "2",
+        "@tauri-apps/plugin-haptics": "^2",
         "@tauri-apps/plugin-opener": "^2",
+        "@tauri-apps/plugin-os": "^2",
         "@xterm/addon-fit": "^0.11.0",
         "@xterm/addon-search": "^0.16.0",
         "@xterm/addon-webgl": "^0.19.0",
@@ -151,7 +153,11 @@
 
     "@tauri-apps/plugin-dialog": ["@tauri-apps/plugin-dialog@2.7.3", "", { "dependencies": { "@tauri-apps/api": "^2.11.0" } }, "sha512-CRgE+7TP4tvq9MjBU6f04NLTFIqVMLKHk3hAqlhil00ngK9ACTrXPH3oHpKMProxILodd3YjBoKbMwSI4IEcfA=="],
 
+    "@tauri-apps/plugin-haptics": ["@tauri-apps/plugin-haptics@2.4.1", "", { "dependencies": { "@tauri-apps/api": "^2.12.0" } }, "sha512-y1t8CyXX4KWeJePamKwC6p/fpk5CV9DbvfcKiAgOHZWj8Gq4iILSxOp/KH4rleWz3A51oiDXbl+HdOugp5doww=="],
+
     "@tauri-apps/plugin-opener": ["@tauri-apps/plugin-opener@2.5.5", "", { "dependencies": { "@tauri-apps/api": "^2.11.0" } }, "sha512-xvzGai5aQds8j8R8RsUK/lW6pGG50YgOYIPLzvkqmkwAj7dfySOD7sGtejRzvVdMmv1EQfKVEFh1MvmDp8QR0g=="],
+
+    "@tauri-apps/plugin-os": ["@tauri-apps/plugin-os@2.4.0", "", { "dependencies": { "@tauri-apps/api": "^2.12.0" } }, "sha512-XFQjntNNI3Vlqdy4WUGwiXX8DByzKVvoemAcUVkBm9NJPGmoDtII5i+vfuAzWaJfOE5cUJJLUDqXBnd4reSAIA=="],
 
     "@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 

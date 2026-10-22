@@ -3,14 +3,24 @@
 //! Spawns local interactive shells (zsh/bash on POSIX, PowerShell/cmd on Windows)
 //! and bridges I/O to Tauri IPC events with near-zero latency, adaptive chunk coalescing,
 //! and automatic child process reaping.
+//! On mobile platforms (Android/iOS), provides an ergonomic stub as local shell spawning
+//! is restricted by sandbox policies.
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize, Child};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::collections::HashMap;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::io::{Read, Write};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::AppHandle;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+use tauri::Emitter;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use tokio::sync::RwLock;
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub struct LocalPtySession {
     pub id: String,
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
@@ -18,11 +28,58 @@ pub struct LocalPtySession {
     child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[derive(Clone)]
 pub struct PtyManager {
     sessions: Arc<RwLock<HashMap<String, Arc<LocalPtySession>>>>,
 }
 
+#[cfg(any(target_os = "android", target_os = "ios"))]
+pub struct LocalPtySession {
+    pub id: String,
+}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+#[derive(Clone)]
+pub struct PtyManager {}
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+impl PtyManager {
+    pub fn new() -> Self {
+        PtyManager {}
+    }
+
+    pub fn detect_default_shell() -> String {
+        "/bin/sh".to_string()
+    }
+
+    pub async fn spawn(
+        &self,
+        _app: AppHandle,
+        _session_id: String,
+        _cols: u16,
+        _rows: u16,
+        _shell_path: Option<String>,
+    ) -> Result<String, String> {
+        Err("Local terminal is not supported on mobile devices. Please connect to a remote SSH server.".to_string())
+    }
+
+    pub async fn write(&self, _session_id: &str, _data: &[u8]) -> Result<(), String> {
+        Err("Local terminal is not supported on mobile devices".to_string())
+    }
+
+    pub async fn resize(&self, _session_id: &str, _cols: u16, _rows: u16) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub async fn kill(&self, _session_id: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub async fn kill_all(&self) {}
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl PtyManager {
     pub fn new() -> Self {
         PtyManager {
@@ -290,6 +347,7 @@ impl PtyManager {
     }
 }
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl Drop for LocalPtySession {
     fn drop(&mut self) {
         if let Ok(mut child) = self.child.lock() {

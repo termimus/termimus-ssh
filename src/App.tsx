@@ -7,46 +7,22 @@ import { useSessionStore } from "./stores/useSessionStore";
 import { useSnippetStore } from "./stores/useSnippetStore";
 import { useTunnelStore } from "./stores/useTunnelStore";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
-import { Sidebar, ActiveTab } from "./components/layout/Sidebar";
-import { Header } from "./components/layout/Header";
-import { ResizeHandles } from "./components/layout/ResizeHandles";
-import { HostList } from "./components/hosts/HostList";
-import { HostModal } from "./components/hosts/HostModal";
-import { VaultModal } from "./components/vault/VaultModal";
-import { AppLockScreen } from "./components/vault/AppLockScreen";
-import { TerminalWorkspace } from "./components/terminal/TerminalWorkspace";
-import { WorkspaceView } from "./components/workspaces/WorkspaceView";
-import { SftpView } from "./components/sftp/SftpView";
-import { TunnelView } from "./components/tunnels/TunnelView";
-import { SnippetView } from "./components/snippets/SnippetView";
-import { KeychainView } from "./components/keychain/KeychainView";
-import { ConfirmModal } from "./components/layout/ConfirmModal";
-import { SnippetModal } from "./components/snippets/SnippetModal";
-import { SettingsView } from "./components/settings/SettingsView";
 import { useKeychainStore } from "./stores/useKeychainStore";
 import { useUpdateStore } from "./stores/useUpdateStore";
 import { useAutoLock } from "./hooks/useAutoLock";
 import { useLiveSync } from "./hooks/useLiveSync";
-
-// Helper component for native-feel stacked views:
-// Keeps views mounted in the DOM once visited, switching visibility in 0ms
-// with zero unmount cost, zero redundant IPC fetches, and perfect scroll/input preservation.
-function PageView({ active, children }: { active: boolean; children: React.ReactNode }) {
-  return (
-    <div
-      className="absolute inset-0 flex flex-col overflow-hidden"
-      style={{
-        visibility: active ? "visible" : "hidden",
-        pointerEvents: active ? "auto" : "none",
-        zIndex: active ? 5 : 0,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
+import { useDeviceLayout } from "./hooks/useDeviceLayout";
+import { ActiveTab } from "./components/layout/Sidebar";
+import { DesktopLayout } from "./components/desktop/DesktopLayout";
+import { MobileLayout } from "./components/mobile/MobileLayout";
+import { HostModal } from "./components/hosts/HostModal";
+import { VaultModal } from "./components/vault/VaultModal";
+import { AppLockScreen } from "./components/vault/AppLockScreen";
+import { SnippetModal } from "./components/snippets/SnippetModal";
+import { ConfirmModal } from "./components/layout/ConfirmModal";
 
 function App() {
+  const { isMobile } = useDeviceLayout();
   const [activeNav, setActiveNav] = useState<ActiveTab>("hosts");
   const [visitedTabs, setVisitedTabs] = useState<Set<ActiveTab>>(() => new Set(["hosts"]));
 
@@ -82,13 +58,14 @@ function App() {
   // Background real-time WebSocket live sync manager
   useLiveSync();
 
-  // Enforce small minimum window size (480x360) so users can snap/tile to half screen
-  // on sub-1080p displays (e.g. 1366x768 half is 683px, 1280x800 half is 640px).
+  // Enforce small minimum window size on desktop so users can snap/tile to half screen
   useEffect(() => {
-    getCurrentWindow()
-      .setMinSize(new LogicalSize(480, 360))
-      .catch(() => {});
-  }, []);
+    if (!isMobile) {
+      getCurrentWindow()
+        .setMinSize(new LogicalSize(480, 360))
+        .catch(() => {});
+    }
+  }, [isMobile]);
 
   useEffect(() => {
     refreshVault();
@@ -97,7 +74,7 @@ function App() {
 
   useEffect(() => {
     if (isUnlocked) {
-      // Preload all domain data in parallel on unlock so sidebar badges and tabs
+      // Preload all domain data in parallel on unlock so badges and tabs
       // are instantly available with zero spinner delay.
       refreshHosts();
       refreshKeychain();
@@ -109,7 +86,6 @@ function App() {
 
   // When a new tab/session is opened, switch to the terminal view;
   // when all tabs close, automatically return to hosts view.
-  // Note: Only tracks tabsCount changes, so switching active tabs causes ZERO App re-renders.
   useEffect(() => {
     if (tabsCount > prevTabsCountRef.current) {
       handleNavChange("terminal");
@@ -120,7 +96,6 @@ function App() {
   }, [tabsCount, activeNav, handleNavChange]);
 
   // Disable default browser context menu across the app (sidebar, empty areas, cards).
-  // Dedicated custom context menus (Terminal in XtermView, Tabs in Header) handle their own events.
   useEffect(() => {
     function handleGlobalContextMenu(e: MouseEvent) {
       const target = e.target as HTMLElement | null;
@@ -133,92 +108,32 @@ function App() {
     return () => window.removeEventListener("contextmenu", handleGlobalContextMenu);
   }, []);
 
-  const showTerminal = activeNav === "terminal";
-
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--canvas)] text-[var(--text-primary)]">
-      {/* Invisible edge/corner handles restoring OS resize cursors on this frameless window */}
-      <ResizeHandles />
-
-      {/* Top Unified Frameless Window Bar (Termius-style: Menu + Tabs + Window Controls) */}
-      <Header
-        activeNav={activeNav}
-        onGoHome={openHosts}
-        onSelectTab={openTerminal}
-        onOpenSyncSettings={openSettings}
-        isTerminalActive={showTerminal}
-      />
-
-      {/* Main Workspace Body */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Obsidian Sidebar — hidden when terminal is active so terminal gets fullscreen width */}
-        {!showTerminal && (
-          <Sidebar
-            activeNav={activeNav}
-            onNavChange={handleNavChange}
-          />
-        )}
-
-        {/* Viewport Content Area */}
-        <main className="relative flex flex-1 overflow-hidden bg-[var(--canvas)]">
-          {/* Terminal sessions stay mounted and retain their layout geometry (never collapse to 0x0),
-              preventing bogus SIGWINCH resize events (which breaks htop/curses TUIs). */}
-          <TerminalWorkspace
-            visible={showTerminal}
-            onOpenWorkspaces={openWorkspaces}
-          />
-
-          {/* Lazy-mounted Native-Grade Keep-Alive Views:
-              Each view is mounted on first visit and preserved across tab switches.
-              Switches happen in 0ms (1 frame), scroll positions are remembered,
-              and inputs/folder drill-downs stay intact. */}
-          {visitedTabs.has("workspaces") && (
-            <PageView active={activeNav === "workspaces"}>
-              <WorkspaceView onOpenTerminal={openTerminal} />
-            </PageView>
-          )}
-
-          {visitedTabs.has("hosts") && (
-            <PageView active={activeNav === "hosts"}>
-              <HostList
-                onOpenTerminal={openTerminal}
-                onOpenSftp={openSftp}
-                onOpenTunnels={openTunnels}
-              />
-            </PageView>
-          )}
-
-          {visitedTabs.has("sftp") && (
-            <PageView active={activeNav === "sftp"}>
-              <SftpView />
-            </PageView>
-          )}
-
-          {visitedTabs.has("keychain") && (
-            <PageView active={activeNav === "keychain"}>
-              <KeychainView />
-            </PageView>
-          )}
-
-          {visitedTabs.has("tunnels") && (
-            <PageView active={activeNav === "tunnels"}>
-              <TunnelView />
-            </PageView>
-          )}
-
-          {visitedTabs.has("snippets") && (
-            <PageView active={activeNav === "snippets"}>
-              <SnippetView />
-            </PageView>
-          )}
-
-          {visitedTabs.has("settings") && (
-            <PageView active={activeNav === "settings"}>
-              <SettingsView />
-            </PageView>
-          )}
-        </main>
-      </div>
+    <>
+      {/* Dynamic Responsive Layout: Mobile Phone (< 768px) vs Desktop/Tablet (>= 768px) */}
+      {isMobile ? (
+        <MobileLayout
+          activeNav={activeNav}
+          onNavChange={handleNavChange}
+          visitedTabs={visitedTabs}
+          onOpenTerminal={openTerminal}
+          onOpenHosts={openHosts}
+          onOpenSftp={openSftp}
+          onOpenTunnels={openTunnels}
+        />
+      ) : (
+        <DesktopLayout
+          activeNav={activeNav}
+          onNavChange={handleNavChange}
+          visitedTabs={visitedTabs}
+          onOpenTerminal={openTerminal}
+          onOpenHosts={openHosts}
+          onOpenSftp={openSftp}
+          onOpenTunnels={openTunnels}
+          onOpenWorkspaces={openWorkspaces}
+          onOpenSettings={openSettings}
+        />
+      )}
 
       {/* Full App Lock Screen (Header padlock): opaque overlay above everything,
           sessions/terminals keep running underneath */}
@@ -226,16 +141,10 @@ function App() {
 
       {/* Vault Setup/Unlock Modal (superseded by AppLockScreen while app-locked) */}
       {!isUnlocked && !isAppLocked && <VaultModal />}
-
-      {/* Host Create/Edit Modal */}
       <HostModal onOpenKeychain={openKeychain} />
-
-      {/* Snippet Create/Edit Modal */}
       <SnippetModal />
-
-      {/* App-wide Delete & Action Confirmation Modal */}
       <ConfirmModal />
-    </div>
+    </>
   );
 }
 
