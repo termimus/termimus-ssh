@@ -7,7 +7,6 @@ import {
   KeyRound,
   Settings,
   CloudCheck,
-  Lock,
   ArrowUpCircle,
 } from "lucide-react";
 import { useVaultStore } from "../../stores/useVaultStore";
@@ -28,7 +27,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
-  const { isUnlocked, lock: lockVault } = useVaultStore();
+  const isUnlocked = useVaultStore((s) => s.isUnlocked);
   const { hosts } = useHostStore();
   const { snippets } = useSnippetStore();
   const { activeRuleIds } = useTunnelStore();
@@ -142,7 +141,7 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
 
         {/* Vault Status & Micro-Footer */}
         <div className="w-full px-3 pb-2 pt-0.5">
-          <div className="flex h-8 w-full items-center justify-between">
+          <div className="flex h-8 w-full items-center">
             <div className="flex min-w-0 items-center">
               <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg hover:bg-[var(--surface-container)] cursor-default transition-colors">
                 <CloudCheck
@@ -157,15 +156,6 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
                 {isUnlocked ? "Vault Unlocked" : "Vault Locked"}
               </span>
             </div>
-            {isUnlocked && (
-              <button
-                onClick={lockVault}
-                title="Lock vault"
-                className="shrink-0 rounded p-1 text-[var(--text-muted)] transition-colors hover:text-[var(--warning)] cursor-pointer"
-              >
-                <Lock size={13} />
-              </button>
-            )}
           </div>
 
           {/* Micro Footer: Version / Update (left) + Mini Ko-fi pill (right) */}
