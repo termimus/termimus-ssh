@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { AlertTriangle, File, Folder } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { useSftpStore } from "../../stores/useSftpStore";
 import { formatBytes, formatDate } from "../../lib/format";
@@ -10,6 +11,7 @@ import { formatBytes, formatDate } from "../../lib/format";
  * for every remaining conflict so the loop ends early.
  */
 export function TransferConflictModal() {
+  const { t } = useTranslation();
   const { pendingConflicts, resolveConflict } = useSftpStore(
     useShallow((s) => ({
       pendingConflicts: s.pendingConflicts,
@@ -51,7 +53,7 @@ export function TransferConflictModal() {
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-              {item.isDir ? "Folder already exists" : "File already exists"}
+              {item.isDir ? t("sftp.folderConflict") : t("sftp.fileConflict")}
             </h3>
             <p className="text-[11px] text-[var(--text-muted)]">
               Conflict {pendingConflicts.index + 1} of {pendingConflicts.items.length}
@@ -120,7 +122,7 @@ export function TransferConflictModal() {
             onClick={() => resolveConflict("cancel")}
             className="rounded-xl px-3 py-1.5 text-xs font-medium text-[var(--danger)] hover:bg-[var(--danger)]/10 transition"
           >
-            Cancel Transfer
+            {t("sftp.cancelTransfer")}
           </button>
 
           <div className="flex items-center gap-2">
@@ -129,7 +131,7 @@ export function TransferConflictModal() {
               onClick={() => resolveConflict("ignore")}
               className="rounded-xl border border-[var(--border)] bg-[var(--surface-container)] px-3.5 py-1.5 text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-high)] hover:text-white transition"
             >
-              Ignore
+              {t("sftp.ignore")}
             </button>
             <button
               type="button"
@@ -137,7 +139,7 @@ export function TransferConflictModal() {
               onClick={() => resolveConflict("replace")}
               className="rounded-xl bg-[var(--primary)] px-4 py-1.5 text-xs font-semibold text-[var(--on-primary)] shadow-sm hover:bg-[var(--primary-hover)] transition"
             >
-              Replace
+              {t("sftp.replace")}
             </button>
             {!isLast && (
               <button
@@ -145,7 +147,7 @@ export function TransferConflictModal() {
                 onClick={() => resolveConflict("replaceAll")}
                 className="rounded-xl border border-[var(--primary)]/40 px-3.5 py-1.5 text-xs font-semibold text-[var(--primary)] hover:bg-[var(--primary)]/10 transition"
               >
-                Replace All
+                {t("sftp.replaceAll")}
               </button>
             )}
           </div>

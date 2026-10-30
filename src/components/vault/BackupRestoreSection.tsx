@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   DownloadCloud,
   UploadCloud,
@@ -67,6 +68,7 @@ function PassphraseInput({
 // ─── main component ────────────────────────────────────────────────────────
 
 export function BackupRestoreSection() {
+  const { t } = useTranslation();
   // ── export state ──
   const [exporting, setExporting] = useState(false);
   const [exportPassphrase, setExportPassphrase] = useState("");
@@ -212,10 +214,10 @@ export function BackupRestoreSection() {
         <Archive size={18} className="text-[var(--secondary)]" />
         <div>
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-            Encrypted Backup &amp; Restore
+            {t("settings.backup.title")}
           </h3>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">
-            Export all hosts, folders, snippets, workspaces, tunnels, and trusted keys. Credentials stay AES-256-GCM encrypted inside the file.
+            {t("settings.backup.subtitle")}
           </p>
         </div>
       </div>
@@ -236,16 +238,16 @@ export function BackupRestoreSection() {
         <div className="mb-4 rounded-md border border-[var(--success)]/30 bg-[var(--success)]/10 px-3 py-2.5 text-xs text-[var(--success)]">
           <div className="flex items-center gap-2 font-semibold mb-1">
             <CheckCircle2 size={14} />
-            Backup saved successfully
+            {t("settings.backup.backupSaved")}
           </div>
           <p className="font-mono text-[11px] text-[var(--text-secondary)] break-all">
             {exportPath}
           </p>
           <button
             onClick={() => setExportPath(null)}
-            className="mt-1.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] underline"
+            className="mt-1.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] underline cursor-pointer"
           >
-            Dismiss
+            {t("settings.backup.dismiss")}
           </button>
         </div>
       )}
@@ -255,7 +257,7 @@ export function BackupRestoreSection() {
         <div className="mb-4 rounded-md border border-[var(--success)]/30 bg-[var(--success)]/10 px-3 py-2.5 text-xs text-[var(--success)] space-y-1.5">
           <div className="flex items-center gap-2 font-semibold">
             <CheckCircle2 size={14} />
-            Backup restored successfully
+            {t("settings.backup.backupRestored")}
           </div>
           <div className="grid grid-cols-3 gap-1.5 font-mono text-[11px] text-[var(--text-secondary)]">
             <span>Hosts: {importSummary.hosts}</span>
@@ -307,9 +309,9 @@ export function BackupRestoreSection() {
 
           <button
             onClick={() => setImportSummary(null)}
-            className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] underline"
+            className="text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)] underline cursor-pointer"
           >
-            Dismiss
+            {t("settings.backup.dismiss")}
           </button>
         </div>
       )}
@@ -321,39 +323,38 @@ export function BackupRestoreSection() {
           <div className="flex items-center gap-2">
             <DownloadCloud size={16} className="text-[var(--primary)]" />
             <span className="text-xs font-semibold text-[var(--text-primary)]">
-              Export Backup
+              {t("settings.backup.exportCardTitle")}
             </span>
           </div>
           <p className="text-[11px] text-[var(--text-muted)]">
-            Save a backup file. Credentials are always AES-256-GCM encrypted inside.
-            Add a passphrase below to also encrypt host IPs, usernames and snippets.
+            {t("settings.backup.exportCardDesc")}
           </p>
 
           <PassphraseInput
-            label="Encrypt entire backup (optional passphrase)"
+            label={t("settings.backup.encryptEntireBackupLabel")}
             value={exportPassphrase}
             onChange={setExportPassphrase}
-            placeholder="Leave blank for standard backup..."
+            placeholder={t("settings.backup.standardBackupPlaceholder")}
           />
 
           {exportPassphrase.trim() && (
             <p className="text-[11px] text-[var(--primary)] flex items-center gap-1">
               <Lock size={11} />
-              Full-backup encryption enabled (AES-256-GCM + Argon2id)
+              {t("settings.backup.fullBackupEncryptionActive")}
             </p>
           )}
 
           <button
             onClick={handleExport}
             disabled={exporting}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--primary)] py-2 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] transition-colors disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[var(--primary)] py-2 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] transition-colors disabled:opacity-50 cursor-pointer"
           >
             {exporting ? (
               <Loader2 size={13} className="animate-spin" />
             ) : (
               <DownloadCloud size={13} />
             )}
-            <span>{exporting ? "Saving..." : "Save Backup File..."}</span>
+            <span>{exporting ? t("settings.backup.savingBackup") : t("settings.backup.saveBackupBtn")}</span>
           </button>
         </div>
 
@@ -362,11 +363,11 @@ export function BackupRestoreSection() {
           <div className="flex items-center gap-2">
             <UploadCloud size={16} className="text-[var(--secondary)]" />
             <span className="text-xs font-semibold text-[var(--text-primary)]">
-              Restore from File
+              {t("settings.backup.restoreCardTitle")}
             </span>
           </div>
           <p className="text-[11px] text-[var(--text-muted)]">
-            Select a Termimus backup file to merge or replace your current data.
+            {t("settings.backup.restoreCardDesc")}
           </p>
 
           {/* Hidden fallback file input */}
@@ -381,10 +382,10 @@ export function BackupRestoreSection() {
           <button
             onClick={handlePickFile}
             disabled={importing}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-highest)] transition-colors disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-highest)] transition-colors disabled:opacity-50 cursor-pointer"
           >
             <UploadCloud size={13} />
-            <span>Choose Backup File...</span>
+            <span>{t("settings.backup.chooseBackupFileBtn")}</span>
           </button>
         </div>
       </div>
@@ -396,12 +397,12 @@ export function BackupRestoreSection() {
             <div className="flex items-center gap-2">
               <AlertTriangle size={18} className="text-[var(--warning)]" />
               <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-                Restore Backup
+                {t("settings.backup.restoreModalTitle")}
               </h3>
               <button
                 onClick={() => { setPendingImportJson(null); setImportPassphrase(""); }}
                 disabled={importing}
-                className="ml-auto text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                className="ml-auto text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
               >
                 <X size={16} />
               </button>
@@ -412,46 +413,45 @@ export function BackupRestoreSection() {
               <div className="rounded-md border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-3 py-2.5 space-y-2">
                 <p className="text-xs text-[var(--primary)] flex items-center gap-1.5 font-semibold">
                   <Lock size={13} />
-                  This backup is encrypted — enter the passphrase to decrypt it.
+                  {t("settings.backup.encryptedNotice")}
                 </p>
                 <PassphraseInput
-                  label="Backup passphrase"
+                  label={t("settings.backup.backupPassphraseLabel")}
                   value={importPassphrase}
                   onChange={setImportPassphrase}
-                  placeholder="Enter backup passphrase..."
+                  placeholder={t("settings.backup.backupPassphrasePlaceholder")}
                 />
               </div>
             )}
 
             <p className="text-xs text-[var(--text-secondary)]">
-              How should this backup be applied to your current data?
+              {t("settings.backup.howToApply")}
             </p>
 
             <div className="space-y-2">
               <button
                 onClick={() => handleConfirmImport(false)}
                 disabled={importing || (isEncryptedBackup && !importPassphrase.trim())}
-                className="w-full text-left rounded-lg border border-[var(--border)] bg-[var(--surface-container)] p-3 hover:border-[var(--primary)]/50 transition-colors disabled:opacity-50"
+                className="w-full text-left rounded-lg border border-[var(--border)] bg-[var(--surface-container)] p-3 hover:border-[var(--primary)]/50 transition-colors disabled:opacity-50 cursor-pointer"
               >
                 <div className="text-xs font-semibold text-[var(--text-primary)]">
-                  Merge <span className="ml-1 rounded bg-[var(--primary)]/15 px-1.5 py-0.5 text-[10px] text-[var(--primary)]">Recommended</span>
+                  {t("settings.backup.mergeTitle")} <span className="ml-1 rounded bg-[var(--primary)]/15 px-1.5 py-0.5 text-[10px] text-[var(--primary)]">{t("settings.backup.recommendedBadge")}</span>
                 </div>
                 <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                  Adds new items and updates existing ones by ID. Trusted host keys with changed fingerprints are kept untouched (MITM protection).
+                  {t("settings.backup.mergeDesc")}
                 </div>
               </button>
 
               <button
                 onClick={() => handleConfirmImport(true)}
                 disabled={importing || (isEncryptedBackup && !importPassphrase.trim())}
-                className="w-full text-left rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/5 p-3 hover:border-[var(--danger)]/60 transition-colors disabled:opacity-50"
+                className="w-full text-left rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/5 p-3 hover:border-[var(--danger)]/60 transition-colors disabled:opacity-50 cursor-pointer"
               >
                 <div className="text-xs font-semibold text-[var(--danger)]">
-                  Replace All
+                  {t("settings.backup.replaceAllTitle")}
                 </div>
                 <div className="text-[11px] text-[var(--text-muted)] mt-0.5">
-                  Deletes all current hosts, folders, snippets, tunnels and known hosts before restoring. A safety snapshot is auto-saved locally first.
-                  If the backup came from a different vault, you'll be logged out to re-authenticate.
+                  {t("settings.backup.replaceAllDesc")}
                 </div>
               </button>
             </div>

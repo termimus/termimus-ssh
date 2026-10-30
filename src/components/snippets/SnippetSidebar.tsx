@@ -20,6 +20,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSessionStore } from "../../stores/useSessionStore";
@@ -28,6 +29,7 @@ import { getAllLeafPanes } from "../../lib/layoutTree";
 import { Snippet } from "../../lib/api";
 
 export function SnippetSidebar() {
+  const { t } = useTranslation();
   const {
     snippets,
     isLoading,
@@ -154,16 +156,16 @@ export function SnippetSidebar() {
       const res = await sendSnippetToTerminals(snippet.command, mode);
       const feedbackMsg = res.ok
         ? res.count > 1
-          ? `Broadcasted to ${res.count} terminals`
-          : `Sent to ${res.targets[0] || "terminal"}`
-        : "Failed to send command";
+          ? t("snippets.sidebar.broadcastSuccess", { count: res.count })
+          : t("snippets.sidebar.sentSuccess", { target: res.targets[0] || "terminal" })
+        : t("snippets.sidebar.sendFailed");
 
       setRunFeedback({ id: snippet.id, message: feedbackMsg, ok: res.ok });
       setTimeout(() => {
         setRunFeedback((prev) => (prev?.id === snippet.id ? null : prev));
       }, 2000);
     },
-    [sendSnippetToTerminals]
+    [sendSnippetToTerminals, t]
   );
 
   const handleCopy = useCallback(async (id: string, text: string) => {
@@ -179,18 +181,18 @@ export function SnippetSidebar() {
   const handleDelete = useCallback(
     (id: string, snippetTitle?: string) => {
       useConfirmStore.getState().confirm({
-        title: "Delete Snippet",
-        message: `Are you sure you want to delete ${
-          snippetTitle ? `"${snippetTitle}"` : "this snippet"
-        }? This action cannot be undone.`,
-        confirmLabel: "Delete Snippet",
+        title: t("snippets.deleteConfirm.title"),
+        message: t("snippets.deleteConfirm.message", {
+          title: snippetTitle ? `"${snippetTitle}"` : "this snippet",
+        }),
+        confirmLabel: t("snippets.deleteConfirm.confirmLabel"),
         isDanger: true,
         onConfirm: async () => {
           await deleteSnippet(id);
         },
       });
     },
-    [deleteSnippet]
+    [deleteSnippet, t]
   );
 
   return (
@@ -205,7 +207,7 @@ export function SnippetSidebar() {
           <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--primary)]/10 text-[var(--primary)]">
             <Braces size={14} />
           </div>
-          <span className="text-xs font-semibold text-[var(--text-primary)]">Snippets</span>
+          <span className="text-xs font-semibold text-[var(--text-primary)]">{t("snippets.sidebar.title")}</span>
           <span className="rounded-full bg-[var(--surface-container)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--text-muted)] border border-[var(--border)]">
             {snippets.length}
           </span>
@@ -214,16 +216,16 @@ export function SnippetSidebar() {
         <div className="flex items-center gap-1">
           <button
             onClick={openCreateModal}
-            title="Create new snippet"
-            className="flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors"
+            title={t("snippets.sidebar.createTooltip")}
+            className="flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors cursor-pointer"
           >
             <Plus size={14} />
-            <span className="text-[11px]">New</span>
+            <span className="text-[11px]">{t("snippets.sidebar.new")}</span>
           </button>
           <button
             onClick={toggleSidebar}
-            title="Collapse snippets sidebar (Alt+S)"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
+            title={t("snippets.sidebar.collapseTooltip")}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             <PanelRightClose size={15} />
           </button>
@@ -236,9 +238,9 @@ export function SnippetSidebar() {
           <div className="flex items-start gap-2 rounded-lg border border-[var(--warning)]/30 bg-[var(--warning)]/10 p-2 text-xs text-[var(--warning)]">
             <AlertCircle size={14} className="shrink-0 mt-0.5" />
             <div className="min-w-0">
-              <p className="font-semibold text-[11px]">No Active Session</p>
+              <p className="font-semibold text-[11px]">{t("snippets.sidebar.noActiveSession")}</p>
               <p className="text-[10px] text-[var(--warning)]/80 mt-0.5 leading-tight">
-                Connect a server to run snippets directly into the shell.
+                {t("snippets.sidebar.noActiveSessionDesc")}
               </p>
             </div>
           </div>
@@ -266,7 +268,7 @@ export function SnippetSidebar() {
                     isBroadcast ? "text-[var(--primary)]" : "text-[var(--text-secondary)]"
                   }`}
                 >
-                  {isBroadcast ? "Multi-Terminal Sync Active" : "Single Terminal Mode"}
+                  {isBroadcast ? t("snippets.sidebar.syncActive") : t("snippets.sidebar.singleMode")}
                 </span>
               </div>
 
@@ -275,10 +277,10 @@ export function SnippetSidebar() {
                 onClick={() => toggleGroupBroadcast(activeGroupId || undefined)}
                 title={
                   isBroadcast
-                    ? "Turn off Sync (Alt+B)"
-                    : `Sync and mirror commands to all ${connectedLeafTabs.length} terminals (Alt+B)`
+                    ? t("snippets.sidebar.syncTurnOffTooltip")
+                    : t("snippets.sidebar.syncTurnOnTooltip", { count: connectedLeafTabs.length })
                 }
-                className={`flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-mono font-medium transition-colors ${
+                className={`flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-mono font-medium transition-colors cursor-pointer ${
                   isBroadcast
                     ? "bg-[var(--primary)] text-black hover:bg-[var(--primary-hover)] shadow-xs"
                     : "border border-[var(--border)] bg-[var(--surface-high)] text-[var(--text-primary)] hover:border-[var(--primary)]/50 hover:text-[var(--primary)]"
@@ -287,12 +289,12 @@ export function SnippetSidebar() {
                 {isBroadcast ? (
                   <>
                     <Unlink size={10} />
-                    <span>SYNC ON</span>
+                    <span>{t("snippets.sidebar.syncOn")}</span>
                   </>
                 ) : (
                   <>
                     <Radio size={10} />
-                    <span>ENABLE SYNC</span>
+                    <span>{t("snippets.sidebar.enableSync")}</span>
                   </>
                 )}
               </button>
@@ -301,17 +303,14 @@ export function SnippetSidebar() {
             <p className="text-[10px] text-[var(--text-muted)] mt-1.5 leading-tight">
               {isBroadcast ? (
                 <span>
-                  Running snippets will execute on{" "}
-                  <strong className="text-[var(--primary)]">all {connectedLeafTabs.length}</strong>{" "}
-                  split terminals simultaneously.
+                  {t("snippets.sidebar.syncActiveDesc", { count: connectedLeafTabs.length })}
                 </span>
               ) : (
                 <span>
-                  Targeting focused terminal:{" "}
-                  <strong className="text-[var(--text-primary)]">
-                    {activeTab?.hostLabel || "Active Pane"}
-                  </strong>{" "}
-                  ({connectedLeafTabs.length} split panes open).
+                  {t("snippets.sidebar.singleActiveDesc", {
+                    target: activeTab?.hostLabel || "Active Pane",
+                    count: connectedLeafTabs.length,
+                  })}
                 </span>
               )}
             </p>
@@ -331,7 +330,7 @@ export function SnippetSidebar() {
               </div>
             </div>
             <span className="text-[10px] text-[var(--text-muted)] shrink-0 font-sans">
-              Single Term
+              {t("snippets.sidebar.singleTermBadge")}
             </span>
           </div>
         )}
@@ -345,13 +344,13 @@ export function SnippetSidebar() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search snippets..."
+            placeholder={t("snippets.sidebar.searchPlaceholder")}
             className="w-full rounded-md border border-[var(--border)] bg-[var(--surface-container)] pl-8 pr-7 py-1 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--primary)] focus:outline-none transition-colors"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              className="absolute right-2 top-2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              className="absolute right-2 top-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
             >
               <X size={12} />
             </button>
@@ -362,19 +361,19 @@ export function SnippetSidebar() {
           <div className="flex items-center gap-1 overflow-x-auto pb-0.5 no-scrollbar">
             <button
               onClick={() => setSelectedTag(null)}
-              className={`rounded px-1.5 py-0.5 text-[10px] font-medium shrink-0 transition-colors ${
+              className={`rounded px-1.5 py-0.5 text-[10px] font-medium shrink-0 transition-colors cursor-pointer ${
                 selectedTag === null
                   ? "bg-[var(--primary)] text-black"
                   : "bg-[var(--surface-container)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               }`}
             >
-              All
+              {t("snippets.sidebar.allTags")}
             </button>
             {allTags.map((tag) => (
               <button
                 key={tag}
                 onClick={() => setSelectedTag((prev) => (prev === tag ? null : tag))}
-                className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium shrink-0 transition-colors ${
+                className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium shrink-0 transition-colors cursor-pointer ${
                   selectedTag === tag
                     ? "bg-[var(--primary)] text-black"
                     : "bg-[var(--surface-container)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
@@ -393,26 +392,26 @@ export function SnippetSidebar() {
         {isLoading && snippets.length === 0 ? (
           <div className="flex h-32 flex-col items-center justify-center text-xs text-[var(--text-muted)] gap-2">
             <Loader2 size={16} className="animate-spin text-[var(--primary)]" />
-            <span>Loading library...</span>
+            <span>{t("snippets.sidebar.loadingLibrary")}</span>
           </div>
         ) : filteredSnippets.length === 0 ? (
           <div className="flex h-48 flex-col items-center justify-center text-center text-[var(--text-muted)] px-3">
             <Braces size={28} className="mb-2 opacity-30" />
             <p className="text-xs font-semibold text-[var(--text-primary)]">
-              {snippets.length === 0 ? "No snippets created yet" : "No snippets match search"}
+              {snippets.length === 0 ? t("snippets.sidebar.noSnippetsTitle") : t("snippets.sidebar.noSnippetsSearchTitle")}
             </p>
             <p className="text-[11px] mt-1 text-[var(--text-muted)]">
               {snippets.length === 0
-                ? "Save commands you use often and execute them with 1 click."
-                : "Try a different search keyword or tag."}
+                ? t("snippets.sidebar.noSnippetsDesc")
+                : t("snippets.sidebar.noSnippetsSearchDesc")}
             </p>
             {snippets.length === 0 && (
               <button
                 onClick={openCreateModal}
-                className="mt-3 flex items-center gap-1 rounded-md bg-[var(--primary)] px-2.5 py-1 text-xs font-semibold text-black hover:bg-[var(--primary-hover)] transition-colors shadow-xs"
+                className="mt-3 flex items-center gap-1 rounded-md bg-[var(--primary)] px-2.5 py-1 text-xs font-semibold text-black hover:bg-[var(--primary-hover)] transition-colors shadow-xs cursor-pointer"
               >
                 <Plus size={13} />
-                <span>Add First Snippet</span>
+                <span>{t("snippets.sidebar.addFirstSnippet")}</span>
               </button>
             )}
           </div>
@@ -560,6 +559,7 @@ const SidebarSnippetCard = memo(function SidebarSnippetCard({
   onDelete,
   onContextMenu,
 }: SidebarSnippetCardProps) {
+  const { t } = useTranslation();
   const isSecret = snippet.tags.some((t) => t.toLowerCase() === "secret");
   const [isRevealed, setIsRevealed] = useState(false);
   const displayTags = snippet.tags.filter((t) => t.toLowerCase() !== "secret");
@@ -577,11 +577,11 @@ const SidebarSnippetCard = memo(function SidebarSnippetCard({
           </h4>
           {isSecret && (
             <span
-              title="Secret snippet: command text is masked by default"
+              title={t("snippets.sidebar.secretBadgeTooltip")}
               className="flex items-center gap-1 rounded bg-[var(--warning)]/15 border border-[var(--warning)]/30 px-1.5 py-0.2 text-[9px] font-mono text-[var(--warning)] font-semibold shrink-0"
             >
               <Lock size={9} />
-              <span>SECRET</span>
+              <span>{t("snippets.sidebar.secretBadge")}</span>
             </span>
           )}
         </div>
@@ -589,8 +589,8 @@ const SidebarSnippetCard = memo(function SidebarSnippetCard({
           {isSecret && (
             <button
               onClick={() => setIsRevealed((prev) => !prev)}
-              title={isRevealed ? "Hide secret command" : "Reveal secret command"}
-              className={`rounded p-1 transition-colors ${
+              title={isRevealed ? t("snippets.sidebar.hideSecretTooltip") : t("snippets.sidebar.revealSecretTooltip")}
+              className={`rounded p-1 transition-colors cursor-pointer ${
                 isRevealed
                   ? "text-[var(--warning)] bg-[var(--warning)]/15"
                   : "text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-[var(--text-primary)]"
@@ -601,22 +601,22 @@ const SidebarSnippetCard = memo(function SidebarSnippetCard({
           )}
           <button
             onClick={() => onCopy(snippet.id, snippet.command)}
-            title={isCopied ? "Copied!" : "Copy command to clipboard"}
-            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-[var(--text-primary)] transition-colors"
+            title={isCopied ? t("snippets.sidebar.copiedToast") : t("snippets.sidebar.copyCommandTooltip")}
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             {isCopied ? <Check size={12} className="text-[var(--success)]" /> : <Copy size={12} />}
           </button>
           <button
             onClick={() => onEdit(snippet)}
-            title="Edit snippet"
-            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-[var(--text-primary)] transition-colors"
+            title={t("snippets.sidebar.editSnippetTooltip")}
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
           >
             <Pencil size={12} />
           </button>
           <button
             onClick={() => onDelete(snippet.id, snippet.title)}
-            title="Delete snippet"
-            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] transition-colors"
+            title={t("snippets.sidebar.deleteSnippetTooltip")}
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] transition-colors cursor-pointer"
           >
             <Trash2 size={12} />
           </button>
@@ -671,12 +671,12 @@ const SidebarSnippetCard = memo(function SidebarSnippetCard({
               disabled={!hasActiveTerminal}
               title={
                 !hasActiveTerminal
-                  ? "Connect to a terminal session first"
+                  ? t("snippets.sidebar.connectSessionPrompt")
                   : isMultiTerminal && isSyncActive
-                  ? `Broadcast to all ${connectedCount} terminals`
-                  : `Run in ${activeHostLabel}`
+                  ? t("snippets.sidebar.broadcastToAllTooltip", { count: connectedCount })
+                  : t("snippets.sidebar.runInActive", { target: activeHostLabel })
               }
-              className={`flex-1 flex items-center justify-center gap-1.5 rounded py-1.5 text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded py-1.5 text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer ${
                 isMultiTerminal && isSyncActive
                   ? "bg-[var(--primary)] text-black hover:bg-[var(--primary-hover)] shadow-xs"
                   : "bg-[var(--surface-high)] text-[var(--primary)] border border-[var(--border)] hover:bg-[var(--primary)] hover:text-black hover:border-[var(--primary)]"
@@ -685,12 +685,12 @@ const SidebarSnippetCard = memo(function SidebarSnippetCard({
               {isMultiTerminal && isSyncActive ? (
                 <>
                   <Radio size={12} className="animate-pulse" />
-                  <span>Run on All ({connectedCount})</span>
+                  <span>{t("snippets.sidebar.runOnAll", { count: connectedCount })}</span>
                 </>
               ) : (
                 <>
                   <Play size={11} />
-                  <span>Run in Terminal</span>
+                  <span>{t("snippets.sidebar.runInTerminal")}</span>
                 </>
               )}
             </button>
@@ -701,12 +701,12 @@ const SidebarSnippetCard = memo(function SidebarSnippetCard({
                 onClick={() => onExecute(snippet, isSyncActive ? "single" : "broadcast")}
                 title={
                   isSyncActive
-                    ? `Run only in active terminal (${activeHostLabel})`
-                    : `Broadcast to all ${connectedCount} terminals`
+                    ? t("snippets.sidebar.runActiveOnlyTooltip", { target: activeHostLabel })
+                    : t("snippets.sidebar.broadcastToAllTooltip", { count: connectedCount })
                 }
-                className="flex items-center justify-center rounded px-2 py-1.5 text-[10px] font-mono border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition-colors shrink-0"
+                className="flex items-center justify-center rounded px-2 py-1.5 text-[10px] font-mono border border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition-colors shrink-0 cursor-pointer"
               >
-                {isSyncActive ? "Active only" : `All (${connectedCount})`}
+                {isSyncActive ? t("snippets.sidebar.activeOnly") : t("snippets.sidebar.allCount", { count: connectedCount })}
               </button>
             )}
           </div>

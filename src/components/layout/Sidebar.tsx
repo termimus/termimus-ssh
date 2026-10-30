@@ -9,6 +9,7 @@ import {
   CloudCheck,
   ArrowUpCircle,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useVaultStore } from "../../stores/useVaultStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { useSnippetStore } from "../../stores/useSnippetStore";
@@ -27,6 +28,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
+  const { t } = useTranslation();
   const isUnlocked = useVaultStore((s) => s.isUnlocked);
   const { hosts } = useHostStore();
   const { snippets } = useSnippetStore();
@@ -42,12 +44,12 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
     badge?: string | number;
     badgeDot?: boolean;
   }[] = [
-    { icon: Server, label: "Hosts", id: "hosts", badge: hosts.length || undefined },
-    { icon: KeyRound, label: "Keychain", id: "keychain", badge: keychainItems.length || undefined },
-    { icon: Layers, label: "Workspaces", id: "workspaces", badge: presets.length || undefined },
-    { icon: FolderOpen, label: "SFTP Browser", id: "sftp" },
-    { icon: Braces, label: "Snippets & Scripts", id: "snippets", badge: snippets.length || undefined },
-    { icon: Waypoints, label: "Port Forwarding", id: "tunnels", badgeDot: activeRuleIds.size > 0 },
+    { icon: Server, label: t("nav.hosts"), id: "hosts", badge: hosts.length || undefined },
+    { icon: KeyRound, label: t("nav.keychain"), id: "keychain", badge: keychainItems.length || undefined },
+    { icon: Layers, label: t("nav.workspaces"), id: "workspaces", badge: presets.length || undefined },
+    { icon: FolderOpen, label: t("nav.sftp"), id: "sftp" },
+    { icon: Braces, label: t("nav.snippets"), id: "snippets", badge: snippets.length || undefined },
+    { icon: Waypoints, label: t("nav.tunnels"), id: "tunnels", badgeDot: activeRuleIds.size > 0 },
   ];
 
   return (
@@ -129,11 +131,11 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
               />
             </div>
             <span className="flex-1 text-left truncate text-[13px] font-medium">
-              Settings
+              {t("nav.settings")}
             </span>
             {hasUpdate && (
               <span className="mr-2 rounded bg-[var(--primary)]/15 px-1.5 py-0.5 text-[10px] font-mono font-semibold text-[var(--primary)] border border-[var(--primary)]/30 animate-pulse">
-                Update
+                {t("nav.update")}
               </span>
             )}
           </button>

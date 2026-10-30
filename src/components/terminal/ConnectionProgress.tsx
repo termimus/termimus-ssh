@@ -13,6 +13,7 @@ import {
   X,
   Loader2,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Host } from "../../lib/api";
 import { useHostStore } from "../../stores/useHostStore";
 import { useSessionStore } from "../../stores/useSessionStore";
@@ -43,6 +44,7 @@ export function ConnectionProgress({
   onRetry,
   onClose,
 }: ConnectionProgressProps) {
+  const { t } = useTranslation();
   const [showLogs, setShowLogs] = useState(false);
   const [copied, setCopied] = useState(false);
   const { openEditModal } = useHostStore();
@@ -104,10 +106,10 @@ export function ConnectionProgress({
   }, [currentStep, isFailed]);
 
   const stages = [
-    { step: 1, label: "Socket", icon: Plug },
-    { step: 2, label: "Host Key", icon: ShieldCheck },
-    { step: 3, label: "Auth", icon: KeyRound },
-    { step: 4, label: "Shell", icon: TerminalIcon },
+    { step: 1, label: t("terminal.progress.stages.socket"), icon: Plug },
+    { step: 2, label: t("terminal.progress.stages.hostKey"), icon: ShieldCheck },
+    { step: 3, label: t("terminal.progress.stages.auth"), icon: KeyRound },
+    { step: 4, label: t("terminal.progress.stages.shell"), icon: TerminalIcon },
   ];
 
   return (
@@ -156,7 +158,7 @@ export function ConnectionProgress({
             onClick={() => setShowLogs((prev) => !prev)}
             className="rounded-xl border border-[var(--border)] bg-[#21262d] px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-[#30363d] shadow-sm cursor-pointer"
           >
-            {showLogs || isFailed ? "Hide logs" : "Show logs"}
+            {showLogs || isFailed ? t("terminal.progress.hideLogs") : t("terminal.progress.showLogs")}
           </button>
         </div>
 
@@ -243,7 +245,7 @@ export function ConnectionProgress({
               ? error
               : logs.length > 0
               ? logs[logs.length - 1].message
-              : `Connecting to ${host?.address || "server"}...`}
+              : t("terminal.connecting", { host: host?.address || "server" })}
           </p>
         </div>
 
@@ -252,19 +254,19 @@ export function ConnectionProgress({
           <div className="space-y-3 pt-1">
             <div className="flex items-center justify-between px-1">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                Connection Log
+                {t("terminal.progress.connectionLog")}
               </span>
               <button
                 onClick={handleCopyLog}
-                className="flex items-center gap-1 rounded bg-[#21262d] px-2 py-0.5 text-[11px] font-medium text-[var(--text-secondary)] hover:text-white border border-[var(--border)] transition"
+                className="flex items-center gap-1 rounded bg-[#21262d] px-2 py-0.5 text-[11px] font-medium text-[var(--text-secondary)] hover:text-white border border-[var(--border)] transition cursor-pointer"
               >
                 {copied ? (
                   <>
-                    <Check size={11} className="text-[var(--success)]" /> Copied
+                    <Check size={11} className="text-[var(--success)]" /> {t("terminal.progress.copied")}
                   </>
                 ) : (
                   <>
-                    <Copy size={11} /> Copy Log
+                    <Copy size={11} /> {t("terminal.progress.copyLog")}
                   </>
                 )}
               </button>
@@ -272,7 +274,7 @@ export function ConnectionProgress({
 
             <div className="max-h-48 overflow-y-auto rounded-xl border border-[var(--border)] bg-[#05070a] p-3 font-mono text-[11px] leading-relaxed shadow-inner">
               {logs.length === 0 ? (
-                <p className="text-[var(--text-muted)]">No logs yet...</p>
+                <p className="text-[var(--text-muted)]">{t("terminal.progress.noLogs")}</p>
               ) : (
                 logs.map((log, idx) => (
                   <div
@@ -307,17 +309,17 @@ export function ConnectionProgress({
           <div className="flex items-center justify-center gap-2 pt-2">
             <button
               onClick={onRetry}
-              className="flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-4 py-2 text-xs font-semibold text-[var(--on-primary)] transition hover:bg-[var(--primary-hover)] shadow-md"
+              className="flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-4 py-2 text-xs font-semibold text-[var(--on-primary)] transition hover:bg-[var(--primary-hover)] shadow-md cursor-pointer"
             >
-              <RotateCw size={13} /> Retry
+              <RotateCw size={13} /> {t("terminal.progress.retry")}
             </button>
 
             {host && (
               <button
                 onClick={() => openEditModal(host)}
-                className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[#21262d] px-4 py-2 text-xs font-medium text-white transition hover:bg-[#30363d]"
+                className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[#21262d] px-4 py-2 text-xs font-medium text-white transition hover:bg-[#30363d] cursor-pointer"
               >
-                <Pencil size={13} /> Edit Host
+                <Pencil size={13} /> {t("terminal.progress.editHost")}
               </button>
             )}
 
@@ -326,9 +328,9 @@ export function ConnectionProgress({
                 if (activeTabId) closeSession(activeTabId);
                 onClose();
               }}
-              className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[#21262d] px-3.5 py-2 text-xs font-medium text-[var(--text-muted)] transition hover:text-white"
+              className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[#21262d] px-3.5 py-2 text-xs font-medium text-[var(--text-muted)] transition hover:text-white cursor-pointer"
             >
-              <X size={13} /> Close
+              <X size={13} /> {t("terminal.progress.close")}
             </button>
           </div>
         )}

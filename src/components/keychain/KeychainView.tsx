@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, memo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   KeyRound,
   Plus,
@@ -17,6 +18,7 @@ import { KeyModal } from "./KeyModal";
 import { IdentityModal } from "./IdentityModal";
 
 export function KeychainView() {
+  const { t } = useTranslation();
   const {
     items,
     isLoading,
@@ -108,16 +110,16 @@ export function KeychainView() {
   const handleDelete = useCallback(
     (item: KeychainItem) => {
       useConfirmStore.getState().confirm({
-        title: item.kind === "password" ? "Delete Identity" : "Delete Key",
-        message: `Are you sure you want to delete "${item.name}" from your Keychain? Any hosts using this credential will need a new one assigned. This action cannot be undone.`,
-        confirmLabel: "Delete",
+        title: item.kind === "password" ? t("keychain.deleteConfirm.titleIdentity") : t("keychain.deleteConfirm.titleKey"),
+        message: t("keychain.deleteConfirm.message", { name: item.name }),
+        confirmLabel: t("keychain.deleteConfirm.confirmLabel"),
         isDanger: true,
         onConfirm: async () => {
           await deleteItem(item.id);
         },
       });
     },
-    [deleteItem]
+    [deleteItem, t]
   );
 
   return (
@@ -130,7 +132,7 @@ export function KeychainView() {
         <div className="flex items-center gap-2.5">
           <KeyRound size={20} className="text-[var(--primary)]" />
           <h1 className="text-lg font-semibold text-[var(--text-primary)]">
-            Keychain
+            {t("keychain.title")}
           </h1>
           <span className="rounded-md bg-[var(--surface-container)] px-2 py-0.5 text-xs font-mono text-[var(--text-muted)]">
             {items.length}
@@ -147,51 +149,50 @@ export function KeychainView() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search keys & identities..."
+              placeholder={t("keychain.searchPlaceholder")}
               className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] py-1.5 pl-8 pr-3 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--primary)] focus:outline-none"
             />
           </div>
           <button
             onClick={openCreateKeyModal}
-            className="flex items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-[var(--on-primary)] transition hover:bg-[var(--primary-hover)]"
+            className="flex items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-[var(--on-primary)] transition hover:bg-[var(--primary-hover)] cursor-pointer"
           >
-            <Plus size={14} strokeWidth={2.5} /> New Key
+            <Plus size={14} strokeWidth={2.5} /> {t("keychain.newKey")}
           </button>
           <button
             onClick={openCreateIdentityModal}
-            className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-highest)]"
+            className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3 py-1.5 text-xs font-medium text-[var(--text-primary)] transition hover:bg-[var(--surface-highest)] cursor-pointer"
           >
-            <Plus size={14} strokeWidth={2.5} /> New Identity
+            <Plus size={14} strokeWidth={2.5} /> {t("keychain.newIdentity")}
           </button>
         </div>
       </div>
 
       {isLoading && items.length === 0 ? (
         <div className="flex flex-1 items-center justify-center text-sm text-[var(--text-muted)]">
-          Loading Keychain...
+          {t("keychain.loading")}
         </div>
       ) : items.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center text-center text-[var(--text-muted)] py-16">
           <KeyRound size={40} className="mb-2 opacity-30" />
           <p className="text-sm font-medium text-[var(--text-primary)]">
-            No keys or identities saved yet
+            {t("keychain.emptyTitle")}
           </p>
           <p className="text-xs mt-1 max-w-sm">
-            Save SSH keys and password identities here once, then pick them
-            from a dropdown whenever you add or edit a host.
+            {t("keychain.emptyDesc")}
           </p>
           <div className="flex gap-2 mt-4">
             <button
               onClick={openCreateKeyModal}
-              className="rounded-lg bg-[var(--primary)] px-3.5 py-1.5 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)]"
+              className="rounded-lg bg-[var(--primary)] px-3.5 py-1.5 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] cursor-pointer"
             >
-              Add Your First Key
+              {t("keychain.addFirstKey")}
             </button>
             <button
               onClick={openCreateIdentityModal}
-              className="rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-highest)]"
+              className="rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--surface-highest)] cursor-pointer"
             >
-              Add Identity
+              {t("keychain.addIdentity")}
             </button>
           </div>
         </div>
@@ -200,11 +201,11 @@ export function KeychainView() {
           {/* Keys Section */}
           <div className="mb-6">
             <h2 className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-              Keys {keys.length > 0 && `(${keys.length})`}
+              {t("keychain.keysSection")} {keys.length > 0 && `(${keys.length})`}
             </h2>
             {keys.length === 0 ? (
               <p className="text-xs text-[var(--text-muted)]">
-                No SSH keys match your search.
+                {t("keychain.noKeysMatchFilter")}
               </p>
             ) : (
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -226,11 +227,11 @@ export function KeychainView() {
           {/* Identities Section */}
           <div>
             <h2 className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-              Identities {identities.length > 0 && `(${identities.length})`}
+              {t("keychain.identitiesSection")} {identities.length > 0 && `(${identities.length})`}
             </h2>
             {identities.length === 0 ? (
               <p className="text-xs text-[var(--text-muted)]">
-                No saved identities match your search.
+                {t("keychain.noIdentitiesMatchFilter")}
               </p>
             ) : (
               <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -262,13 +263,13 @@ export function KeychainView() {
                 <button
                   onClick={async () => {
                     await navigator.clipboard.writeText(contextMenu.item!.public_key);
-                    showCopyToast("Copied public key");
+                    showCopyToast(t("keychain.copiedPublicKey"));
                     setContextMenu(null);
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group cursor-pointer"
                 >
                   <Copy size={13} />
-                  <span>Copy Public Key</span>
+                  <span>{t("keychain.copyPublicKey")}</span>
                 </button>
               )}
 
@@ -276,13 +277,13 @@ export function KeychainView() {
                 <button
                   onClick={async () => {
                     await navigator.clipboard.writeText(contextMenu.item!.fingerprint);
-                    showCopyToast("Copied fingerprint");
+                    showCopyToast(t("keychain.copiedFingerprint"));
                     setContextMenu(null);
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
                 >
                   <Copy size={13} />
-                  <span>Copy Fingerprint</span>
+                  <span>{t("keychain.copyFingerprint")}</span>
                 </button>
               )}
 
@@ -290,13 +291,13 @@ export function KeychainView() {
                 <button
                   onClick={async () => {
                     await navigator.clipboard.writeText(contextMenu.item!.username!);
-                    showCopyToast("Copied username");
+                    showCopyToast(t("keychain.copiedUsername"));
                     setContextMenu(null);
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
                 >
                   <Copy size={13} />
-                  <span>Copy Username</span>
+                  <span>{t("keychain.copyUsername")}</span>
                 </button>
               )}
 
@@ -312,10 +313,10 @@ export function KeychainView() {
                   }
                   setContextMenu(null);
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
               >
                 <Pencil size={13} />
-                <span>Edit Credential</span>
+                <span>{t("keychain.editCredential")}</span>
               </button>
 
               <div className="my-1 h-[1px] bg-[var(--border)]" />
@@ -326,10 +327,10 @@ export function KeychainView() {
                   handleDelete(contextMenu.item!);
                   setContextMenu(null);
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group"
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group cursor-pointer"
               >
                 <Trash2 size={13} />
-                <span>Delete Credential</span>
+                <span>{t("keychain.deleteCredential")}</span>
               </button>
             </>
           ) : (
@@ -340,10 +341,10 @@ export function KeychainView() {
                   openCreateKeyModal();
                   setContextMenu(null);
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group cursor-pointer"
               >
                 <Key size={13} />
-                <span>New SSH Key</span>
+                <span>{t("keychain.newSshKey")}</span>
               </button>
 
               {/* New Identity */}
@@ -352,10 +353,10 @@ export function KeychainView() {
                   openCreateIdentityModal();
                   setContextMenu(null);
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group"
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
               >
                 <UserCheck size={13} />
-                <span>New Password Identity</span>
+                <span>{t("keychain.newPasswordIdentity")}</span>
               </button>
             </>
           )}
@@ -398,6 +399,7 @@ const KeyCard = memo(function KeyCard({
   onDelete,
   onContextMenu,
 }: KeyCardProps) {
+  const { t } = useTranslation();
   return (
     <div
       onContextMenu={(e) => onContextMenu?.(e, item)}
@@ -414,12 +416,12 @@ const KeyCard = memo(function KeyCard({
             </p>
             {item.kind === "public_key" && (
               <span className="rounded bg-[var(--surface-high)] px-1.5 py-0.5 text-[9px] font-mono text-[var(--secondary)] border border-[var(--secondary)]/30">
-                PUB
+                {t("keychain.pubBadge")}
               </span>
             )}
           </div>
           <p className="text-[11px] text-[var(--text-muted)]">
-            Type {item.key_type || "Unknown"}
+            {t("keychain.typeLabel", { type: item.key_type || "Unknown" })}
             {item.username && ` · ${item.username}`}
           </p>
         </div>
@@ -429,8 +431,8 @@ const KeyCard = memo(function KeyCard({
         <button
           onClick={() => onCopy(item)}
           disabled={!item.public_key}
-          title="Copy public key"
-          className={`flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-[11px] font-medium transition-colors disabled:opacity-40 ${
+          title={t("keychain.copyPublicKey")}
+          className={`flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-[11px] font-medium transition-colors disabled:opacity-40 cursor-pointer ${
             isCopied
               ? "bg-[var(--success)] text-black font-semibold"
               : "bg-[var(--surface-high)] text-[var(--text-primary)] hover:bg-[var(--surface-highest)]"
@@ -438,25 +440,25 @@ const KeyCard = memo(function KeyCard({
         >
           {isCopied ? (
             <>
-              <Check size={11} /> Copied
+              <Check size={11} /> {t("keychain.copied")}
             </>
           ) : (
             <>
-              <Copy size={11} /> Copy Key
+              <Copy size={11} /> {t("keychain.copyKey")}
             </>
           )}
         </button>
         <button
           onClick={() => onEdit(item)}
-          title="Edit"
-          className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-highest)] hover:text-[var(--text-primary)]"
+          title={t("common.edit")}
+          className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-highest)] hover:text-[var(--text-primary)] cursor-pointer"
         >
           <Pencil size={12} />
         </button>
         <button
           onClick={() => onDelete(item)}
-          title="Delete"
-          className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] transition-colors"
+          title={t("common.delete")}
+          className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] transition-colors cursor-pointer"
         >
           <Trash2 size={12} />
         </button>
@@ -482,6 +484,7 @@ const IdentityCard = memo(function IdentityCard({
   onDelete,
   onContextMenu,
 }: IdentityCardProps) {
+  const { t } = useTranslation();
   return (
     <div
       onContextMenu={(e) => onContextMenu?.(e, item)}
@@ -496,7 +499,7 @@ const IdentityCard = memo(function IdentityCard({
             {item.name}
           </p>
           <p className="text-[11px] text-[var(--text-muted)]">
-            Auth password
+            {t("keychain.authPasswordLabel")}
             {item.username && ` · ${item.username}`}
           </p>
         </div>
@@ -505,15 +508,15 @@ const IdentityCard = memo(function IdentityCard({
       <div className="mt-3 flex items-center justify-end gap-1.5 border-t border-[var(--border)] pt-2.5">
         <button
           onClick={() => onEdit(item)}
-          title="Edit"
-          className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-highest)] hover:text-[var(--text-primary)]"
+          title={t("common.edit")}
+          className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--surface-highest)] hover:text-[var(--text-primary)] cursor-pointer"
         >
           <Pencil size={12} />
         </button>
         <button
           onClick={() => onDelete(item)}
-          title="Delete"
-          className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] transition-colors"
+          title={t("common.delete")}
+          className="flex items-center justify-center rounded-md bg-[var(--surface-high)] p-1.5 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] transition-colors cursor-pointer"
         >
           <Trash2 size={12} />
         </button>

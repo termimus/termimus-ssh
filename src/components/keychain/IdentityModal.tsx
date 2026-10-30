@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { X, UserCheck } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useKeychainStore } from "../../stores/useKeychainStore";
 import { KeychainIdentityInput } from "../../lib/api";
 
 export function IdentityModal() {
+  const { t } = useTranslation();
   const {
     isIdentityModalOpen,
     editingIdentity,
@@ -37,12 +39,12 @@ export function IdentityModal() {
     setError(null);
 
     if (!name.trim()) {
-      setError("Identity name is required");
+      setError(t("keychain.identityModal.nameRequired"));
       return;
     }
 
     if (!editingIdentity && !password.trim()) {
-      setError("Password is required");
+      setError(t("keychain.identityModal.passwordRequired"));
       return;
     }
 
@@ -70,12 +72,12 @@ export function IdentityModal() {
           <div className="flex items-center gap-2">
             <UserCheck size={18} className="text-[var(--primary)]" />
             <h2 className="text-base font-semibold text-[var(--text-primary)]">
-              {editingIdentity ? "Edit Identity" : "New Identity"}
+              {editingIdentity ? t("keychain.identityModal.titleEdit") : t("keychain.identityModal.titleNew")}
             </h2>
           </div>
           <button
             onClick={closeIdentityModal}
-            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white"
+            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white cursor-pointer"
           >
             <X size={18} />
           </button>
@@ -90,40 +92,42 @@ export function IdentityModal() {
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <div>
             <label className="mb-1 block font-medium text-[var(--text-muted)]">
-              Identity Label / Name *
+              {t("keychain.identityModal.nameField")}
             </label>
             <input
               type="text"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. admin-login, database-user, production-root"
+              placeholder={t("keychain.identityModal.namePlaceholder")}
               className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
             />
           </div>
 
           <div>
             <label className="mb-1 block font-medium text-[var(--text-muted)]">
-              Username
+              {t("keychain.identityModal.usernameField")}
             </label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="e.g. root, admin, ubuntu"
+              placeholder={t("keychain.identityModal.usernamePlaceholder")}
               className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
             />
           </div>
 
           <div>
             <label className="mb-1 block font-medium text-[var(--text-muted)]">
-              Password {editingIdentity && "(leave blank to keep unchanged)"}
+              {editingIdentity
+                ? t("keychain.identityModal.passwordFieldEdit")
+                : t("keychain.identityModal.passwordField")}
             </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password..."
+              placeholder={t("keychain.identityModal.passwordPlaceholder")}
               className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
             />
           </div>
@@ -132,20 +136,20 @@ export function IdentityModal() {
             <button
               type="button"
               onClick={closeIdentityModal}
-              className="rounded-md px-4 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white"
+              className="rounded-md px-4 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white cursor-pointer"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-md bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--on-primary)] transition hover:bg-[var(--primary-hover)] disabled:opacity-50"
+              className="rounded-md bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-[var(--on-primary)] transition hover:bg-[var(--primary-hover)] disabled:opacity-50 cursor-pointer"
             >
               {submitting
-                ? "Saving..."
+                ? t("keychain.identityModal.saving")
                 : editingIdentity
-                ? "Update Identity"
-                : "Save Identity"}
+                ? t("keychain.identityModal.updateButton")
+                : t("keychain.identityModal.saveButton")}
             </button>
           </div>
         </form>

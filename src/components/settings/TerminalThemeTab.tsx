@@ -1,4 +1,5 @@
 import { Palette, Type, Highlighter, RotateCcw, Check } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { TERMINAL_THEMES } from "../../lib/terminalThemes";
 import {
   HIGHLIGHT_PATTERNS,
@@ -51,6 +52,7 @@ const HIGHLIGHT_ORDER: HighlightKey[] = [
 ];
 
 export function TerminalThemeTab() {
+  const { t } = useTranslation();
   const themeId = useTerminalThemeStore((s) => s.themeId);
   const setThemeId = useTerminalThemeStore((s) => s.setThemeId);
   const font = useTerminalThemeStore((s) => s.font);
@@ -68,33 +70,32 @@ export function TerminalThemeTab() {
         <div className="border-b border-[var(--border)] px-5 py-3.5 bg-[var(--surface-container)]/30">
           <h4 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2">
             <Palette size={15} className="text-[var(--primary)]" />
-            Terminal Theme
+            {t("settings.terminal.themeTitle")}
           </h4>
           <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-            Color scheme for backgrounds, ANSI colors, and keyword highlights.
-            Applies instantly to all open terminals without reconnecting.
+            {t("settings.terminal.themeDesc")}
           </p>
         </div>
 
         <div className="p-5 space-y-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-            {TERMINAL_THEMES.map((t) => {
-              const active = t.id === themeId;
+            {TERMINAL_THEMES.map((th) => {
+              const active = th.id === themeId;
               const swatches = [
-                t.xterm.black,
-                t.xterm.red,
-                t.xterm.green,
-                t.xterm.yellow,
-                t.xterm.blue,
-                t.xterm.magenta,
-                t.xterm.cyan,
-                t.xterm.white,
+                th.xterm.black,
+                th.xterm.red,
+                th.xterm.green,
+                th.xterm.yellow,
+                th.xterm.blue,
+                th.xterm.magenta,
+                th.xterm.cyan,
+                th.xterm.white,
               ];
               return (
                 <button
-                  key={t.id}
+                  key={th.id}
                   type="button"
-                  onClick={() => setThemeId(t.id)}
+                  onClick={() => setThemeId(th.id)}
                   className={`rounded-xl border p-3 text-left transition-all cursor-pointer ${
                     active
                       ? "border-[var(--primary)] ring-1 ring-[var(--primary)]/40 bg-[var(--primary)]/5"
@@ -103,7 +104,7 @@ export function TerminalThemeTab() {
                 >
                   <div
                     className="h-10 rounded-lg mb-2 flex items-end p-1.5 gap-0.5"
-                    style={{ background: t.xterm.background }}
+                    style={{ background: th.xterm.background }}
                   >
                     {swatches.map(
                       (c, i) =>
@@ -118,14 +119,14 @@ export function TerminalThemeTab() {
                   </div>
                   <div className="flex items-center justify-between gap-1">
                     <span className="text-xs font-semibold text-[var(--text-primary)] truncate">
-                      {t.label}
+                      {th.label}
                     </span>
                     {active && (
                       <Check size={13} className="text-[var(--primary)] shrink-0" />
                     )}
                   </div>
                   <p className="text-[10px] text-[var(--text-muted)] truncate">
-                    {t.description}
+                    {th.description}
                   </p>
                 </button>
               );
@@ -138,7 +139,7 @@ export function TerminalThemeTab() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface-container)]/40 px-4 py-3">
               <div className="text-[11px]">
                 <p className="font-semibold text-[var(--text-primary)]">
-                  Recommended font pairing
+                  {t("settings.terminal.recommendedFont")}
                 </p>
                 <p className="text-[var(--text-muted)]">
                   <span className="font-mono text-[var(--secondary)]">
@@ -167,7 +168,7 @@ export function TerminalThemeTab() {
                 }}
                 className="shrink-0 rounded-lg bg-[var(--primary)]/15 border border-[var(--primary)]/30 px-3 py-1.5 text-[11px] font-semibold text-[var(--primary)] hover:bg-[var(--primary)]/25 transition-colors cursor-pointer"
               >
-                Apply pairing
+                {t("settings.terminal.applyPairing")}
               </button>
             </div>
           )}
@@ -179,19 +180,19 @@ export function TerminalThemeTab() {
         <div className="rounded-t-2xl border-b border-[var(--border)] px-5 py-3.5 bg-[var(--surface-container)]/30">
           <h4 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2">
             <Type size={15} className="text-[var(--secondary)]" />
-            Font &amp; Text Size
+            {t("settings.terminal.fontTitle")}
           </h4>
           <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-            Applies to every terminal. Per-session zoom (Ctrl + / - / 0) still works on top.
+            {t("settings.terminal.fontDesc")}
           </p>
         </div>
 
         <div className="divide-y divide-[var(--border)] text-xs">
           <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-0.5">
-              <p className="font-semibold text-[var(--text-primary)]">Font family</p>
+              <p className="font-semibold text-[var(--text-primary)]">{t("settings.terminal.fontFamily")}</p>
               <p className="text-[11px] text-[var(--text-muted)]">
-                Bundled fonts (JetBrains Mono &amp; Fira Code) work 100% offline.
+                {t("settings.terminal.fontFamilyDesc")}
               </p>
             </div>
             <div className="w-64 shrink-0">
@@ -209,12 +210,12 @@ export function TerminalThemeTab() {
           <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-0.5">
               <p className="font-semibold text-[var(--text-primary)]">
-                Font size{" "}
+                {t("settings.terminal.fontSize")}{" "}
                 <span className="font-mono text-[var(--primary)]">
                   {font.fontSize.toFixed(1)}pt
                 </span>
               </p>
-              <p className="text-[11px] text-[var(--text-muted)]">Range 9 – 24 pt.</p>
+              <p className="text-[11px] text-[var(--text-muted)]">{t("settings.terminal.fontSizeRange")}</p>
             </div>
             <input
               type="range"
@@ -230,12 +231,12 @@ export function TerminalThemeTab() {
           <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-0.5">
               <p className="font-semibold text-[var(--text-primary)]">
-                Line height{" "}
+                {t("settings.terminal.lineHeight")}{" "}
                 <span className="font-mono text-[var(--primary)]">
                   {font.lineHeight.toFixed(2)}
                 </span>
               </p>
-              <p className="text-[11px] text-[var(--text-muted)]">Range 1.00 – 1.80.</p>
+              <p className="text-[11px] text-[var(--text-muted)]">{t("settings.terminal.lineHeightRange")}</p>
             </div>
             <input
               type="range"
@@ -250,9 +251,9 @@ export function TerminalThemeTab() {
 
           <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-0.5">
-              <p className="font-semibold text-[var(--text-primary)]">Cursor</p>
+              <p className="font-semibold text-[var(--text-primary)]">{t("settings.terminal.cursorTitle")}</p>
               <p className="text-[11px] text-[var(--text-muted)]">
-                Shape and blink behavior.
+                {t("settings.terminal.cursorDesc")}
               </p>
             </div>
             <div className="flex items-center gap-3 shrink-0">
@@ -263,18 +264,18 @@ export function TerminalThemeTab() {
                     setFont({ cursorStyle: v as TerminalCursorStyle })
                   }
                   options={[
-                    { value: "bar", label: "Bar" },
-                    { value: "block", label: "Block" },
-                    { value: "underline", label: "Underline" },
+                    { value: "bar", label: t("settings.terminal.cursorStyleBar") },
+                    { value: "block", label: t("settings.terminal.cursorStyleBlock") },
+                    { value: "underline", label: t("settings.terminal.cursorStyleUnderline") },
                   ]}
                 />
               </div>
               <Toggle
                 checked={font.cursorBlink}
                 onChange={(v) => setFont({ cursorBlink: v })}
-                label="Cursor blink"
+                label={t("settings.terminal.cursorBlink")}
               />
-              <span className="text-[11px] text-[var(--text-muted)]">Blink</span>
+              <span className="text-[11px] text-[var(--text-muted)]">{t("settings.terminal.cursorBlink")}</span>
             </div>
           </div>
         </div>
@@ -285,10 +286,10 @@ export function TerminalThemeTab() {
         <div className="rounded-t-2xl border-b border-[var(--border)] px-5 py-3.5 bg-[var(--surface-container)]/30">
           <h4 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2">
             <Highlighter size={15} className="text-[var(--tertiary)]" />
-            Keyword Highlighting
+            {t("settings.terminal.highlightTitle")}
           </h4>
           <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-            Overlay colors only — copy/paste stays clean and htop/vim are unaffected.
+            {t("settings.terminal.highlightDesc")}
           </p>
         </div>
 
@@ -335,7 +336,7 @@ export function TerminalThemeTab() {
           className="inline-flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-low)] px-3.5 py-2 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container)] transition-colors cursor-pointer"
         >
           <RotateCcw size={13} />
-          Reset to defaults
+          {t("settings.terminal.resetDefaults")}
         </button>
       </div>
     </div>

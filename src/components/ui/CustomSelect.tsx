@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Check, Search } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export interface SelectOption {
   value: string;
@@ -24,11 +25,13 @@ export function CustomSelect({
   value,
   onChange,
   options,
-  placeholder = "Select an option...",
+  placeholder,
   disabled = false,
   className = "",
   searchable = false,
 }: CustomSelectProps) {
+  const { t } = useTranslation();
+  const effectivePlaceholder = placeholder ?? t("common.selectOption");
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -207,7 +210,7 @@ export function CustomSelect({
         title={
           selectedOption
             ? `${selectedOption.label}${selectedOption.description ? ` ${selectedOption.description}` : ""}`
-            : placeholder
+            : effectivePlaceholder
         }
         className={`flex w-full items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-left text-xs transition-colors cursor-pointer focus:border-[var(--primary)] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed hover:border-[var(--border)]/80 ${
           isOpen ? "border-[var(--primary)] ring-1 ring-[var(--primary)]/30" : ""
@@ -222,7 +225,7 @@ export function CustomSelect({
               selectedOption ? "text-[var(--text-primary)]" : "text-[var(--text-muted)]"
             }`}
           >
-            {selectedOption ? selectedOption.label : placeholder}
+            {selectedOption ? selectedOption.label : effectivePlaceholder}
           </span>
           {selectedOption?.description && (
             <span className="truncate text-[11px] font-mono text-[var(--text-muted)] flex-1">
@@ -272,8 +275,8 @@ export function CustomSelect({
                     setHighlightIdx(0);
                   }}
                   onKeyDown={handleSearchKeyDown}
-                  placeholder="Search..."
-                  aria-label="Search options"
+                  placeholder={t("common.search")}
+                  aria-label={t("common.search")}
                   className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] py-1.5 pl-7 pr-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--primary)] focus:outline-none"
                 />
               </div>
@@ -282,11 +285,11 @@ export function CustomSelect({
             <div className="min-h-0 flex-1 overflow-y-auto">
               {options.length === 0 ? (
                 <div className="px-3 py-2 text-center text-xs text-[var(--text-muted)]">
-                  No options available
+                  {t("common.noOptionsAvailable")}
                 </div>
               ) : filteredOptions.length === 0 ? (
                 <div className="px-3 py-2 text-center text-xs text-[var(--text-muted)]">
-                  No matches for &quot;{query.trim()}&quot;
+                  {t("common.noMatchesFor", { query: query.trim() })}
                 </div>
               ) : (
                 filteredOptions.map((opt, idx) => {
