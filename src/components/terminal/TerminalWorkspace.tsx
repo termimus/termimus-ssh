@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Terminal as TerminalIcon, Minimize2, Radio, Unlink, Layers, BookmarkPlus } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useSessionStore } from "../../stores/useSessionStore";
@@ -15,6 +16,7 @@ interface TerminalWorkspaceProps {
 }
 
 export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspaceProps) {
+  const { t } = useTranslation();
   const {
     tabs,
     groups,
@@ -141,9 +143,9 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
               <TerminalIcon size={22} />
             </div>
             <div>
-              <p className="text-sm font-semibold text-[var(--text-primary)]">No Active Terminal Sessions</p>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">{t("terminal.noActiveSessions")}</p>
               <p className="text-xs text-[var(--text-muted)] mt-1">
-                Select a host to connect or launch a multi-server Workspace Preset
+                {t("terminal.launchPrompt")}
               </p>
             </div>
             {onOpenWorkspaces && (
@@ -152,7 +154,7 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
                 className="mt-1 flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-3.5 py-2 text-xs font-semibold text-black hover:bg-[var(--primary)]/90 transition-all shadow-sm active:scale-95"
               >
                 <Layers size={13} />
-                <span>Open Workspaces</span>
+                <span>{t("nav.workspaces")}</span>
               </button>
             )}
           </div>

@@ -8,6 +8,7 @@ import {
   Loader2,
   Server,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   WorkspacePreset,
   PresetLayoutType,
@@ -142,6 +143,7 @@ export function WorkspaceCard({
   onDelete,
   onContextMenu,
 }: WorkspaceCardProps) {
+  const { t } = useTranslation();
   const hosts = useHostStore((s) => s.hosts);
   const statusByHostId = usePingStore((s) => s.statusByHostId);
   const confirm = useConfirmStore((s) => s.confirm);
@@ -173,9 +175,9 @@ export function WorkspaceCard({
 
   const handleDeleteClick = () => {
     confirm({
-      title: "Delete Workspace Preset",
-      message: `Are you sure you want to delete "${preset.name}"? This action cannot be undone.`,
-      confirmLabel: "Delete",
+      title: t("workspaces.deleteConfirm.title"),
+      message: t("workspaces.deleteConfirm.message", { name: preset.name }),
+      confirmLabel: t("workspaces.deleteConfirm.confirmLabel"),
       isDanger: true,
       onConfirm: () => onDelete(preset.id),
     });
@@ -196,11 +198,11 @@ export function WorkspaceCard({
               </h3>
               {preset.broadcastOnLaunch && (
                 <span
-                  title="Interconnection / Input Broadcast auto-enabled on launch"
+                  title={t("workspaces.broadcastBadgeTitle")}
                   className="flex items-center gap-1 rounded bg-[var(--primary)]/15 px-1.5 py-0.5 text-[10px] font-mono text-[var(--primary)] shrink-0"
                 >
                   <Radio size={10} className="animate-pulse" />
-                  <span>Broadcast</span>
+                  <span>{t("workspaces.broadcastBadge")}</span>
                 </span>
               )}
             </div>
@@ -219,22 +221,22 @@ export function WorkspaceCard({
           <div className="flex items-center gap-1 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
             <button
               onClick={() => onDuplicate(preset.id)}
-              title="Duplicate preset"
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
+              title={t("workspaces.duplicatePresetTooltip")}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
             >
               <Copy size={13} />
             </button>
             <button
               onClick={() => onEdit(preset)}
-              title="Edit preset"
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
+              title={t("workspaces.editPresetTooltip")}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
             >
               <Pencil size={13} />
             </button>
             <button
               onClick={handleDeleteClick}
-              title="Delete preset"
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--danger)]/15 hover:text-[var(--danger)] transition-colors"
+              title={t("workspaces.deletePresetTooltip")}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--danger)]/15 hover:text-[var(--danger)] transition-colors cursor-pointer"
             >
               <Trash2 size={13} />
             </button>
@@ -249,7 +251,7 @@ export function WorkspaceCard({
         {/* Nodes Breakdown List */}
         <div className="mt-3.5 flex flex-col gap-1.5 border-t border-[var(--border)]/60 pt-3">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            Cluster Nodes ({assignedNodes.filter((n) => n.host).length} / {layoutMeta.panes})
+            {t("workspaces.clusterNodes", { assigned: assignedNodes.filter((n) => n.host).length, total: layoutMeta.panes })}
           </div>
 
           <div className="flex flex-col gap-1">
@@ -275,7 +277,7 @@ export function WorkspaceCard({
                     ) : (
                       <span className="flex items-center gap-1.5 text-[var(--text-muted)] italic">
                         <Server size={12} />
-                        <span>Unassigned Node</span>
+                        <span>{t("workspaces.unassignedNode")}</span>
                       </span>
                     )}
                   </div>
@@ -301,17 +303,17 @@ export function WorkspaceCard({
         <button
           onClick={handleLaunchClick}
           disabled={isLaunching}
-          className="flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-3 text-xs font-semibold text-black shadow-sm transition-all hover:bg-[var(--primary)]/90 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+          className="flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-3 text-xs font-semibold text-black shadow-sm transition-all hover:bg-[var(--primary)]/90 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 cursor-pointer"
         >
           {isLaunching ? (
             <>
               <Loader2 size={13} className="animate-spin" />
-              <span>Connecting & Splitting...</span>
+              <span>{t("workspaces.launching")}</span>
             </>
           ) : (
             <>
               <Play size={13} className="fill-current" />
-              <span>Launch Cluster</span>
+              <span>{t("workspaces.launchCluster")}</span>
             </>
           )}
         </button>

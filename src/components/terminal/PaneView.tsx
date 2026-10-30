@@ -7,6 +7,7 @@ import {
   Loader2,
   Radio,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { PaneLeaf, findPaneById } from "../../lib/layoutTree";
 import { useSessionStore } from "../../stores/useSessionStore";
@@ -22,6 +23,7 @@ interface PaneViewProps {
 }
 
 export function PaneView({ pane, visible = true }: PaneViewProps) {
+  const { t } = useTranslation();
   const {
     tabs,
     groups,
@@ -315,7 +317,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                 e.stopPropagation();
                 handleSplitRight();
               }}
-              title="Split Right (Columns)"
+              title={t("terminal.splitRight")}
               className={`flex h-5 w-5 items-center justify-center rounded transition-colors ${
                 isLight
                   ? "text-black/60 hover:bg-black/10 hover:text-[var(--primary)]"
@@ -329,7 +331,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                 e.stopPropagation();
                 handleSplitDown();
               }}
-              title="Split Down (Rows)"
+              title={t("terminal.splitDown")}
               className={`flex h-5 w-5 items-center justify-center rounded transition-colors ${
                 isLight
                   ? "text-black/60 hover:bg-black/10 hover:text-[var(--primary)]"
@@ -343,7 +345,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                 e.stopPropagation();
                 toggleMaximizePane(pane.id);
               }}
-              title={isMaximized ? "Restore Split View" : "Maximize Pane"}
+              title={isMaximized ? t("terminal.restorePane") : t("terminal.maximizePane")}
               className={`flex h-5 w-5 items-center justify-center rounded transition-colors ${
                 isLight
                   ? "text-black/60 hover:bg-black/10 hover:text-[var(--primary)]"
@@ -359,7 +361,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                   closeSession(activeTab.id);
                 }
               }}
-              title="Close Active Terminal"
+              title={t("terminal.closePane")}
               className="flex h-5 w-5 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--danger)] hover:text-white transition-colors"
             >
               <X size={12} />

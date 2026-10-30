@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { Columns2, Rows2, Move } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { useSessionStore, DropZone } from "../../stores/useSessionStore";
 
@@ -8,6 +9,7 @@ interface DropZoneOverlayProps {
 }
 
 export function DropZoneOverlay({ paneId }: DropZoneOverlayProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const { isDraggingTab, dragTarget, setDragTarget } = useSessionStore(
     useShallow((s) => ({
@@ -65,28 +67,28 @@ export function DropZoneOverlay({ paneId }: DropZoneOverlayProps) {
       {currentZone === "left" && (
         <div className="absolute inset-y-2 left-2 w-[calc(50%-12px)] rounded-lg border-2 border-dashed border-[var(--primary)] bg-[var(--primary)]/15 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 text-[var(--primary)] shadow-lg animate-in fade-in duration-150">
           <Columns2 size={24} className="stroke-[2.2]" />
-          <span className="text-xs font-semibold tracking-wide uppercase">Split Left</span>
+          <span className="text-xs font-semibold tracking-wide uppercase">{t("terminal.dropZone.splitLeft")}</span>
         </div>
       )}
 
       {currentZone === "right" && (
         <div className="absolute inset-y-2 right-2 w-[calc(50%-12px)] rounded-lg border-2 border-dashed border-[var(--primary)] bg-[var(--primary)]/15 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 text-[var(--primary)] shadow-lg animate-in fade-in duration-150">
           <Columns2 size={24} className="stroke-[2.2]" />
-          <span className="text-xs font-semibold tracking-wide uppercase">Split Right</span>
+          <span className="text-xs font-semibold tracking-wide uppercase">{t("terminal.dropZone.splitRight")}</span>
         </div>
       )}
 
       {currentZone === "top" && (
         <div className="absolute inset-x-2 top-2 h-[calc(50%-12px)] rounded-lg border-2 border-dashed border-[var(--primary)] bg-[var(--primary)]/15 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 text-[var(--primary)] shadow-lg animate-in fade-in duration-150">
           <Rows2 size={24} className="stroke-[2.2]" />
-          <span className="text-xs font-semibold tracking-wide uppercase">Split Top</span>
+          <span className="text-xs font-semibold tracking-wide uppercase">{t("terminal.dropZone.splitTop")}</span>
         </div>
       )}
 
       {currentZone === "bottom" && (
         <div className="absolute inset-x-2 bottom-2 h-[calc(50%-12px)] rounded-lg border-2 border-dashed border-[var(--primary)] bg-[var(--primary)]/15 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 text-[var(--primary)] shadow-lg animate-in fade-in duration-150">
           <Rows2 size={24} className="stroke-[2.2]" />
-          <span className="text-xs font-semibold tracking-wide uppercase">Split Bottom</span>
+          <span className="text-xs font-semibold tracking-wide uppercase">{t("terminal.dropZone.splitBottom")}</span>
         </div>
       )}
 
@@ -94,7 +96,7 @@ export function DropZoneOverlay({ paneId }: DropZoneOverlayProps) {
         <div className="absolute inset-2 rounded-lg border-2 border-dashed border-[var(--accent)] bg-[var(--surface-high)]/80 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 text-[var(--text-primary)] shadow-lg animate-in fade-in duration-150">
           <Move size={22} className="text-[var(--primary)]" />
           <span className="text-xs font-semibold tracking-wide uppercase text-[var(--primary)]">
-            Dock into this pane
+            {t("terminal.dropZone.dock")}
           </span>
         </div>
       )}

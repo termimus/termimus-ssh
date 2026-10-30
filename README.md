@@ -81,6 +81,12 @@ Prebuilt installers for every release are published automatically to the **[GitH
 - **Instant Script Runner**: Store frequently used shell scripts, deployment commands, and system diagnostics.
 - **Active Tab Injection**: Send snippets straight into your running terminal session with a single click.
 
+### 🌐 Multi-Language Support (i18n)
+- **Complete Localization**: Full UI internationalization covering all features, toolbars, tables, modals, and settings.
+- **Available Languages**: English (`en`) and Bahasa Indonesia (`id`), with English set as default.
+- **Instant 1-Click Switching**: Switch languages in real-time from **Settings → General** without restarting the application or terminating active SSH sessions.
+- **Persistent Preferences**: Language preference is securely preserved across app launches.
+
 ### 🔒 Enterprise-Grade Local Security
 - **Zero-Knowledge Vault**: All passwords and keys are encrypted at rest with **AES-256-GCM** using keys derived via **Argon2id**.
 - **OS Keyring Integration**: Optional silent auto-unlock on launch using your desktop's secure credential store (**KWallet / GNOME Secret Service** on Linux, **macOS Keychain**, or **Windows Credential Manager**).
@@ -242,6 +248,7 @@ termimus/
 │   │   ├── sync/                 # Self-hosted cloud sync manager
 │   │   ├── vault/                # Backup & restore components
 │   │   └── settings/             # Tabbed settings suite (full-width)
+│   ├── i18n/                     # Modular type-safe dictionaries (en, id)
 │   ├── stores/                   # Zustand domain stores
 │   └── lib/                      # Tauri typed invoke wrappers
 │
@@ -264,6 +271,42 @@ termimus/
 │
 └── .github/workflows/            # GitHub Actions CI/CD (Multi-arch GHCR build)
 ```
+
+---
+
+## 🌍 Localization & Adding Translations
+
+Termimus supports multi-language localization using `react-i18next` with modular, compile-time type-checked dictionaries.
+
+Want to contribute a new language (e.g. Japanese `ja`, Spanish `es`, German `de`)? Follow these 3 steps:
+
+1. **Copy the English dictionary module**:
+   Duplicate `src/i18n/locales/en/` to `src/i18n/locales/<locale>/` (e.g., `src/i18n/locales/ja/`) and translate the strings in each domain file (`common.ts`, `navigation.ts`, `hosts.ts`, etc.).
+
+2. **Create the locale index file**:
+   Create `src/i18n/locales/<locale>.ts` and bind the schema:
+   ```ts
+   import type { TranslationSchema } from "./en";
+   import { commonJa } from "./ja/common";
+   // ...import other domain files
+
+   export const ja: TranslationSchema = {
+     common: commonJa,
+     // ...
+   };
+   ```
+   > 💡 *TypeScript will automatically check that all translation keys match the source schema during `bun run build`.*
+
+3. **Register the language in `src/i18n/index.ts`**:
+   Import your locale and add its configuration to `SUPPORTED_LANGUAGES`:
+   ```ts
+   export const SUPPORTED_LANGUAGES = [
+     { code: "en", label: "English", nativeName: "English" },
+     { code: "id", label: "Indonesian", nativeName: "Bahasa Indonesia" },
+     { code: "ja", label: "Japanese", nativeName: "日本語" },
+   ] as const;
+   ```
+   The language selection dropdown in **Settings → General** will update automatically!
 
 ---
 

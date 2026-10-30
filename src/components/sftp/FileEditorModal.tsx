@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Save, FileCode, Check, AlertCircle, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { api, FileEntry } from "../../lib/api";
 
 interface FileEditorModalProps {
@@ -17,6 +18,7 @@ export function FileEditorModal({
   onClose,
   onSaved,
 }: FileEditorModalProps) {
+  const { t } = useTranslation();
   const [content, setContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
   const [loading, setLoading] = useState(true);
@@ -116,7 +118,7 @@ export function FileEditorModal({
 
   function handleClose() {
     if (isDirty) {
-      if (!confirm("You have unsaved changes. Are you sure you want to close?")) {
+      if (!confirm(t("sftp.editor.confirmUnsavedClose"))) {
         return;
       }
     }
@@ -143,11 +145,11 @@ export function FileEditorModal({
               </span>
               {isRemote ? (
                 <span className="rounded bg-[var(--primary)]/15 px-1.5 py-0.5 font-mono text-[9px] text-[var(--primary)] shrink-0">
-                  Remote (SFTP)
+                  {t("sftp.editor.remoteBadge")}
                 </span>
               ) : (
                 <span className="rounded bg-[var(--surface-high)] px-1.5 py-0.5 font-mono text-[9px] text-[var(--text-muted)] shrink-0">
-                  Local
+                  {t("sftp.editor.localBadge")}
                 </span>
               )}
             </div>
@@ -158,27 +160,27 @@ export function FileEditorModal({
             {isDirty && !saving && (
               <span className="flex items-center gap-1.5 font-mono text-[11px] text-[var(--warning)]">
                 <span className="h-2 w-2 rounded-full bg-[var(--warning)] animate-pulse" />
-                Unsaved changes
+                {t("sftp.editor.unsavedChanges")}
               </span>
             )}
             {saveSuccess && (
               <span className="flex items-center gap-1 font-mono text-[11px] text-[var(--success)]">
                 <Check size={13} />
-                Saved
+                {t("sftp.editor.saved")}
               </span>
             )}
 
             <button
               onClick={handleSave}
               disabled={saving || loading || !isDirty}
-              className="flex items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-[var(--on-primary)] transition-colors hover:bg-[var(--primary-hover)] disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-[var(--on-primary)] transition-colors hover:bg-[var(--primary-hover)] disabled:opacity-40 cursor-pointer"
             >
               {saving ? (
                 <Loader2 size={13} className="animate-spin" />
               ) : (
                 <Save size={13} />
               )}
-              <span>Save</span>
+              <span>{t("sftp.editor.save")}</span>
               <kbd className="hidden sm:inline font-mono text-[10px] bg-black/20 px-1 py-0.5 rounded opacity-75">
                 Ctrl+S
               </kbd>
@@ -186,7 +188,7 @@ export function FileEditorModal({
 
             <button
               onClick={handleClose}
-              className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white transition-colors"
+              className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white transition-colors cursor-pointer"
             >
               <X size={18} />
             </button>
@@ -206,7 +208,7 @@ export function FileEditorModal({
           {loading ? (
             <div className="flex h-full w-full items-center justify-center text-xs text-[var(--text-muted)]">
               <Loader2 size={18} className="animate-spin mr-2 text-[var(--primary)]" />
-              Loading file content...
+              {t("sftp.editor.loadingContent")}
             </div>
           ) : (
             <>
@@ -237,7 +239,7 @@ export function FileEditorModal({
         {/* Footer info bar */}
         <div className="flex h-7 items-center justify-between border-t border-[var(--border)] bg-[var(--surface-low)] px-4 font-mono text-[10px] text-[var(--text-muted)] shrink-0">
           <div>
-            Lines: {lineCount} | Characters: {content.length}
+            {t("sftp.editor.linesCount", { count: lineCount })} | {t("sftp.editor.charsCount", { count: content.length })}
           </div>
           <div>UTF-8 Plain Text</div>
         </div>

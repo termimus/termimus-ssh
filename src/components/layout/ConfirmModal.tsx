@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Trash2, X, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useConfirmStore } from "../../stores/useConfirmStore";
 
 export function ConfirmModal() {
+  const { t } = useTranslation();
   const { isOpen, options, close } = useConfirmStore();
   const [submitting, setSubmitting] = useState(false);
 
@@ -22,8 +24,8 @@ export function ConfirmModal() {
   const {
     title,
     message,
-    confirmLabel = "Delete",
-    cancelLabel = "Cancel",
+    confirmLabel = t("common.delete"),
+    cancelLabel = t("common.cancel"),
     isDanger = true,
     onConfirm,
   } = options;

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Cloud,
   CloudUpload,
@@ -19,6 +20,7 @@ import { useSyncStore, ConnectedDevice } from "../../stores/useSyncStore";
 import { ImportSummary } from "../../lib/api";
 
 export function SyncSection() {
+  const { t } = useTranslation();
   const {
     serverUrl,
     authToken,
@@ -163,7 +165,7 @@ export function SyncSection() {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-                  Self-Hosted Sync Relay
+                  {t("settings.sync.title")}
                 </h3>
                 <span
                   className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-mono font-medium ${
@@ -192,19 +194,18 @@ export function SyncSection() {
                     }`}
                   />
                   {syncStatus === "connected"
-                    ? "CONNECTED"
+                    ? t("settings.sync.statusConnected")
                     : syncStatus === "syncing"
-                    ? "SYNCING..."
+                    ? t("settings.sync.statusSyncing")
                     : syncStatus === "error"
-                    ? "CONNECTION ERROR"
+                    ? t("settings.sync.statusError")
                     : !serverUrl || !syncPassword.trim()
-                    ? "NOT CONFIGURED"
-                    : "READY"}
+                    ? t("settings.sync.statusNotConfigured")
+                    : t("settings.sync.statusReady")}
                 </span>
               </div>
               <p className="text-xs text-[var(--text-muted)] mt-1">
-                Zero-knowledge relay: your database is end-to-end encrypted locally with AES-256-GCM.
-                The sync server never receives your master password or plaintext keys.
+                {t("settings.sync.bannerDesc")}
               </p>
             </div>
           </div>
@@ -212,12 +213,12 @@ export function SyncSection() {
           <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
             {latestServerVersion !== null && latestServerVersion > 0 && (
               <span className="rounded bg-[var(--surface-container)] px-2 py-1 text-[11px] font-mono text-[var(--text-secondary)] border border-[var(--border)]">
-                Server Rev #{latestServerVersion}
+                {t("settings.sync.serverRev", { rev: latestServerVersion })}
               </span>
             )}
             {lastSyncAt && (
               <span className="text-[11px] font-mono text-[var(--text-muted)]">
-                Last sync: {new Date(lastSyncAt).toLocaleTimeString()}
+                {t("settings.sync.lastSyncTime", { time: new Date(lastSyncAt).toLocaleTimeString() })}
               </span>
             )}
           </div>
@@ -235,7 +236,7 @@ export function SyncSection() {
       {pushSuccess !== null && (
         <div className="rounded-xl border border-[var(--success)]/30 bg-[var(--success)]/10 px-4 py-3 text-xs text-[var(--success)] flex items-center gap-2">
           <CheckCircle2 size={15} className="shrink-0" />
-          <span>Database successfully uploaded to sync server! Revision #{pushSuccess}.</span>
+          <span>{t("settings.sync.uploadSuccess", { rev: pushSuccess })}</span>
         </div>
       )}
 
@@ -243,10 +244,15 @@ export function SyncSection() {
         <div className="rounded-xl border border-[var(--success)]/30 bg-[var(--success)]/10 px-4 py-3 text-xs text-[var(--success)] space-y-1">
           <div className="flex items-center gap-2 font-semibold">
             <CheckCircle2 size={15} className="shrink-0" />
-            <span>Synced from server successfully!</span>
+            <span>{t("settings.sync.syncedSuccess")}</span>
           </div>
           <div className="text-[11px] font-mono text-[var(--text-secondary)]">
-            Updated: {pullSummary.hosts} hosts, {pullSummary.folders} folders, {pullSummary.credentials} credentials, {pullSummary.snippets} snippets.
+            {t("settings.sync.updatedSummary", {
+              hosts: pullSummary.hosts,
+              folders: pullSummary.folders,
+              credentials: pullSummary.credentials,
+              snippets: pullSummary.snippets,
+            })}
           </div>
         </div>
       )}
@@ -256,10 +262,10 @@ export function SyncSection() {
         <div className="border-b border-[var(--border)] px-5 py-3.5 bg-[var(--surface-container)]/30">
           <h4 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2">
             <Server size={15} className="text-[var(--primary)]" />
-            Server Connection Details
+            {t("settings.sync.serverDetailsTitle")}
           </h4>
           <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
-            Connect Termimus to your own self-hosted Docker container or VPS relay.
+            {t("settings.sync.serverDetailsDesc")}
           </p>
         </div>
 
@@ -268,7 +274,7 @@ export function SyncSection() {
             {/* Server URL */}
             <div>
               <label className="mb-1 block font-medium text-[var(--text-muted)]">
-                Server URL *
+                {t("settings.sync.serverUrlField")}
               </label>
               <div className="relative">
                 <input
@@ -276,7 +282,7 @@ export function SyncSection() {
                   value={serverUrl}
                   onChange={(e) => setServerUrl(e.target.value)}
                   onBlur={() => setServerUrl(serverUrl.trim().replace(/\/+$/, ""))}
-                  placeholder="e.g. http://192.168.1.50:8080 or https://sync.example.com"
+                  placeholder={t("settings.sync.serverUrlPlaceholder")}
                   className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
                 />
               </div>
@@ -285,70 +291,70 @@ export function SyncSection() {
             {/* Auth Token */}
             <div>
               <label className="mb-1 block font-medium text-[var(--text-muted)]">
-                Auth Token (If configured on server)
+                {t("settings.sync.authTokenField")}
               </label>
               <div className="relative">
                 <input
                   type={showToken ? "text" : "password"}
                   value={authToken}
                   onChange={(e) => setAuthToken(e.target.value)}
-                  placeholder="Bearer token if set via TERMIMUS_AUTH_TOKEN..."
+                  placeholder={t("settings.sync.authTokenPlaceholder")}
                   className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 pr-9 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none font-mono"
                 />
                 <button
                   type="button"
                   onClick={() => setShowToken(!showToken)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-white"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-white cursor-pointer"
                 >
                   {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
               <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                Leave blank if your relay runs in open mode without a token.
+                {t("settings.sync.authTokenDesc")}
               </p>
             </div>
 
             {/* Sync Passphrase */}
             <div>
               <label className="mb-1 block font-medium text-[var(--text-muted)] flex items-center justify-between">
-                <span>Sync Passphrase (E2E Encryption) *</span>
-                <span className="text-[10px] text-[var(--primary)] font-mono">E2EE Enforced</span>
+                <span>{t("settings.sync.passphraseField")}</span>
+                <span className="text-[10px] text-[var(--primary)] font-mono">{t("settings.sync.e2eeEnforced")}</span>
               </label>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
                   value={syncPassword}
                   onChange={(e) => setSyncPassword(e.target.value)}
-                  placeholder="Must match on all your devices..."
+                  placeholder={t("settings.sync.passphrasePlaceholder")}
                   className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 pr-9 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-white"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-white cursor-pointer"
                 >
                   {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
               <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                Mandatory for Zero-Knowledge E2EE. Encrypts all host IPs, tags, and snippets with AES-256-GCM + Argon2id.
+                {t("settings.sync.passphraseDesc")}
               </p>
             </div>
 
             {/* Device Name */}
             <div>
               <label className="mb-1 block font-medium text-[var(--text-muted)]">
-                This Device Name
+                {t("settings.sync.deviceNameField")}
               </label>
               <input
                 type="text"
                 value={deviceName}
                 onChange={(e) => setDeviceName(e.target.value)}
-                placeholder="e.g. Work ThinkPad"
+                placeholder={t("settings.sync.deviceNamePlaceholder")}
                 className="w-full rounded-lg border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none"
               />
               <p className="text-[10px] text-[var(--text-muted)] mt-1 flex items-center justify-between">
-                <span>Identifies which device pushed the latest changes.</span>
+                <span>{t("settings.sync.deviceNameDesc")}</span>
                 <span className="font-mono text-[9px] opacity-60">ID: {deviceId ? deviceId.slice(0, 8) : "..."}</span>
               </p>
             </div>
@@ -358,10 +364,10 @@ export function SyncSection() {
             <button
               onClick={handleTest}
               disabled={testing || !serverUrl}
-              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3.5 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-highest)] transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3.5 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-highest)] transition-colors disabled:opacity-50 cursor-pointer"
             >
               {testing ? <Loader2 size={13} className="animate-spin" /> : <Radio size={13} className="text-[var(--primary)]" />}
-              <span>{testing ? "Testing..." : "Test Connection"}</span>
+              <span>{testing ? t("settings.sync.testing") : t("settings.sync.testConnectionBtn")}</span>
             </button>
 
             {testResult && (
@@ -373,7 +379,7 @@ export function SyncSection() {
                 {testResult.ok ? (
                   <>
                     <CheckCircle2 size={13} />
-                    <span>Server reachable (v{testResult.version}, revision #{testResult.revision ?? 0})</span>
+                    <span>{t("settings.sync.serverReachable", { version: testResult.version, revision: testResult.revision ?? 0 })}</span>
                   </>
                 ) : (
                   <>
@@ -393,10 +399,10 @@ export function SyncSection() {
           <div className="space-y-0.5">
             <h4 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2">
               <RotateCw size={15} className="text-[var(--secondary)]" />
-              Synchronization Actions
+              {t("settings.sync.syncActionsTitle")}
             </h4>
             <p className="text-[11px] text-[var(--text-muted)]">
-              Push your local state to the relay or pull and merge the latest remote changes.
+              {t("settings.sync.syncActionsDesc")}
             </p>
           </div>
 
@@ -404,19 +410,19 @@ export function SyncSection() {
             <button
               onClick={handlePush}
               disabled={pushing || !serverUrl}
-              className="flex items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3.5 py-2 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3.5 py-2 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] transition-colors disabled:opacity-50 cursor-pointer"
             >
               {pushing ? <Loader2 size={13} className="animate-spin" /> : <CloudUpload size={13} />}
-              <span>{pushing ? "Pushing..." : "Push to Server"}</span>
+              <span>{pushing ? t("settings.sync.pushing") : t("settings.sync.pushBtn")}</span>
             </button>
 
             <button
               onClick={handlePull}
               disabled={pulling || !serverUrl}
-              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3.5 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-highest)] transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-3.5 py-2 text-xs font-semibold text-[var(--text-primary)] hover:bg-[var(--surface-highest)] transition-colors disabled:opacity-50 cursor-pointer"
             >
               {pulling ? <Loader2 size={13} className="animate-spin" /> : <CloudDownload size={13} />}
-              <span>{pulling ? "Pulling..." : "Pull & Merge"}</span>
+              <span>{pulling ? t("settings.sync.pulling") : t("settings.sync.pullBtn")}</span>
             </button>
           </div>
         </div>
@@ -425,10 +431,10 @@ export function SyncSection() {
         <div className="pt-3 border-t border-[var(--border)] flex items-center justify-between">
           <div className="space-y-0.5">
             <p className="text-xs font-semibold text-[var(--text-primary)]">
-              Real-time Live Sync (WebSocket)
+              {t("settings.sync.websocketTitle")}
             </p>
             <p className="text-[11px] text-[var(--text-muted)]">
-              Keeps a live background connection to automatically merge updates as soon as another device pushes.
+              {t("settings.sync.websocketDesc")}
             </p>
           </div>
 
@@ -451,7 +457,7 @@ export function SyncSection() {
             <div className="space-y-0.5">
               <h4 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2">
                 <Laptop size={15} className="text-[var(--primary)]" />
-                <span>Connected Devices</span>
+                <span>{t("settings.sync.devicesTitle")}</span>
                 {devices.length > 0 && (
                   <span className="rounded bg-[var(--surface-container)] px-1.5 py-0.2 text-[10px] font-mono text-[var(--text-muted)]">
                     {devices.length}
@@ -459,24 +465,24 @@ export function SyncSection() {
                 )}
               </h4>
               <p className="text-[11px] text-[var(--text-muted)]">
-                Devices registered with your self-hosted relay.
+                {t("settings.sync.devicesDesc")}
               </p>
             </div>
             <button
               onClick={loadDevices}
               disabled={loadingDevices}
-              title="Refresh device list"
-              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-secondary)] hover:text-white hover:bg-[var(--surface-highest)] transition-colors disabled:opacity-50"
+              title={t("settings.sync.refreshDevices")}
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-high)] px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-secondary)] hover:text-white hover:bg-[var(--surface-highest)] transition-colors disabled:opacity-50 cursor-pointer"
             >
               <RotateCw size={12} className={loadingDevices ? "animate-spin" : ""} />
-              <span>Refresh</span>
+              <span>{t("settings.sync.refreshDevices")}</span>
             </button>
           </div>
 
           <div className="p-5">
             {devices.length === 0 ? (
               <p className="text-xs text-[var(--text-muted)] text-center py-4">
-                {loadingDevices ? "Loading devices..." : "No devices recorded on this relay yet. Push a backup from this device to register it."}
+                {loadingDevices ? t("settings.sync.loadingDevices") : t("settings.sync.noDevices")}
               </p>
             ) : (
               <div className="divide-y divide-[var(--border)]">
@@ -504,7 +510,7 @@ export function SyncSection() {
                             </span>
                             {isThisDevice && (
                               <span className="rounded bg-[var(--primary)]/15 px-1.5 py-0.5 text-[9px] font-mono font-medium text-[var(--primary)] border border-[var(--primary)]/20">
-                                THIS DEVICE
+                                {t("settings.sync.thisDeviceBadge")}
                               </span>
                             )}
                           </div>
@@ -537,7 +543,7 @@ export function SyncSection() {
           <div className="flex items-center gap-2">
             <Server size={16} className="text-[var(--tertiary)]" />
             <h4 className="text-xs font-semibold text-[var(--text-primary)]">
-              How to Self-Host the Termimus Sync Server
+              {t("settings.sync.dockerDeployTitle")}
             </h4>
           </div>
           <button
@@ -546,10 +552,10 @@ export function SyncSection() {
               setCopiedDocker(true);
               setTimeout(() => setCopiedDocker(false), 2000);
             }}
-            className="flex items-center gap-1 text-[11px] text-[var(--primary)] hover:underline"
+            className="flex items-center gap-1 text-[11px] text-[var(--primary)] hover:underline cursor-pointer"
           >
             {copiedDocker ? <Check size={12} /> : <Copy size={12} />}
-            <span>{copiedDocker ? "Copied Command!" : "Copy Docker Command"}</span>
+            <span>{copiedDocker ? t("settings.sync.copiedDockerCmd") : t("settings.sync.copyDockerCmd")}</span>
           </button>
         </div>
 

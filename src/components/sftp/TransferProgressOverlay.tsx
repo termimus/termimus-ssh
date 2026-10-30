@@ -1,4 +1,5 @@
 import { Loader2, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useSftpStore } from "../../stores/useSftpStore";
 import { formatBytes } from "../../lib/format";
 
@@ -8,6 +9,7 @@ import { formatBytes } from "../../lib/format";
  * this widget and never the panes or the control bar.
  */
 export function TransferProgressOverlay() {
+  const { t } = useTranslation();
   const transferring = useSftpStore((s) => s.transferring);
   const progress = useSftpStore((s) => s.transferProgress);
   const message = useSftpStore((s) => s.transferMessage);
@@ -26,14 +28,14 @@ export function TransferProgressOverlay() {
       <div className="flex items-center gap-2">
         <Loader2 size={14} className="shrink-0 animate-spin text-[var(--accent)]" />
         <span className="text-xs font-semibold text-[var(--text-primary)]">
-          {scanning ? "Preparing transfer..." : `Transfer ${percent}%`}
+          {scanning ? t("sftp.overlay.preparing") : t("sftp.overlay.progress", { percent })}
         </span>
         <button
           onClick={cancelTransfer}
-          title="Cancel transfer"
-          className="ml-auto flex shrink-0 items-center gap-1 rounded bg-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:text-white"
+          title={t("sftp.cancelTransfer")}
+          className="ml-auto flex shrink-0 items-center gap-1 rounded bg-[var(--border)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:text-white cursor-pointer"
         >
-          <X size={10} /> Cancel
+          <X size={10} /> {t("sftp.overlay.cancel")}
         </button>
       </div>
 
@@ -55,7 +57,7 @@ export function TransferProgressOverlay() {
         </span>
         {progress && progress.total > 0 && (
           <span>
-            {progress.done}/{progress.total} files
+            {t("sftp.overlay.filesCount", { done: progress.done, total: progress.total })}
           </span>
         )}
       </div>

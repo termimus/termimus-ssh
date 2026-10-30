@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { X, ArrowLeftRight } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useTunnelStore } from "../../stores/useTunnelStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { PortForwardInput } from "../../lib/api";
 import { CustomSelect } from "../ui/CustomSelect";
 
 export function TunnelModal() {
+  const { t } = useTranslation();
   const { isModalOpen, editingRule, closeModal, saveRule } = useTunnelStore();
   const { hosts } = useHostStore();
 
@@ -47,11 +49,11 @@ export function TunnelModal() {
     setError(null);
 
     if (!label.trim()) {
-      setError("Label is required");
+      setError(t("tunnels.modal.labelRequired"));
       return;
     }
     if (!hostId) {
-      setError("Please select an SSH host");
+      setError(t("tunnels.modal.hostRequired"));
       return;
     }
 
@@ -83,12 +85,12 @@ export function TunnelModal() {
           <div className="flex items-center gap-2">
             <ArrowLeftRight size={18} className="text-[var(--primary)]" />
             <h2 className="text-base font-semibold text-[var(--text-primary)]">
-              {editingRule ? "Edit Port Forwarding" : "New Port Forwarding"}
+              {editingRule ? t("tunnels.modal.titleEdit") : t("tunnels.modal.titleNew")}
             </h2>
           </div>
           <button
             onClick={closeModal}
-            className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-white transition-colors"
+            className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--surface-high)] hover:text-white transition-colors cursor-pointer"
           >
             <X size={18} />
           </button>
@@ -103,28 +105,28 @@ export function TunnelModal() {
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <div>
             <label className="mb-1.5 block font-medium text-[var(--text-muted)]">
-              Rule Name / Label *
+              {t("tunnels.modal.labelField")}
             </label>
             <input
               type="text"
               required
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. Postgres DB, Redis, Grafana"
+              placeholder={t("tunnels.modal.labelPlaceholder")}
               className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none transition-colors"
             />
           </div>
 
           <div>
             <label className="mb-1.5 block font-medium text-[var(--text-muted)]">
-              SSH Host *
+              {t("tunnels.modal.hostField")}
             </label>
             <CustomSelect
               value={hostId}
               onChange={setHostId}
-              placeholder="Select SSH server..."
+              placeholder={t("tunnels.modal.selectHostPlaceholder")}
               options={[
-                { value: "", label: "Select SSH server..." },
+                { value: "", label: t("tunnels.modal.selectHostPlaceholder") },
                 ...hosts.map((h) => ({
                   value: h.id,
                   label: h.label,
@@ -136,12 +138,12 @@ export function TunnelModal() {
 
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-container)]/40 p-3.5 space-y-3">
             <div className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-              Local Endpoint (Your Computer)
+              {t("tunnels.modal.localEndpointTitle")}
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-2">
                 <label className="mb-1 block text-[11px] text-[var(--text-muted)]">
-                  Bind IP
+                  {t("tunnels.modal.bindIpField")}
                 </label>
                 <input
                   type="text"
@@ -153,7 +155,7 @@ export function TunnelModal() {
               </div>
               <div>
                 <label className="mb-1 block text-[11px] text-[var(--text-muted)]">
-                  Port *
+                  {t("tunnels.modal.localPortField")}
                 </label>
                 <input
                   type="number"
@@ -168,12 +170,12 @@ export function TunnelModal() {
 
           <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-container)]/40 p-3.5 space-y-3">
             <div className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-              Destination Endpoint (Target Network)
+              {t("tunnels.modal.destinationEndpointTitle")}
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-2">
                 <label className="mb-1 block text-[11px] text-[var(--text-muted)]">
-                  Destination Host *
+                  {t("tunnels.modal.destinationHostField")}
                 </label>
                 <input
                   type="text"
@@ -186,7 +188,7 @@ export function TunnelModal() {
               </div>
               <div>
                 <label className="mb-1 block text-[11px] text-[var(--text-muted)]">
-                  Port *
+                  {t("tunnels.modal.destinationPortField")}
                 </label>
                 <input
                   type="number"
@@ -203,16 +205,16 @@ export function TunnelModal() {
             <button
               type="button"
               onClick={closeModal}
-              className="rounded-xl border border-[var(--border)] bg-[var(--surface-high)] px-4 py-2 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--surface-highest)] transition-colors"
+              className="rounded-xl border border-[var(--border)] bg-[var(--surface-high)] px-4 py-2 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--surface-highest)] transition-colors cursor-pointer"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-xl bg-[var(--primary)] px-4 py-2 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm disabled:opacity-50"
+              className="rounded-xl bg-[var(--primary)] px-4 py-2 text-xs font-semibold text-[var(--on-primary)] hover:bg-[var(--primary-hover)] transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
             >
-              {submitting ? "Saving..." : editingRule ? "Update Rule" : "Create Rule"}
+              {submitting ? t("tunnels.modal.saving") : editingRule ? t("tunnels.modal.updateButton") : t("tunnels.modal.saveButton")}
             </button>
           </div>
         </form>

@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Home,
   PanelRightClose,
@@ -87,6 +88,7 @@ export function Header({
     }))
   );
 
+  const { t } = useTranslation();
   const isSnippetSidebarOpen = useSnippetStore((s) => s.isSidebarOpen);
   const toggleSnippetSidebar = useSnippetStore((s) => s.toggleSidebar);
   const isVaultInitialized = useVaultStore((s) => s.isInitialized);
@@ -366,7 +368,7 @@ export function Header({
             data-tauri-drag-region="false"
             onClick={onGoHome}
             onContextMenu={(e) => e.stopPropagation()}
-            title="Home / Hosts (Alt+H)"
+            title={t("nav.homeTitle")}
             className={`group relative flex h-7.5 items-center gap-1.5 rounded-lg px-2.5 text-xs shrink-0 cursor-pointer transition-all select-none ${
               isHomeActive
                 ? "bg-[var(--surface-container)] text-[var(--text-primary)] border border-[var(--border)] shadow-xs font-semibold"
@@ -381,7 +383,7 @@ export function Header({
                   : "text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
               }`}
             />
-            <span>Home</span>
+            <span>{t("nav.home")}</span>
           </button>
 
           {groups.map((group) => {
@@ -530,8 +532,8 @@ export function Header({
             onClick={toggleSnippetSidebar}
             title={
               isSnippetSidebarOpen
-                ? "Collapse snippets sidebar (Alt+S)"
-                : "Expand snippets sidebar (Alt+S)"
+                ? t("nav.snippetsToggleCollapse")
+                : t("nav.snippetsToggleExpand")
             }
             className={`flex h-7 items-center gap-1.5 rounded-md px-2 mr-1 text-[11px] font-mono transition-colors ${
               isSnippetSidebarOpen
@@ -540,7 +542,7 @@ export function Header({
             }`}
           >
             <Braces size={13} className={isSnippetSidebarOpen ? "text-[var(--primary)]" : ""} />
-            <span className="hidden sm:inline">Snippets</span>
+            <span className="hidden sm:inline">{t("nav.snippets")}</span>
             {isSnippetSidebarOpen ? (
               <PanelRightClose size={13} className="opacity-70" />
             ) : (
@@ -557,21 +559,21 @@ export function Header({
           <div data-tauri-drag-region="false" className="flex h-full items-stretch shrink-0">
             <button
               onClick={handleMinimize}
-              title="Minimize"
+              title={t("nav.minimize")}
               className="flex w-11 items-center justify-center text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
             >
               <Minus size={14} />
             </button>
             <button
               onClick={handleToggleMaximize}
-              title={isMaximized ? "Restore" : "Maximize (F11 for Full Screen)"}
+              title={isMaximized ? t("nav.restore") : t("nav.maximize")}
               className="flex w-11 items-center justify-center text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
             >
               {isMaximized ? <Copy size={12} /> : <Square size={12} />}
             </button>
             <button
               onClick={handleClose}
-              title="Close"
+              title={t("nav.close")}
               className="flex w-11 items-center justify-center text-[var(--text-muted)] hover:bg-[var(--danger)] hover:text-white transition-colors"
             >
               <X size={15} />
@@ -596,7 +598,7 @@ export function Header({
               >
                 <div className="flex items-center gap-2">
                   <CopyPlus size={13} />
-                  <span>Duplicate Tab</span>
+                  <span>{t("nav.duplicateTab")}</span>
                 </div>
               </button>
 
@@ -607,7 +609,7 @@ export function Header({
               >
                 <div className="flex items-center gap-2">
                   <Columns2 size={13} />
-                  <span>Split Screen (Right)</span>
+                  <span>{t("nav.splitRight")}</span>
                 </div>
               </button>
 
@@ -618,7 +620,7 @@ export function Header({
               >
                 <div className="flex items-center gap-2">
                   <Rows2 size={13} />
-                  <span>Split Screen (Down)</span>
+                  <span>{t("nav.splitDown")}</span>
                 </div>
               </button>
 
@@ -629,7 +631,7 @@ export function Header({
               >
                 <div className="flex items-center gap-2">
                   <Radio size={13} className={isTargetBroadcast ? "animate-pulse" : ""} />
-                  <span>{isTargetBroadcast ? "Disconnect Input Sync" : "Sync All Panes"}</span>
+                  <span>{isTargetBroadcast ? t("terminal.toggleSyncInput") : t("nav.syncInput")}</span>
                 </div>
                 <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
                   Alt+B
@@ -645,7 +647,7 @@ export function Header({
               >
                 <div className="flex items-center gap-2">
                   <X size={13} />
-                  <span>Close Tab</span>
+                  <span>{t("nav.closeTab")}</span>
                 </div>
               </button>
 
@@ -657,7 +659,7 @@ export function Header({
                 >
                   <div className="flex items-center gap-2">
                     <XCircle size={13} />
-                    <span>Close Other Tabs</span>
+                    <span>{t("nav.closeOtherTabs")}</span>
                   </div>
                 </button>
               )}
@@ -670,7 +672,7 @@ export function Header({
                 >
                   <div className="flex items-center gap-2">
                     <ArrowRightToLine size={13} />
-                    <span>Close Tabs to the Right</span>
+                    <span>{t("nav.closeTabsToRight")}</span>
                   </div>
                 </button>
               )}
@@ -689,7 +691,7 @@ export function Header({
           >
             <div className="flex items-center gap-2">
               <Plus size={13} />
-              <span>New Connection</span>
+              <span>{t("nav.quickConnect")}</span>
             </div>
             <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
               {isMac ? "⌘K" : "Ctrl+K"}
@@ -704,7 +706,7 @@ export function Header({
             >
               <div className="flex items-center gap-2">
                 <XCircle size={13} />
-                <span>Close All Tabs</span>
+                <span>{t("nav.closeOtherTabs")}</span>
               </div>
             </button>
           )}

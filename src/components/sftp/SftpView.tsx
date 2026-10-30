@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
   ArrowLeft,
@@ -35,6 +36,7 @@ function transferButtonTitle(files: FileEntry[], verb: "Upload" | "Download"): s
 }
 
 export function SftpView() {
+  const { t } = useTranslation();
   const hosts = useHostStore((s) => s.hosts);
   const [editingFile, setEditingFile] = useState<{ file: FileEntry; isRemote: boolean } | null>(
     null
@@ -186,10 +188,10 @@ export function SftpView() {
               value={remoteHost?.id ?? ""}
               onChange={handleConnectHost}
               disabled={remoteLoading || transferring}
-              placeholder="Select a host to connect..."
+              placeholder={t("sftp.selectHost")}
               searchable
               options={[
-                { value: "", label: "Select a host to connect..." },
+                { value: "", label: t("sftp.selectHost") },
                 ...hosts.map((h) => ({
                   value: h.id,
                   label: h.label,
@@ -205,7 +207,7 @@ export function SftpView() {
               title="Disconnect SFTP"
               className="flex items-center gap-1 rounded bg-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)] hover:text-white"
             >
-              <Unplug size={12} /> Disconnect
+              <Unplug size={12} /> {t("common.close")}
             </button>
           )}
         </div>
@@ -223,7 +225,7 @@ export function SftpView() {
       <div className="flex min-h-0 flex-1 gap-2 overflow-hidden">
         {/* Left Pane: Local Files */}
         <FilePane
-          title="Local Machine"
+          title={t("sftp.local")}
           subtitle={localPath}
           path={localPath}
           entries={localEntries}
@@ -268,7 +270,7 @@ export function SftpView() {
 
         {/* Right Pane: Remote Server Files */}
         <FilePane
-          title={remoteHost ? remoteHost.label : "Remote Server"}
+          title={remoteHost ? remoteHost.label : t("sftp.remote")}
           subtitle={
             remoteHost
               ? `${remoteHost.username}@${remoteHost.address}`

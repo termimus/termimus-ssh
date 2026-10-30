@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { Zap, Server, Plus, X, Terminal, Laptop } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useHostStore } from "../../stores/useHostStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useVaultStore } from "../../stores/useVaultStore";
@@ -15,6 +16,7 @@ interface QuickConnectModalProps {
 }
 
 export function QuickConnectModal({ isOpen, onClose, onConnect }: QuickConnectModalProps) {
+  const { t } = useTranslation();
   const { hosts, openCreateModal } = useHostStore();
   const openSession = useSessionStore((s) => s.openSession);
   const openLocalSession = useSessionStore((s) => s.openLocalSession);
@@ -174,7 +176,7 @@ export function QuickConnectModal({ isOpen, onClose, onConnect }: QuickConnectMo
             className="flex items-center gap-1 text-[var(--primary)] hover:underline"
           >
             <Plus size={12} />
-            <span>New Saved Host...</span>
+            <span>{t("hosts.newHost")}</span>
           </button>
         </div>
 
@@ -195,20 +197,20 @@ export function QuickConnectModal({ isOpen, onClose, onConnect }: QuickConnectMo
                 </div>
                 <div className="min-w-0">
                   <div className="truncate text-xs font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
-                    <span>Run Local Terminal</span>
+                    <span>{t("terminal.runLocalTerminal")}</span>
                     <span className="rounded bg-[var(--surface-container)] px-1.5 py-0.2 font-mono text-[9px] text-[var(--primary)] border border-[var(--border)]">
                       device
                     </span>
                   </div>
                   <div className="truncate font-mono text-[11px] text-[var(--text-muted)]">
-                    Spawn interactive shell on this computer
+                    {t("terminal.localTerminalDesc")}
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className="rounded bg-[var(--primary)]/15 px-2 py-1 font-mono text-[10px] font-semibold text-[var(--primary)] opacity-80 group-hover:opacity-100 transition-opacity">
-                  Launch ➔
+                  {t("common.connect")} ➔
                 </span>
               </div>
             </button>
