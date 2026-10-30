@@ -593,6 +593,18 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
 
       term.open(domWrapper);
 
+      // Ensure xterm recalculates metrics once custom webfonts finish loading
+      if (typeof document !== "undefined" && document.fonts?.ready) {
+        document.fonts.ready.then(() => {
+          try {
+            fitAddon.fit();
+            term.refresh(0, term.rows - 1);
+          } catch {
+            // ignore
+          }
+        });
+      }
+
       // Capture-phase paste handler to ensure DOM paste events are forwarded to xterm
       domWrapper.addEventListener(
         "paste",
