@@ -21,7 +21,9 @@ export function TerminalPreview({
 
   const lines: Segment[][] = [
     [
-      { text: "$ ", color: s.command },
+      { text: "⚡ ", color: s.warning },
+      { text: "root@termimus", color: s.command },
+      { text: "  ~  ", color: s.info },
       { text: "ssh user@192.168.1.10 -p 2200" },
     ],
     [
@@ -47,7 +49,7 @@ export function TerminalPreview({
       style={{
         background: bg,
         color: fg,
-        fontFamily: font?.fontFamily || "'JetBrains Mono', 'Fira Code', monospace",
+        fontFamily: font?.fontFamily || "'JetBrains Mono', 'Symbols Nerd Font Mono', 'Symbols Nerd Font', 'Fira Code', monospace",
         fontSize: font?.fontSize ? `${Math.min(font.fontSize, 13)}px` : "12px",
         lineHeight: font?.lineHeight || 1.35,
       }}

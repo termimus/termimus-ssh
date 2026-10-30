@@ -15,6 +15,42 @@
 @import "@fontsource/fira-code/600.css";
 @import "@fontsource/fira-code/700.css";
 
+/* Embedded Offline Powerline & Nerd Font Symbols */
+@font-face {
+  font-family: 'Symbols Nerd Font Mono';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/SymbolsNerdFontMono-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Symbols Nerd Font';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/SymbolsNerdFont-Regular.woff2') format('woff2');
+}
+
+/* Fallback symbols directly attached to bundled JetBrains Mono & Fira Code */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/SymbolsNerdFontMono-Regular.woff2') format('woff2');
+  unicode-range: U+23FB-23FE, U+2630, U+2665, U+26A1, U+276C-2771, U+2B58, U+E000-E00A, U+E0A0-E0A3, U+E0B0-E0C8, U+E0CA, U+E0CC-E0D2, U+E0D4, U+E0D6-E0D7, U+E200-E2A9, U+E300-E3E3, U+E5FA-E6BB, U+E700-E958, U+EA60-EA88, U+EA8A-EA8C, U+EA8F-EAC7, U+EAC9, U+EACC-EB09, U+EB0B-EB4E, U+EB50-EC5E, U+EC60-EC84, U+ED00-EFCF, U+F000-F385, U+F400-F533, U+F0001-F1AF0;
+}
+
+@font-face {
+  font-family: 'Fira Code';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/SymbolsNerdFontMono-Regular.woff2') format('woff2');
+  unicode-range: U+23FB-23FE, U+2630, U+2665, U+26A1, U+276C-2771, U+2B58, U+E000-E00A, U+E0A0-E0A3, U+E0B0-E0C8, U+E0CA, U+E0CC-E0D2, U+E0D4, U+E0D6-E0D7, U+E200-E2A9, U+E300-E3E3, U+E5FA-E6BB, U+E700-E958, U+EA60-EA88, U+EA8A-EA8C, U+EA8F-EAC7, U+EAC9, U+EACC-EB09, U+EB0B-EB4E, U+EB50-EC5E, U+EC60-EC84, U+ED00-EFCF, U+F000-F385, U+F400-F533, U+F0001-F1AF0;
+}
+
 @layer base {
   :root {
     --canvas: #0a0e14;
@@ -118,7 +154,7 @@
   }
 
   .font-mono, [class*="font-mono"], code, pre, kbd, input.font-mono {
-    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: 'JetBrains Mono', 'Symbols Nerd Font Mono', 'Symbols Nerd Font', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-feature-settings: 'liga' on, 'calt' on, 'zero' on;
     letter-spacing: -0.01em;
   }

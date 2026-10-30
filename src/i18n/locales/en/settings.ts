@@ -83,7 +83,7 @@ export const settingsEn = {
     fontTitle: "Font Settings",
     fontDesc: "Configure monospace typography for the terminal canvas.",
     fontFamily: "Font Family",
-    fontFamilyDesc: "Bundled fonts (JetBrains Mono & Fira Code) work 100% offline.",
+    fontFamilyDesc: "Bundled fonts include JetBrains Mono, Fira Code, and Nerd Font / Powerline symbols (100% offline).",
     fontSize: "Font Size",
     fontSizeRange: "Range 9 – 24 pt.",
     lineHeight: "Line Height",

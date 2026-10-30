@@ -8,11 +8,11 @@ import {
 import type { HighlightKey } from "../lib/highlightPatterns";
 
 export const TERMINAL_FONT_FAMILIES = [
-  "'JetBrains Mono', 'Fira Code', monospace",
-  "'Fira Code', 'JetBrains Mono', monospace",
-  "'Ubuntu Mono', 'DejaVu Sans Mono', monospace",
-  "Consolas, 'JetBrains Mono', monospace",
-  "Menlo, Monaco, 'JetBrains Mono', monospace",
+  "'JetBrains Mono', 'Symbols Nerd Font Mono', 'Symbols Nerd Font', 'Fira Code', monospace",
+  "'Fira Code', 'Symbols Nerd Font Mono', 'Symbols Nerd Font', 'JetBrains Mono', monospace",
+  "'Ubuntu Mono', 'DejaVu Sans Mono', 'Symbols Nerd Font Mono', 'Symbols Nerd Font', monospace",
+  "Consolas, 'Symbols Nerd Font Mono', 'Symbols Nerd Font', 'JetBrains Mono', monospace",
+  "Menlo, Monaco, 'Symbols Nerd Font Mono', 'Symbols Nerd Font', 'JetBrains Mono', monospace",
 ] as const;
 
 export const TERMINAL_FONT_LABELS = [

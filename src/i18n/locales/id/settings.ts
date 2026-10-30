@@ -85,7 +85,7 @@ export const settingsId: typeof settingsEn = {
     fontTitle: "Pengaturan Font",
     fontDesc: "Konfigurasikan tipografi monospace untuk kanvas terminal.",
     fontFamily: "Keluarga Font",
-    fontFamilyDesc: "Font bawaan (JetBrains Mono & Fira Code) bekerja 100% offline.",
+    fontFamilyDesc: "Font bawaan mencakup JetBrains Mono, Fira Code, dan simbol Nerd Font / Powerline (100% offline).",
     fontSize: "Ukuran Font",
     fontSizeRange: "Rentang 9 – 24 pt.",
     lineHeight: "Jarak Baris",
