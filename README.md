@@ -6,11 +6,11 @@
 
 <p align="center">
   <strong>The Local-First, Zero-Knowledge SSH Client & Server Management Suite</strong><br>
-  A modern, self-hosted Termius alternative for Linux, macOS, and Windows · <strong>v0.7.0</strong>
+  A modern, self-hosted Termius alternative for Linux, macOS, and Windows · <strong>v0.8.0</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/termimus/termimus-ssh/releases"><img src="https://img.shields.io/badge/release-v0.7.0-00d2b4.svg?style=flat&label=version" alt="Version v0.7.0" /></a>
+  <a href="https://github.com/termimus/termimus-ssh/releases"><img src="https://img.shields.io/badge/release-v0.8.0-00d2b4.svg?style=flat&label=version" alt="Version v0.8.0" /></a>
   <a href="https://ko-fi.com/termimus"><img src="https://img.shields.io/badge/Ko--fi-Support%20Project-FF5E5B?logo=ko-fi&logoColor=white" alt="Support on Ko-fi" /></a>
   <a href="https://github.com/termimus/termimus-ssh/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://github.com/termimus/termimus-ssh/pkgs/container/termimus-sync"><img src="https://img.shields.io/badge/docker-ghcr.io-blue?logo=docker" alt="Docker Image" /></a>
@@ -127,8 +127,8 @@ Prebuilt installers for every release are published automatically to the **[GitH
 
 | Component | Version | Package |
 |---|---|---|
-| Desktop Client (Tauri + Rust + React) | `v0.7.0` | [Releases](https://github.com/termimus/termimus-ssh/releases) |
-| Self-Hosted Sync Server (Go) | `v0.7.0` | [`ghcr.io/termimus/termimus-sync`](https://github.com/termimus/termimus-sync) |
+| Desktop Client (Tauri + Rust + React) | `v0.8.0` | [Releases](https://github.com/termimus/termimus-ssh/releases) |
+| Self-Hosted Sync Server (Go) | `v0.8.0` | [`ghcr.io/termimus/termimus-sync`](https://github.com/termimus/termimus-sync) |
 
 ---
 
