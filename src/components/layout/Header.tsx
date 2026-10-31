@@ -28,7 +28,7 @@ import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSyncStore } from "../../stores/useSyncStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { useVaultStore } from "../../stores/useVaultStore";
-import { getAllSessionIdsInTree, getAllLeafPanes } from "../../lib/layoutTree";
+import { getAllSessionIdsInTree, getAllLeafPanes, findPaneById } from "../../lib/layoutTree";
 import { QuickConnectModal } from "./QuickConnectModal";
 import { ActiveTab } from "./Sidebar";
 
@@ -72,12 +72,14 @@ export function Header({
     isDraggingTab,
     draggedTabId,
     reorderGroups,
+    activePaneId,
     broadcastGroupIds,
   } = useSessionStore(
     useShallow((s) => ({
       tabs: s.tabs,
       groups: s.groups,
       activeGroupId: s.activeGroupId,
+      activePaneId: s.activePaneId,
       setActiveGroup: s.setActiveGroup,
       closeGroup: s.closeGroup,
       startDragTab: s.startDragTab,
@@ -133,14 +135,30 @@ export function Header({
     ? groups.find((g) => g.id === tabContextMenu.groupId)
     : null;
 
+  const targetLeaf = targetGroup
+    ? (activeGroupId === targetGroup.id && activePaneId
+        ? findPaneById(targetGroup.rootPane, activePaneId)
+        : null) || getAllLeafPanes(targetGroup.rootPane)[0]
+    : null;
+
   const targetPrimaryTab = targetGroup
     ? getAllSessionIdsInTree(targetGroup.rootPane)
         .map((id) => tabs.find((t) => t.id === id))
         .find(Boolean)
     : null;
 
-  const targetHost = targetPrimaryTab
-    ? useHostStore.getState().hosts.find((h) => h.id === targetPrimaryTab.hostId)
+  const targetTab = (targetLeaf?.activeTabId
+    ? tabs.find((t) => t.id === targetLeaf.activeTabId)
+    : null) || targetPrimaryTab;
+
+  const isTargetLocal = Boolean(
+    targetTab?.isLocal ||
+    targetTab?.hostId === "local" ||
+    targetTab?.id.startsWith("local-")
+  );
+
+  const targetHost = targetTab && !isTargetLocal
+    ? useHostStore.getState().hosts.find((h) => h.id === targetTab.hostId)
     : null;
 
   const isTargetBroadcast = targetGroup
@@ -148,6 +166,12 @@ export function Header({
     : false;
 
   const handleDuplicateTab = async () => {
+    if (isTargetLocal) {
+      await useSessionStore.getState().openLocalSession(true);
+      onSelectTab?.();
+      setTabContextMenu(null);
+      return;
+    }
     if (!targetHost) return;
     await useSessionStore.getState().openSession(targetHost, true);
     onSelectTab?.();
@@ -155,23 +179,33 @@ export function Header({
   };
 
   const handleSplitRightTab = () => {
-    if (!targetHost || !targetGroup) return;
+    if (!targetGroup) return;
     setActiveGroup(targetGroup.id);
     onSelectTab?.();
     const leaves = getAllLeafPanes(targetGroup.rootPane);
-    if (leaves[0]) {
-      useSessionStore.getState().openSessionInSplit(targetHost, leaves[0].id, "row", "second");
+    const targetPane = targetLeaf || leaves[0];
+    if (!targetPane) return;
+
+    if (isTargetLocal) {
+      useSessionStore.getState().openLocalSessionInSplit(targetPane.id, "row", "second");
+    } else if (targetHost) {
+      useSessionStore.getState().openSessionInSplit(targetHost, targetPane.id, "row", "second");
     }
     setTabContextMenu(null);
   };
 
   const handleSplitDownTab = () => {
-    if (!targetHost || !targetGroup) return;
+    if (!targetGroup) return;
     setActiveGroup(targetGroup.id);
     onSelectTab?.();
     const leaves = getAllLeafPanes(targetGroup.rootPane);
-    if (leaves[0]) {
-      useSessionStore.getState().openSessionInSplit(targetHost, leaves[0].id, "column", "second");
+    const targetPane = targetLeaf || leaves[0];
+    if (!targetPane) return;
+
+    if (isTargetLocal) {
+      useSessionStore.getState().openLocalSessionInSplit(targetPane.id, "column", "second");
+    } else if (targetHost) {
+      useSessionStore.getState().openSessionInSplit(targetHost, targetPane.id, "column", "second");
     }
     setTabContextMenu(null);
   };
@@ -404,7 +438,9 @@ export function Header({
             // If the group has a workspace label, use it; otherwise fall back to
             // the primary host name, with a count suffix when split into multiple panes.
             const displayLabel = group.label
-              ? group.label
+              ? count > 1 && !group.label.includes(`(${count})`)
+                ? `${group.label} (${count})`
+                : group.label
               : count > 1
               ? `${primaryTab.hostLabel} (${count})`
               : primaryTab.hostLabel;

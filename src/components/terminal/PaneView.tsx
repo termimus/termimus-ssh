@@ -38,6 +38,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
     splitPane,
     startDragTab,
     openSessionInSplit,
+    openLocalSessionInSplit,
     broadcastGroupIds,
     toggleGroupBroadcast,
   } = useSessionStore(
@@ -55,6 +56,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
       splitPane: s.splitPane,
       startDragTab: s.startDragTab,
       openSessionInSplit: s.openSessionInSplit,
+      openLocalSessionInSplit: s.openLocalSessionInSplit,
       broadcastGroupIds: s.broadcastGroupIds,
       toggleGroupBroadcast: s.toggleGroupBroadcast,
     }))
@@ -141,6 +143,11 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
       return;
     }
 
+    if (activeTab.isLocal || activeTab.hostId === "local" || activeTab.id.startsWith("local-")) {
+      openLocalSessionInSplit(pane.id, "row", "second");
+      return;
+    }
+
     // Otherwise, duplicate current session to the same host in a right split atomically
     const host = hosts.find((h) => h.id === activeTab.hostId);
     if (host) {
@@ -154,6 +161,11 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
     const otherTabId = pane.tabIds.find((id) => id !== pane.activeTabId);
     if (otherTabId) {
       splitPane(pane.id, otherTabId, "column", "second");
+      return;
+    }
+
+    if (activeTab.isLocal || activeTab.hostId === "local" || activeTab.id.startsWith("local-")) {
+      openLocalSessionInSplit(pane.id, "column", "second");
       return;
     }
 
