@@ -20,6 +20,7 @@ import {
 import { disposeTerminalSession } from "../components/terminal/XtermView";
 
 const textEncoder = new TextEncoder();
+let cachedLocalShellName: string | null = null;
 
 export interface SshTab {
   id: string; // session_id
@@ -254,13 +255,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         };
       }
 
-      const activeGroup =
-        state.groups.find((g) => g.id === state.activeGroupId) || state.groups[0];
+      const targetGroup =
+        state.groups.find((g) => Boolean(findPaneById(g.rootPane, targetPaneId))) ||
+        state.groups.find((g) => g.id === state.activeGroupId) ||
+        state.groups[0];
 
       // Ensure targetPaneId exists in active group's rootPane; fallback to first leaf if not found
       let effectiveTargetPaneId = targetPaneId;
-      if (!findPaneById(activeGroup.rootPane, effectiveTargetPaneId)) {
-        const leaves = getAllLeafPanes(activeGroup.rootPane);
+      if (!findPaneById(targetGroup.rootPane, effectiveTargetPaneId)) {
+        const leaves = getAllLeafPanes(targetGroup.rootPane);
         if (leaves.length > 0) {
           effectiveTargetPaneId = leaves[0].id;
         }
@@ -268,7 +271,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
       // Directly split the target leaf into two panes with the new sessionId
       const updatedRoot = splitLeafNode(
-        activeGroup.rootPane,
+        targetGroup.rootPane,
         effectiveTargetPaneId,
         sessionId,
         direction,
@@ -276,7 +279,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       );
 
       const updatedGroups = state.groups.map((g) =>
-        g.id === activeGroup.id ? { ...g, rootPane: updatedRoot } : g
+        g.id === targetGroup.id ? { ...g, rootPane: updatedRoot } : g
       );
 
       const newPane = findPaneContainingTab(updatedRoot, sessionId);
@@ -284,6 +287,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       return {
         tabs: [...state.tabs, newTab],
         groups: updatedGroups,
+        activeGroupId: targetGroup.id,
         rootPane: updatedRoot,
         activePaneId: newPane ? newPane.id : state.activePaneId,
         activeTabId: sessionId,
@@ -296,10 +300,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   openLocalSession: async (newGroup = true) => {
     const sessionId = `local-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    let shellName = "terminal";
+    let shellName = cachedLocalShellName || "terminal";
     try {
       const defaultShell = await api.getDefaultLocalShell();
       shellName = defaultShell.split("/").pop()?.split("\\").pop() || "terminal";
+      cachedLocalShellName = shellName;
     } catch {
       // fallback
     }
@@ -367,15 +372,38 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     side: "first" | "second" = "second"
   ) => {
     const sessionId = `local-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const existingLocal = get().tabs.find((t) => t.isLocal || t.id.startsWith("local-"));
+    const match = existingLocal?.hostLabel?.match(/\((.*?)\)/);
+    const shellName = cachedLocalShellName || (match ? match[1] : "terminal");
+
     const newTab: SshTab = {
       id: sessionId,
       hostId: "local",
-      hostLabel: "Local Terminal",
+      hostLabel: `Local (${shellName})`,
       hostAddress: "localhost",
       connected: false,
       connecting: true,
       isLocal: true,
     };
+
+    if (!cachedLocalShellName) {
+      api
+        .getDefaultLocalShell()
+        .then((def) => {
+          const name = def.split("/").pop()?.split("\\").pop();
+          if (name) {
+            cachedLocalShellName = name;
+            set((s) => ({
+              tabs: s.tabs.map((t) =>
+                t.id === sessionId && t.hostLabel === "Local (terminal)"
+                  ? { ...t, hostLabel: `Local (${name})` }
+                  : t
+              ),
+            }));
+          }
+        })
+        .catch(() => {});
+    }
 
     set((state) => {
       if (!state.activeGroupId || state.groups.length === 0 || !state.rootPane) {
@@ -383,6 +411,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         const newGroupObj: TerminalGroup = {
           id: generateGroupId(),
           rootPane: initial,
+          label: `Local: ${shellName}`,
         };
 
         return {
@@ -396,19 +425,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         };
       }
 
-      const activeGroup =
-        state.groups.find((g) => g.id === state.activeGroupId) || state.groups[0];
+      const targetGroup =
+        state.groups.find((g) => Boolean(findPaneById(g.rootPane, targetPaneId))) ||
+        state.groups.find((g) => g.id === state.activeGroupId) ||
+        state.groups[0];
 
       let effectiveTargetPaneId = targetPaneId;
-      if (!findPaneById(activeGroup.rootPane, effectiveTargetPaneId)) {
-        const leaves = getAllLeafPanes(activeGroup.rootPane);
+      if (!findPaneById(targetGroup.rootPane, effectiveTargetPaneId)) {
+        const leaves = getAllLeafPanes(targetGroup.rootPane);
         if (leaves.length > 0) {
           effectiveTargetPaneId = leaves[0].id;
         }
       }
 
       const updatedRoot = splitLeafNode(
-        activeGroup.rootPane,
+        targetGroup.rootPane,
         effectiveTargetPaneId,
         sessionId,
         direction,
@@ -416,7 +447,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       );
 
       const updatedGroups = state.groups.map((g) =>
-        g.id === activeGroup.id ? { ...g, rootPane: updatedRoot } : g
+        g.id === targetGroup.id ? { ...g, rootPane: updatedRoot } : g
       );
 
       const newPane = findPaneContainingTab(updatedRoot, sessionId);
@@ -424,6 +455,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       return {
         tabs: [...state.tabs, newTab],
         groups: updatedGroups,
+        activeGroupId: targetGroup.id,
         rootPane: updatedRoot,
         activePaneId: newPane ? newPane.id : state.activePaneId,
         activeTabId: sessionId,

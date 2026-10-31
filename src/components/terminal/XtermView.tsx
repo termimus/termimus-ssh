@@ -428,7 +428,7 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
   }, [contextMenu]);
 
   const handleSplitRight = () => {
-    const { rootPane, splitPane, openSessionInSplit } = useSessionStore.getState();
+    const { rootPane, splitPane, openSessionInSplit, openLocalSessionInSplit } = useSessionStore.getState();
     if (!rootPane) return;
     const pane = findPaneContainingTab(rootPane, sessionId);
     if (!pane) return;
@@ -436,6 +436,10 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
     const otherTabId = pane.tabIds.find((id) => id !== pane.activeTabId);
     if (otherTabId) {
       splitPane(pane.id, otherTabId, "row", "second");
+      return;
+    }
+    if (isLocal) {
+      openLocalSessionInSplit(pane.id, "row", "second");
       return;
     }
     const hosts = useHostStore.getState().hosts;
@@ -446,7 +450,7 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
   };
 
   const handleSplitDown = () => {
-    const { rootPane, splitPane, openSessionInSplit } = useSessionStore.getState();
+    const { rootPane, splitPane, openSessionInSplit, openLocalSessionInSplit } = useSessionStore.getState();
     if (!rootPane) return;
     const pane = findPaneContainingTab(rootPane, sessionId);
     if (!pane) return;
@@ -454,6 +458,10 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
     const otherTabId = pane.tabIds.find((id) => id !== pane.activeTabId);
     if (otherTabId) {
       splitPane(pane.id, otherTabId, "column", "second");
+      return;
+    }
+    if (isLocal) {
+      openLocalSessionInSplit(pane.id, "column", "second");
       return;
     }
     const hosts = useHostStore.getState().hosts;
