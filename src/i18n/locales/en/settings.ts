@@ -17,6 +17,8 @@ export const settingsEn = {
       enNative: "English",
       id: "Indonesian",
       idNative: "Bahasa Indonesia",
+      zh: "Chinese (Simplified)",
+      zhNative: "简体中文",
     },
     appInfoTitle: "Application Information",
     appInfoDesc: "Self-hosted, Local-First SSH & Server Manager desktop client.",

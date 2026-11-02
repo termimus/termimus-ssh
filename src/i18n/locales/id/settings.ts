@@ -19,6 +19,8 @@ export const settingsId: typeof settingsEn = {
       enNative: "English",
       id: "Bahasa Indonesia",
       idNative: "Bahasa Indonesia",
+      zh: "Bahasa Mandarin (Sederhana)",
+      zhNative: "简体中文",
     },
     appInfoTitle: "Informasi Aplikasi",
     appInfoDesc: "Aplikasi desktop SSH & Server Manager mandiri, Local-First, dan open-source.",

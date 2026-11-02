@@ -83,7 +83,7 @@ Prebuilt installers for every release are published automatically to the **[GitH
 
 ### 🌐 Multi-Language Support (i18n)
 - **Complete Localization**: Full UI internationalization covering all features, toolbars, tables, modals, and settings.
-- **Available Languages**: English (`en`) and Bahasa Indonesia (`id`), with English set as default.
+- **Available Languages**: English (`en`), Bahasa Indonesia (`id`), and Chinese (Simplified, `zh`), with English set as default.
 - **Instant 1-Click Switching**: Switch languages in real-time from **Settings → General** without restarting the application or terminating active SSH sessions.
 - **Persistent Preferences**: Language preference is securely preserved across app launches.
 
@@ -248,7 +248,7 @@ termimus/
 │   │   ├── sync/                 # Self-hosted cloud sync manager
 │   │   ├── vault/                # Backup & restore components
 │   │   └── settings/             # Tabbed settings suite (full-width)
-│   ├── i18n/                     # Modular type-safe dictionaries (en, id)
+│   ├── i18n/                     # Modular type-safe dictionaries (en, id, zh)
 │   ├── stores/                   # Zustand domain stores
 │   └── lib/                      # Tauri typed invoke wrappers
 │

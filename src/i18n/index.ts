@@ -2,17 +2,20 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { en } from "./locales/en";
 import { id } from "./locales/id";
+import { zh } from "./locales/zh";
 
 export const SUPPORTED_LANGUAGES = [
   { code: "en", label: "English", nativeName: "English" },
   { code: "id", label: "Indonesian", nativeName: "Bahasa Indonesia" },
+  { code: "zh", label: "Chinese (Simplified)", nativeName: "简体中文" },
 ] as const;
 
-export type SupportedLanguage = "en" | "id";
+export type SupportedLanguage = "en" | "id" | "zh";
 
 export const resources = {
   en: { translation: en },
   id: { translation: id },
+  zh: { translation: zh },
 } as const;
 
 // Read persisted language from localStorage if available
@@ -21,7 +24,11 @@ function getInitialLanguage(): SupportedLanguage {
     const raw = localStorage.getItem("termimus_settings");
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed?.state?.language === "en" || parsed?.state?.language === "id") {
+      if (
+        parsed?.state?.language === "en" ||
+        parsed?.state?.language === "id" ||
+        parsed?.state?.language === "zh"
+      ) {
         return parsed.state.language;
       }
     }
