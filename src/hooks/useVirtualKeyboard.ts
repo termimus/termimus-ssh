@@ -19,6 +19,32 @@ export function useVirtualKeyboard(): boolean {
     if (typeof navigator === "undefined" || navigator.maxTouchPoints === 0) return;
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let maxSeenHeight = Math.max(
+      window.innerHeight,
+      window.visualViewport ? window.visualViewport.height : 0
+    );
+
+    const checkKeyboard = (currentHeight: number, vHeight?: number) => {
+      if (currentHeight > maxSeenHeight) {
+        maxSeenHeight = currentHeight;
+      }
+      if (vHeight && vHeight > maxSeenHeight) {
+        maxSeenHeight = vHeight;
+      }
+
+      // 1. Check if visual viewport shrunk compared to layout viewport (overlap mode)
+      if (vHeight !== undefined && window.innerHeight - vHeight > 100) {
+        return true;
+      }
+
+      // 2. Check if current visible height shrunk compared to max seen height (resize mode)
+      const testHeight = vHeight !== undefined ? vHeight : currentHeight;
+      if (maxSeenHeight - testHeight > 120) {
+        return true;
+      }
+
+      return false;
+    };
 
     // Primary: Visual Viewport API (most reliable)
     if (window.visualViewport) {
@@ -27,11 +53,7 @@ export function useVirtualKeyboard(): boolean {
       const handleViewportResize = () => {
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
-          // If visual viewport is significantly smaller than layout viewport,
-          // the soft keyboard is most likely open.
-          const threshold = 100;
-          const keyboardVisible =
-            window.innerHeight - viewport.height > threshold;
+          const keyboardVisible = checkKeyboard(window.innerHeight, viewport.height);
           setIsVisible(keyboardVisible);
         }, 50);
       };
@@ -40,8 +62,7 @@ export function useVirtualKeyboard(): boolean {
       viewport.addEventListener("scroll", handleViewportResize);
 
       // Check initial state immediately
-      const threshold = 100;
-      setIsVisible(window.innerHeight - viewport.height > threshold);
+      setIsVisible(checkKeyboard(window.innerHeight, viewport.height));
 
       return () => {
         if (debounceTimer) clearTimeout(debounceTimer);
@@ -51,13 +72,11 @@ export function useVirtualKeyboard(): boolean {
     }
 
     // Fallback: window resize heuristic
-    const initialHeight = window.innerHeight;
-
     const handleResize = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
-        const currentHeight = window.innerHeight;
-        setIsVisible(initialHeight - currentHeight > 100);
+        const keyboardVisible = checkKeyboard(window.innerHeight);
+        setIsVisible(keyboardVisible);
       }, 50);
     };
 

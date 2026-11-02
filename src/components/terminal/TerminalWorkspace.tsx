@@ -55,7 +55,7 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
 
   const { isAndroidOrIos, isTouchDevice } = useDeviceLayout();
   const isVirtualKeyboardOpen = useVirtualKeyboard();
-  const [manualAccessoryBarOpen, setManualAccessoryBarOpen] = useState(false);
+  const [manualAccessoryBarOpen, setManualAccessoryBarOpen] = useState(true);
 
   const shouldShowAccessoryBar =
     (isAndroidOrIos || isTouchDevice) &&
@@ -294,28 +294,27 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
           className="flex w-full shrink-0 flex-col z-30"
           style={{ display: visible ? "flex" : "none" }}
         >
-          {/* Manual toggle button — visible when keyboard bar is NOT auto-shown */}
-          {!isVirtualKeyboardOpen && (
+          {/* Accessory Bar: only render when visible */}
+          {shouldShowAccessoryBar && (
+            <MobileAccessoryBar
+              onSendInput={handleSendInput}
+              onClose={() => setManualAccessoryBarOpen(false)}
+            />
+          )}
+
+          {/* Manual toggle button — visible when keyboard bar is hidden/collapsed */}
+          {!shouldShowAccessoryBar && (
             <div className="flex justify-end border-t border-[var(--border)] bg-[var(--canvas)] px-2 py-0.5">
               <button
                 type="button"
-                onClick={() => setManualAccessoryBarOpen((prev) => !prev)}
-                className={`flex h-6 items-center gap-1.5 rounded-lg px-2 text-[11px] font-medium transition-colors ${
-                  manualAccessoryBarOpen
-                    ? "bg-[var(--primary)]/15 text-[var(--primary)] border border-[var(--primary)]/30"
-                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-container)]"
-                }`}
-                title={manualAccessoryBarOpen ? "Hide key toolbar" : "Show Esc / Ctrl / Arrow key toolbar"}
+                onClick={() => setManualAccessoryBarOpen(true)}
+                className="flex h-6 items-center gap-1.5 rounded-lg px-2 text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-container)] cursor-pointer"
+                title="Show Esc / Ctrl / Arrow key toolbar"
               >
                 <Keyboard size={12} />
-                <span>{manualAccessoryBarOpen ? "Hide Keys" : "Keys"}</span>
+                <span>Keys</span>
               </button>
             </div>
-          )}
-
-          {/* Accessory Bar: only render when visible */}
-          {shouldShowAccessoryBar && (
-            <MobileAccessoryBar onSendInput={handleSendInput} />
           )}
         </div>
       )}

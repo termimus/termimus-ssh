@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Clipboard,
   CornerDownLeft,
+  ChevronDown,
 } from "lucide-react";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { impactFeedback } from "@tauri-apps/plugin-haptics";
@@ -20,6 +21,7 @@ function triggerHaptic() {
 
 interface MobileAccessoryBarProps {
   onSendInput: (data: string) => void;
+  onClose?: () => void;
   className?: string;
 }
 
@@ -29,7 +31,7 @@ interface MobileAccessoryBarProps {
  * directly above the soft keyboard, providing desktop-class terminal navigation on phones.
  * Supports auto-repeat for navigation keys and modifier chording.
  */
-export function MobileAccessoryBar({ onSendInput, className = "" }: MobileAccessoryBarProps) {
+export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: MobileAccessoryBarProps) {
   const [ctrlActive, setCtrlActive] = useState(false);
   const [altActive, setAltActive] = useState(false);
 
@@ -285,6 +287,21 @@ export function MobileAccessoryBar({ onSendInput, className = "" }: MobileAccess
       >
         <CornerDownLeft className="h-3.5 w-3.5" />
       </button>
+
+      {/* Optional Hide / Collapse Bar Button */}
+      {onClose && (
+        <button
+          type="button"
+          onClick={() => {
+            triggerHaptic();
+            onClose();
+          }}
+          className="flex h-8 min-w-[32px] shrink-0 items-center justify-center rounded-md bg-[var(--surface-container)] px-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] active:bg-[var(--surface-active)] cursor-pointer"
+          title="Hide Key Toolbar"
+        >
+          <ChevronDown className="h-3.5 w-3.5" />
+        </button>
+      )}
     </div>
   );
 }

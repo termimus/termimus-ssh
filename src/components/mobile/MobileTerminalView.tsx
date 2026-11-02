@@ -158,7 +158,12 @@ export function MobileTerminalView({ visible, onOpenHosts }: MobileTerminalViewP
       </div>
 
       {/* Terminal Accessory Toolbar for Touchscreen Keyboard */}
-      {showAccessoryBar && <MobileAccessoryBar onSendInput={handleSendInput} />}
+      {showAccessoryBar && (
+        <MobileAccessoryBar
+          onSendInput={handleSendInput}
+          onClose={() => setManualAccessoryOpen(false)}
+        />
+      )}
     </div>
   );
 }
