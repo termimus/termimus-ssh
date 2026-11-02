@@ -1085,6 +1085,37 @@ pub async fn sftp_download(
 }
 
 #[tauri::command]
+pub async fn sftp_transfer_remote(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    src_session_id: String,
+    src_path: String,
+    dst_session_id: String,
+    dst_path: String,
+) -> Result<(), String> {
+    state
+        .sftp
+        .transfer_remote_to_remote(
+            &src_session_id,
+            &src_path,
+            &dst_session_id,
+            &dst_path,
+            &|done, total| {
+                let _ = app.emit(
+                    "sftp-transfer-progress",
+                    TransferProgressEvent {
+                        session_id: src_session_id.clone(),
+                        path: src_path.clone(),
+                        bytes_done: done,
+                        bytes_total: total,
+                    },
+                );
+            },
+        )
+        .await
+}
+
+#[tauri::command]
 pub async fn sftp_disconnect(
     state: State<'_, AppState>,
     session_id: String,

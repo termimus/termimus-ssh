@@ -19,6 +19,8 @@ interface CustomSelectProps {
   className?: string;
   /** Shows a search box that filters options by label/description as you type */
   searchable?: boolean;
+  /** More compact padding and radius for toolbars and table headers */
+  compact?: boolean;
 }
 
 export function CustomSelect({
@@ -29,6 +31,7 @@ export function CustomSelect({
   disabled = false,
   className = "",
   searchable = false,
+  compact = false,
 }: CustomSelectProps) {
   const { t } = useTranslation();
   const effectivePlaceholder = placeholder ?? t("common.selectOption");
@@ -212,7 +215,9 @@ export function CustomSelect({
             ? `${selectedOption.label}${selectedOption.description ? ` ${selectedOption.description}` : ""}`
             : effectivePlaceholder
         }
-        className={`flex w-full items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-left text-xs transition-colors cursor-pointer focus:border-[var(--primary)] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed hover:border-[var(--border)]/80 ${
+        className={`flex w-full items-center justify-between gap-2 border border-[var(--border)] bg-[var(--surface-container)] text-left text-xs transition-colors cursor-pointer focus:border-[var(--primary)] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed hover:border-[var(--border)]/80 ${
+          compact ? "rounded-lg px-2.5 py-1.5" : "rounded-xl px-3 py-2"
+        } ${
           isOpen ? "border-[var(--primary)] ring-1 ring-[var(--primary)]/30" : ""
         }`}
       >

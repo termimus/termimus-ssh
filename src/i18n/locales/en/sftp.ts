@@ -1,7 +1,13 @@
 export const sftpEn = {
   title: "SFTP File Browser",
   local: "Local Filesystem",
+  localMachine: "Local Machine",
   remote: "Remote Server",
+  source: "Source",
+  destination: "Destination",
+  copy: "Copy",
+  copyToTarget: "Copy to {{target}}",
+  cloudBridgeInfo: "Transfers between remote servers are streamed directly through Termimus in memory.",
   selectHost: "Select a host to connect...",
   upload: "Upload",
   download: "Download",

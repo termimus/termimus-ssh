@@ -3,7 +3,13 @@ import type { sftpEn } from "../en/sftp";
 export const sftpId: typeof sftpEn = {
   title: "Penjelajah Berkas SFTP",
   local: "Sistem Berkas Lokal",
+  localMachine: "Komputer Lokal",
   remote: "Server Remote",
+  source: "Sumber",
+  destination: "Tujuan",
+  copy: "Salin",
+  copyToTarget: "Salin ke {{target}}",
+  cloudBridgeInfo: "Transfer antar server remote dialirkan langsung melalui memori Termimus.",
   selectHost: "Pilih host untuk terhubung...",
   upload: "Unggah",
   download: "Unduh",
