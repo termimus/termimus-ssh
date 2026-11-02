@@ -66,7 +66,7 @@ export function MobileBottomNav({ activeNav, onNavChange }: MobileBottomNavProps
   ];
 
   return (
-    <nav className="flex w-full shrink-0 items-center justify-around border-t border-[var(--border)] bg-[var(--surface-container)] px-1 py-1 pb-[calc(env(safe-area-inset-bottom,0px)+4px)] select-none z-20">
+    <nav className="flex w-full shrink-0 items-center justify-around border-t border-[var(--border)] bg-[var(--surface-container)] px-1 py-1 pb-1.5 select-none z-20">
       {navItems.map(({ id, label, icon: Icon, badge, badgeDot }) => {
         const active = activeNav === id;
         return (

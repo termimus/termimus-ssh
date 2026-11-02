@@ -46,7 +46,7 @@ export function MobileHeader({ activeNav, onNewItem }: MobileHeaderProps) {
   };
 
   return (
-    <header className="flex h-13 w-full shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--surface-container)] px-3 pt-[env(safe-area-inset-top,0px)] select-none">
+    <header className="flex h-13 w-full shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--surface-container)] px-3 select-none">
       <div className="flex items-center gap-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface-high)] text-[var(--primary)] shadow-sm">
           <Icon className="h-4 w-4" />
