@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { impactFeedback } from "@tauri-apps/plugin-haptics";
 import { useTranslation } from "react-i18next";
 import {
   Copy,
@@ -171,6 +172,14 @@ async function safePasteToTerminal(term: Terminal) {
     term.paste(text);
   } catch (err) {
     console.warn("Clipboard paste failed:", err);
+  }
+}
+
+function triggerHaptic() {
+  try {
+    impactFeedback("light").catch(() => {});
+  } catch {
+    // ignore on desktop/web
   }
 }
 
@@ -426,6 +435,98 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [contextMenu]);
+
+  // Touch Gestures: Pinch-to-zoom & Long-press context menu for mobile / touch screens
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    let touchStartDist = 0;
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+    let touchStartPos: { x: number; y: number } | null = null;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+        touchStartDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+      } else if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        touchStartPos = { x: touch.clientX, y: touch.clientY };
+        if (longPressTimer) clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(() => {
+          if (!touchStartPos) return;
+          triggerHaptic();
+          const hasSel = Boolean(termRef.current?.hasSelection());
+          const x = Math.min(touchStartPos.x, window.innerWidth - 220);
+          const y = Math.min(touchStartPos.y, window.innerHeight - 380);
+          setContextMenu({ x, y, hasSelection: hasSel });
+          longPressTimer = null;
+        }, 500);
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && touchStartDist > 0) {
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+        const currentDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const diff = currentDist - touchStartDist;
+        if (diff > 25) {
+          if (termRef.current && fitAddonRef.current) {
+            adjustTerminalFontSize(termRef.current, fitAddonRef.current, sessionId, 1);
+            triggerHaptic();
+          }
+          touchStartDist = currentDist;
+        } else if (diff < -25) {
+          if (termRef.current && fitAddonRef.current) {
+            adjustTerminalFontSize(termRef.current, fitAddonRef.current, sessionId, -1);
+            triggerHaptic();
+          }
+          touchStartDist = currentDist;
+        }
+      } else if (e.touches.length === 1 && touchStartPos && longPressTimer) {
+        const touch = e.touches[0];
+        const moveDist = Math.hypot(touch.clientX - touchStartPos.x, touch.clientY - touchStartPos.y);
+        if (moveDist > 12) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      }
+    };
+
+    const onTouchEnd = () => {
+      touchStartDist = 0;
+      touchStartPos = null;
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    };
+
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("touchend", onTouchEnd, { passive: true });
+    el.addEventListener("touchcancel", onTouchEnd, { passive: true });
+
+    return () => {
+      if (longPressTimer) clearTimeout(longPressTimer);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, [sessionId]);
 
   const handleSplitRight = () => {
     const { rootPane, splitPane, openSessionInSplit, openLocalSessionInSplit } = useSessionStore.getState();

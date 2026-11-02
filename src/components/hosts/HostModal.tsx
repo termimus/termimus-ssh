@@ -275,9 +275,9 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
         // so that text-input focus inside the modal still works normally.
         if (e.target === e.currentTarget) closeHostModal();
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4"
     >
-      <div className="w-full max-w-4xl rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div className="w-full max-w-4xl rounded-xl sm:rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-4 sm:p-6 shadow-2xl max-h-[94vh] sm:max-h-[90vh] overflow-y-auto">
         <div className="mb-5 flex items-center justify-between border-b border-[var(--border)] pb-3.5">
           <h2 className="text-base font-semibold text-[var(--text-primary)]">
             {editingHost ? t("hosts.modal.titleEdit") : t("hosts.modal.titleNew")}

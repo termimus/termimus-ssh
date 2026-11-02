@@ -79,8 +79,8 @@ export function TunnelModal() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 select-none">
-      <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 select-none">
+      <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-4 sm:p-6 shadow-2xl max-h-[94vh] overflow-y-auto">
         <div className="mb-4 flex items-center justify-between border-b border-[var(--border)] pb-3">
           <div className="flex items-center gap-2">
             <ArrowLeftRight size={18} className="text-[var(--primary)]" />

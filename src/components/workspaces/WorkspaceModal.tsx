@@ -129,13 +129,13 @@ export function WorkspaceModal() {
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4 backdrop-blur-sm">
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-container)] shadow-2xl"
+        className="relative flex max-h-[94vh] sm:max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl sm:rounded-2xl border border-[var(--border)] bg-[var(--surface-container)] shadow-2xl"
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-[var(--border)] px-6 py-4">
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--primary)]/15 text-[var(--primary)]">
               <Layers size={18} />

@@ -1,9 +1,11 @@
-import { useCallback } from "react";
-import { X, Terminal as TerminalIcon, Laptop } from "lucide-react";
+import { useState, useCallback } from "react";
+import { X, Terminal as TerminalIcon, Laptop, Keyboard } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { XtermView } from "../terminal/XtermView";
 import { MobileAccessoryBar } from "./MobileAccessoryBar";
+import { useVirtualKeyboard } from "../../hooks/useVirtualKeyboard";
 import { api } from "../../lib/api";
 
 const textEncoder = new TextEncoder();
@@ -14,6 +16,10 @@ interface MobileTerminalViewProps {
 }
 
 export function MobileTerminalView({ visible, onOpenHosts }: MobileTerminalViewProps) {
+  const { t } = useTranslation();
+  const isVirtualKeyboardOpen = useVirtualKeyboard();
+  const [manualAccessoryOpen, setManualAccessoryOpen] = useState(true);
+
   const { tabs, activeTabId, setActiveTab, closeSession } = useSessionStore(
     useShallow((s) => ({
       tabs: s.tabs,
@@ -44,36 +50,40 @@ export function MobileTerminalView({ visible, onOpenHosts }: MobileTerminalViewP
         className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center select-none"
         style={{ display: visible ? "flex" : "none" }}
       >
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--surface-container)] text-[var(--text-muted)]">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--surface-container)] text-[var(--text-muted)] border border-[var(--border)]">
           <TerminalIcon className="h-8 w-8 stroke-[1.5]" />
         </div>
         <div>
-          <h2 className="text-base font-semibold text-[var(--text-primary)]">No Active Sessions</h2>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">
+            {t("terminal.noActiveSessions")}
+          </h2>
           <p className="mt-1 max-w-xs text-xs text-[var(--text-muted)]">
-            Connect to a saved server from your hosts list to start a mobile terminal session.
+            {t("terminal.launchPrompt")}
           </p>
         </div>
         {onOpenHosts && (
           <button
             type="button"
             onClick={onOpenHosts}
-            className="mt-2 flex h-9 items-center gap-1.5 rounded-xl bg-[var(--primary)] px-4 text-xs font-semibold text-black shadow-sm active:opacity-90"
+            className="mt-2 flex h-9 items-center gap-1.5 rounded-xl bg-[var(--primary)] px-4 text-xs font-semibold text-black shadow-sm active:opacity-90 cursor-pointer"
           >
-            Go to Hosts
+            {t("nav.hosts")}
           </button>
         )}
       </div>
     );
   }
 
+  const showAccessoryBar = isVirtualKeyboardOpen || manualAccessoryOpen;
+
   return (
     <div
       className="flex flex-1 flex-col overflow-hidden bg-[var(--canvas)]"
       style={{ display: visible ? "flex" : "none" }}
     >
-      {/* Mobile Terminal Tab Bar (if multiple tabs exist) */}
-      {tabs.length > 1 && (
-        <div className="flex h-9 w-full shrink-0 items-center gap-1 overflow-x-auto border-b border-[var(--border)] bg-[var(--surface-container)] px-2 no-scrollbar select-none">
+      {/* Mobile Terminal Tab Bar */}
+      <div className="flex h-9 w-full shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--surface-container)] px-2 no-scrollbar select-none">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1 min-w-0 pr-2">
           {tabs.map((tab) => {
             const isActive = tab.id === activeTab?.id;
             return (
@@ -82,7 +92,7 @@ export function MobileTerminalView({ visible, onOpenHosts }: MobileTerminalViewP
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs transition-colors cursor-pointer ${
                   isActive
-                    ? "bg-[var(--surface-high)] font-semibold text-[var(--primary)]"
+                    ? "bg-[var(--surface-high)] font-semibold text-[var(--primary)] shadow-2xs"
                     : "text-[var(--text-secondary)] hover:bg-[var(--surface-high)]"
                 }`}
               >
@@ -91,14 +101,14 @@ export function MobileTerminalView({ visible, onOpenHosts }: MobileTerminalViewP
                 ) : (
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                 )}
-                <span className="max-w-[120px] truncate">{tab.hostLabel}</span>
+                <span className="max-w-[110px] truncate">{tab.hostLabel}</span>
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     closeSession(tab.id);
                   }}
-                  className="ml-1 rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  className="ml-0.5 rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -106,7 +116,22 @@ export function MobileTerminalView({ visible, onOpenHosts }: MobileTerminalViewP
             );
           })}
         </div>
-      )}
+
+        {/* Toggle Key Accessory Bar button */}
+        <button
+          type="button"
+          onClick={() => setManualAccessoryOpen((prev) => !prev)}
+          className={`flex h-6.5 shrink-0 items-center gap-1 rounded-md px-2 text-[11px] font-mono transition-colors cursor-pointer ${
+            showAccessoryBar
+              ? "bg-[var(--primary)]/15 text-[var(--primary)] font-semibold"
+              : "text-[var(--text-muted)] hover:bg-[var(--surface-high)]"
+          }`}
+          title={showAccessoryBar ? "Hide Key Toolbar" : "Show Key Toolbar"}
+        >
+          <Keyboard size={12} />
+          <span>Keys</span>
+        </button>
+      </div>
 
       {/* Terminal Viewport */}
       <div className="relative flex-1 overflow-hidden">
@@ -133,7 +158,7 @@ export function MobileTerminalView({ visible, onOpenHosts }: MobileTerminalViewP
       </div>
 
       {/* Terminal Accessory Toolbar for Touchscreen Keyboard */}
-      <MobileAccessoryBar onSendInput={handleSendInput} />
+      {showAccessoryBar && <MobileAccessoryBar onSendInput={handleSendInput} />}
     </div>
   );
 }

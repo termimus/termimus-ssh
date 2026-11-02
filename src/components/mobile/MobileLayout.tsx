@@ -48,7 +48,7 @@ export function MobileLayout({
   const showTerminal = activeNav === "terminal";
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--canvas)] text-[var(--text-primary)]">
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--canvas)] text-[var(--text-primary)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)]">
       {/* Mobile Header (Hidden or compact when terminal is active to maximize screen) */}
       {!showTerminal && (
         <MobileHeader

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   Server,
   Terminal,
@@ -17,6 +18,7 @@ interface MobileBottomNavProps {
 }
 
 export function MobileBottomNav({ activeNav, onNavChange }: MobileBottomNavProps) {
+  const { t } = useTranslation();
   const tabsCount = useSessionStore((s) => s.tabs.length);
   const hostsCount = useHostStore((s) => s.hosts.length);
   const activeTunnelsCount = useTunnelStore((s) => s.activeRuleIds.size);
@@ -30,19 +32,19 @@ export function MobileBottomNav({ activeNav, onNavChange }: MobileBottomNavProps
   }> = [
     {
       id: "hosts",
-      label: "Hosts",
+      label: t("nav.hosts"),
       icon: Server,
       badge: hostsCount || undefined,
     },
     {
       id: "terminal",
-      label: "Terminal",
+      label: t("nav.terminal"),
       icon: Terminal,
       badge: tabsCount || undefined,
     },
     {
       id: "keychain",
-      label: "Keychain",
+      label: t("nav.keychain"),
       icon: KeyRound,
     },
     {
@@ -52,12 +54,12 @@ export function MobileBottomNav({ activeNav, onNavChange }: MobileBottomNavProps
     },
     {
       id: "snippets",
-      label: "Snippets",
+      label: t("nav.snippets"),
       icon: Braces,
     },
     {
       id: "settings",
-      label: "Settings",
+      label: t("nav.settings"),
       icon: Settings,
       badgeDot: activeTunnelsCount > 0,
     },
@@ -72,7 +74,7 @@ export function MobileBottomNav({ activeNav, onNavChange }: MobileBottomNavProps
             key={id}
             type="button"
             onClick={() => onNavChange(id)}
-            className={`relative flex min-w-[56px] flex-col items-center justify-center gap-0.5 rounded-xl py-1 text-center transition-colors active:scale-95 ${
+            className={`relative flex min-w-[56px] flex-col items-center justify-center gap-0.5 rounded-xl py-1 text-center transition-colors active:scale-95 cursor-pointer ${
               active
                 ? "text-[var(--primary)] font-semibold"
                 : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"

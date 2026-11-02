@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useHostStore } from "../../stores/useHostStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useVaultStore } from "../../stores/useVaultStore";
+import { useDeviceLayout } from "../../hooks/useDeviceLayout";
 import { Host } from "../../lib/api";
 
 // openSession is a single stable action reference; selecting it directly avoids
@@ -17,6 +18,7 @@ interface QuickConnectModalProps {
 
 export function QuickConnectModal({ isOpen, onClose, onConnect }: QuickConnectModalProps) {
   const { t } = useTranslation();
+  const { isAndroidOrIos } = useDeviceLayout();
   const { hosts, openCreateModal } = useHostStore();
   const openSession = useSessionStore((s) => s.openSession);
   const openLocalSession = useSessionStore((s) => s.openLocalSession);
@@ -128,7 +130,7 @@ export function QuickConnectModal({ isOpen, onClose, onConnect }: QuickConnectMo
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-100">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-8 sm:pt-20 bg-black/60 backdrop-blur-xs p-2 sm:p-4 animate-in fade-in duration-100">
       <div
         className="w-full max-w-lg rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] shadow-2xl overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -182,10 +184,11 @@ export function QuickConnectModal({ isOpen, onClose, onConnect }: QuickConnectMo
 
         {/* Host List */}
         <div className="max-h-80 overflow-y-auto p-1.5 space-y-1">
-          {(!input.trim() ||
-            "run local terminal device shell bash zsh pwsh powershell cmd".includes(
-              input.trim().toLowerCase()
-            )) && (
+          {!isAndroidOrIos &&
+            (!input.trim() ||
+              "run local terminal device shell bash zsh pwsh powershell cmd".includes(
+                input.trim().toLowerCase()
+              )) && (
             <button
               type="button"
               onClick={handleOpenLocalTerminal}

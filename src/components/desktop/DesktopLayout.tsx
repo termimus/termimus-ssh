@@ -54,7 +54,7 @@ export function DesktopLayout({
   const showTerminal = activeNav === "terminal";
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--canvas)] text-[var(--text-primary)] pb-[env(safe-area-inset-bottom,0px)]">
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--canvas)] text-[var(--text-primary)] pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)]">
       {/* Invisible edge/corner handles restoring OS resize cursors on desktop frameless window (omitted on mobile/tablet) */}
       {!isAndroidOrIos && <ResizeHandles />}
 

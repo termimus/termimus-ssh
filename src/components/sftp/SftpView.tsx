@@ -6,10 +6,14 @@ import {
   Server,
   AlertCircle,
   Unplug,
+  HardDrive,
+  Upload,
+  Download,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { SelectMods, useSftpStore } from "../../stores/useSftpStore";
 import { useHostStore } from "../../stores/useHostStore";
+import { useDeviceLayout } from "../../hooks/useDeviceLayout";
 import { FilePane } from "./FilePane";
 import { FileEditorModal } from "./FileEditorModal";
 import { TransferConflictModal } from "./TransferConflictModal";
@@ -37,6 +41,8 @@ function transferButtonTitle(files: FileEntry[], verb: "Upload" | "Download"): s
 
 export function SftpView() {
   const { t } = useTranslation();
+  const { isMobile } = useDeviceLayout();
+  const [mobileTab, setMobileTab] = useState<"remote" | "local">("remote");
   const hosts = useHostStore((s) => s.hosts);
   const [editingFile, setEditingFile] = useState<{ file: FileEntry; isRemote: boolean } | null>(
     null
@@ -175,15 +181,15 @@ export function SftpView() {
       <TransferProgressOverlay />
 
       {/* Top SFTP Control Bar */}
-      <div className="mb-3 flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-2.5">
-        <div className="flex items-center gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 sm:px-4 sm:py-2.5">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <div className="flex items-center gap-2">
             <Server size={16} className="text-[var(--accent)]" />
             <span className="text-xs font-semibold text-[var(--text-primary)]">
               Remote Server:
             </span>
           </div>
-          <div className="w-64 sm:w-80">
+          <div className="w-56 sm:w-80">
             <CustomSelect
               value={remoteHost?.id ?? ""}
               onChange={handleConnectHost}
@@ -205,7 +211,7 @@ export function SftpView() {
             <button
               onClick={disconnectRemote}
               title="Disconnect SFTP"
-              className="flex items-center gap-1 rounded bg-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)] hover:text-white"
+              className="flex items-center gap-1 rounded bg-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)] hover:text-white cursor-pointer"
             >
               <Unplug size={12} /> {t("common.close")}
             </button>
@@ -221,78 +227,196 @@ export function SftpView() {
         </div>
       )}
 
-      {/* Dual Pane + Center Transfer Buttons */}
-      <div className="flex min-h-0 flex-1 gap-2 overflow-hidden">
-        {/* Left Pane: Local Files */}
-        <FilePane
-          title={t("sftp.local")}
-          subtitle={localPath}
-          path={localPath}
-          entries={localEntries}
-          loading={localLoading}
-          selectedFiles={selectedLocalFiles}
-          onSelect={selectLocal}
-          onSelectionReplace={replaceLocalSelection}
-          onClearSelection={clearLocalSelection}
-          onSelectAll={selectAllLocal}
-          onNavigate={navigateLocal}
-          onCreateFolder={createLocalFolder}
-          onDeleteItems={deleteLocalItems}
-          onRefresh={refreshLocal}
-          onOpenFile={openLocalFile}
-          onTransfer={transferLocal}
-        />
-
-        {/* Center Transfer Buttons */}
-        <div className="flex shrink-0 flex-col items-center justify-center gap-2 px-1">
+      {/* Mobile Mode: Segmented Pane Switcher */}
+      {isMobile && (
+        <div className="flex w-full shrink-0 rounded-xl bg-[var(--surface-container)] p-1 border border-[var(--border)] mb-2 select-none">
           <button
-            onClick={() => uploadSelected()}
-            disabled={
-              selectedLocalFiles.length === 0 || !remoteSessionId || transferring
-            }
-            title={transferButtonTitle(selectedLocalFiles, "Upload")}
-            className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-md transition hover:bg-[var(--accent-hover)] disabled:opacity-20"
+            type="button"
+            onClick={() => setMobileTab("remote")}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+              mobileTab === "remote"
+                ? "bg-[var(--primary)] text-black shadow-xs font-bold"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
           >
-            <ArrowRight size={16} />
+            <Server size={13} />
+            <span className="truncate max-w-[130px]">{remoteHost ? remoteHost.label : t("sftp.remote")}</span>
           </button>
-
           <button
-            onClick={() => downloadSelected()}
-            disabled={
-              selectedRemoteFiles.length === 0 || !remoteSessionId || transferring
-            }
-            title={transferButtonTitle(selectedRemoteFiles, "Download")}
-            className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-md transition hover:bg-[var(--accent-hover)] disabled:opacity-20"
+            type="button"
+            onClick={() => setMobileTab("local")}
+            className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition-all cursor-pointer ${
+              mobileTab === "local"
+                ? "bg-[var(--primary)] text-black shadow-xs font-bold"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
           >
-            <ArrowLeft size={16} />
+            <HardDrive size={13} />
+            <span>{t("sftp.local")}</span>
           </button>
         </div>
+      )}
 
-        {/* Right Pane: Remote Server Files */}
-        <FilePane
-          title={remoteHost ? remoteHost.label : t("sftp.remote")}
-          subtitle={
-            remoteHost
-              ? `${remoteHost.username}@${remoteHost.address}`
-              : "No connection"
-          }
-          path={remotePath}
-          entries={remoteEntries}
-          loading={remoteLoading}
-          selectedFiles={selectedRemoteFiles}
-          onSelect={selectRemote}
-          onSelectionReplace={replaceRemoteSelection}
-          onClearSelection={clearRemoteSelection}
-          onSelectAll={selectAllRemote}
-          onNavigate={navigateRemote}
-          onCreateFolder={createRemoteFolder}
-          onDeleteItems={deleteRemoteItems}
-          onRefresh={refreshRemote}
-          onOpenFile={openRemoteFile}
-          disabled={!remoteSessionId}
-          onTransfer={transferRemote}
-        />
-      </div>
+      {/* Pane Viewport */}
+      {isMobile ? (
+        // Mobile Single Pane View
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="flex-1 overflow-hidden">
+            {mobileTab === "remote" ? (
+              <FilePane
+                title={remoteHost ? remoteHost.label : t("sftp.remote")}
+                subtitle={
+                  remoteHost
+                    ? `${remoteHost.username}@${remoteHost.address}`
+                    : "No connection"
+                }
+                path={remotePath}
+                entries={remoteEntries}
+                loading={remoteLoading}
+                selectedFiles={selectedRemoteFiles}
+                onSelect={selectRemote}
+                onSelectionReplace={replaceRemoteSelection}
+                onClearSelection={clearRemoteSelection}
+                onSelectAll={selectAllRemote}
+                onNavigate={navigateRemote}
+                onCreateFolder={createRemoteFolder}
+                onDeleteItems={deleteRemoteItems}
+                onRefresh={refreshRemote}
+                onOpenFile={openRemoteFile}
+                disabled={!remoteSessionId}
+                onTransfer={transferRemote}
+              />
+            ) : (
+              <FilePane
+                title={t("sftp.local")}
+                subtitle={localPath}
+                path={localPath}
+                entries={localEntries}
+                loading={localLoading}
+                selectedFiles={selectedLocalFiles}
+                onSelect={selectLocal}
+                onSelectionReplace={replaceLocalSelection}
+                onClearSelection={clearLocalSelection}
+                onSelectAll={selectAllLocal}
+                onNavigate={navigateLocal}
+                onCreateFolder={createLocalFolder}
+                onDeleteItems={deleteLocalItems}
+                onRefresh={refreshLocal}
+                onOpenFile={openLocalFile}
+                onTransfer={transferLocal}
+              />
+            )}
+          </div>
+
+          {/* Floating Mobile Action Bar when items are selected */}
+          {mobileTab === "remote" && selectedRemoteFiles.length > 0 && (
+            <div className="mt-2 flex shrink-0 items-center justify-between rounded-xl bg-[var(--surface-container)] border border-[var(--border)] p-2 shadow-lg">
+              <span className="text-xs text-[var(--text-secondary)] font-mono">
+                {selectedRemoteFiles.length} item{selectedRemoteFiles.length > 1 ? "s" : ""} selected
+              </span>
+              <button
+                type="button"
+                onClick={() => downloadSelected()}
+                disabled={transferring || !remoteSessionId}
+                className="flex items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-black transition hover:opacity-90 active:scale-95 disabled:opacity-40 cursor-pointer"
+              >
+                <Download size={13} />
+                <span>Download to Local</span>
+              </button>
+            </div>
+          )}
+
+          {mobileTab === "local" && selectedLocalFiles.length > 0 && (
+            <div className="mt-2 flex shrink-0 items-center justify-between rounded-xl bg-[var(--surface-container)] border border-[var(--border)] p-2 shadow-lg">
+              <span className="text-xs text-[var(--text-secondary)] font-mono">
+                {selectedLocalFiles.length} item{selectedLocalFiles.length > 1 ? "s" : ""} selected
+              </span>
+              <button
+                type="button"
+                onClick={() => uploadSelected()}
+                disabled={transferring || !remoteSessionId}
+                className="flex items-center gap-1.5 rounded-lg bg-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-black transition hover:opacity-90 active:scale-95 disabled:opacity-40 cursor-pointer"
+              >
+                <Upload size={13} />
+                <span>Upload to Server</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        // Desktop / Tablet Dual Pane Side-by-Side
+        <div className="flex min-h-0 flex-1 gap-2 overflow-hidden">
+          {/* Left Pane: Local Files */}
+          <FilePane
+            title={t("sftp.local")}
+            subtitle={localPath}
+            path={localPath}
+            entries={localEntries}
+            loading={localLoading}
+            selectedFiles={selectedLocalFiles}
+            onSelect={selectLocal}
+            onSelectionReplace={replaceLocalSelection}
+            onClearSelection={clearLocalSelection}
+            onSelectAll={selectAllLocal}
+            onNavigate={navigateLocal}
+            onCreateFolder={createLocalFolder}
+            onDeleteItems={deleteLocalItems}
+            onRefresh={refreshLocal}
+            onOpenFile={openLocalFile}
+            onTransfer={transferLocal}
+          />
+
+          {/* Center Transfer Buttons */}
+          <div className="flex shrink-0 flex-col items-center justify-center gap-2 px-1">
+            <button
+              onClick={() => uploadSelected()}
+              disabled={
+                selectedLocalFiles.length === 0 || !remoteSessionId || transferring
+              }
+              title={transferButtonTitle(selectedLocalFiles, "Upload")}
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-md transition hover:bg-[var(--accent-hover)] disabled:opacity-20 cursor-pointer"
+            >
+              <ArrowRight size={16} />
+            </button>
+
+            <button
+              onClick={() => downloadSelected()}
+              disabled={
+                selectedRemoteFiles.length === 0 || !remoteSessionId || transferring
+              }
+              title={transferButtonTitle(selectedRemoteFiles, "Download")}
+              className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-md transition hover:bg-[var(--accent-hover)] disabled:opacity-20 cursor-pointer"
+            >
+              <ArrowLeft size={16} />
+            </button>
+          </div>
+
+          {/* Right Pane: Remote Server Files */}
+          <FilePane
+            title={remoteHost ? remoteHost.label : t("sftp.remote")}
+            subtitle={
+              remoteHost
+                ? `${remoteHost.username}@${remoteHost.address}`
+                : "No connection"
+            }
+            path={remotePath}
+            entries={remoteEntries}
+            loading={remoteLoading}
+            selectedFiles={selectedRemoteFiles}
+            onSelect={selectRemote}
+            onSelectionReplace={replaceRemoteSelection}
+            onClearSelection={clearRemoteSelection}
+            onSelectAll={selectAllRemote}
+            onNavigate={navigateRemote}
+            onCreateFolder={createRemoteFolder}
+            onDeleteItems={deleteRemoteItems}
+            onRefresh={refreshRemote}
+            onOpenFile={openRemoteFile}
+            disabled={!remoteSessionId}
+            onTransfer={transferRemote}
+          />
+        </div>
+      )}
 
       {/* Transfer-conflict modal (self-subscribing, renders null when idle) */}
       <TransferConflictModal />

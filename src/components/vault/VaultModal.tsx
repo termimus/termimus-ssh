@@ -198,12 +198,12 @@ export function VaultModal() {
   return (
     <div
       data-tauri-drag-region
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3 sm:p-4"
     >
       {/* inner panel: explicitly opt out of drag so clicks/inputs work normally */}
       <div
         data-tauri-drag-region="false"
-        className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-6 shadow-2xl"
+        className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-5 sm:p-6 shadow-2xl max-h-[94vh] overflow-y-auto"
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
