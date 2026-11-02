@@ -1,8 +1,9 @@
 use russh::client::{self, Handle, Handler};
 use russh::keys::ssh_key::HashAlg;
 use russh::keys::{decode_secret_key, PrivateKeyWithHashAlg};
-use russh::Disconnect;
+use russh::{cipher, kex, Disconnect};
 use serde::Serialize;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,6 +32,31 @@ pub fn default_client_config() -> Arc<client::Config> {
     let mut config = client::Config::default();
     config.keepalive_interval = Some(Duration::from_secs(15));
     config.keepalive_max = 4;
+
+    // russh's default preference lists only contain modern algorithms, so
+    // old embedded SSH servers (routers, switches, OLTs running Dropbear or
+    // vendor stacks) fail with "No common Kex algorithm" during handshake.
+    // The legacy names below are appended AFTER the modern defaults: SSH
+    // negotiation picks the first common algorithm in the client's list, so
+    // modern servers still negotiate modern algorithms and only servers
+    // that offer nothing better fall back to these.
+    let mut kex_list = config.preferred.kex.to_vec();
+    kex_list.extend([
+        kex::ECDH_SHA2_NISTP256,
+        kex::ECDH_SHA2_NISTP384,
+        kex::ECDH_SHA2_NISTP521,
+        kex::DH_G14_SHA1,
+    ]);
+    config.preferred.kex = Cow::Owned(kex_list);
+
+    let mut cipher_list = config.preferred.cipher.to_vec();
+    cipher_list.extend([
+        cipher::AES_128_CBC,
+        cipher::AES_256_CBC,
+        cipher::TRIPLE_DES_CBC,
+    ]);
+    config.preferred.cipher = Cow::Owned(cipher_list);
+
     Arc::new(config)
 }
 
