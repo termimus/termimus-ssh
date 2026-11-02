@@ -29,7 +29,10 @@ interface MobileAccessoryBarProps {
  * Mobile Terminal Accessory Bar:
  * Displays essential control keys (Esc, Tab, Ctrl, Alt, Arrow keys, etc.)
  * directly above the soft keyboard, providing desktop-class terminal navigation on phones.
- * Supports auto-repeat for navigation keys and modifier chording.
+ *
+ * All buttons preventDefault on pointerdown to PREVENT losing DOM focus on xterm's
+ * helper textarea, which guarantees the soft keyboard (Gboard/Android IME) never hides
+ * when shortcut keys are clicked.
  */
 export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: MobileAccessoryBarProps) {
   const [ctrlActive, setCtrlActive] = useState(false);
@@ -110,14 +113,51 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
     }
   }, [onSendInput]);
 
+  // Helper to intercept pointerdown & prevent focus loss from xterm
+  const makePressHandler = (action: () => void) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      action();
+    },
+    onMouseDown: (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    onClick: (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    },
+  });
+
+  const makeRepeatHandler = (seq: string) => ({
+    onPointerDown: (e: React.PointerEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      startRepeat(seq);
+    },
+    onMouseDown: (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    onPointerUp: stopRepeat,
+    onPointerLeave: stopRepeat,
+    onPointerCancel: stopRepeat,
+  });
+
   return (
     <div
+      onPointerDown={(e) => {
+        // Prevent clicking empty bar areas from stealing focus
+        e.preventDefault();
+      }}
       className={`flex h-11 w-full items-center gap-1.5 overflow-x-auto border-t border-[var(--border)] bg-[var(--surface-high)] px-2 py-1 select-none no-scrollbar ${className}`}
     >
       {/* ESC key */}
       <button
         type="button"
-        onClick={() => handleKeyClick("\x1b")}
+        tabIndex={-1}
+        {...makePressHandler(() => handleKeyClick("\x1b"))}
         className="flex h-8 min-w-[38px] shrink-0 items-center justify-center rounded-md bg-[var(--surface-container)] px-2 text-xs font-semibold text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
       >
         ESC
@@ -126,7 +166,8 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
       {/* TAB key */}
       <button
         type="button"
-        onClick={() => handleKeyClick("\t")}
+        tabIndex={-1}
+        {...makePressHandler(() => handleKeyClick("\t"))}
         className="flex h-8 min-w-[38px] shrink-0 items-center justify-center rounded-md bg-[var(--surface-container)] px-2 text-xs font-semibold text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
       >
         TAB
@@ -135,10 +176,11 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
       {/* CTRL Modifier Toggle */}
       <button
         type="button"
-        onClick={() => {
+        tabIndex={-1}
+        {...makePressHandler(() => {
           triggerHaptic();
           setCtrlActive((prev) => !prev);
-        }}
+        })}
         className={`flex h-8 min-w-[42px] shrink-0 items-center justify-center rounded-md px-2 text-xs font-semibold transition-colors cursor-pointer ${
           ctrlActive
             ? "bg-[var(--primary)] text-black shadow-sm font-bold"
@@ -151,10 +193,11 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
       {/* ALT Modifier Toggle */}
       <button
         type="button"
-        onClick={() => {
+        tabIndex={-1}
+        {...makePressHandler(() => {
           triggerHaptic();
           setAltActive((prev) => !prev);
-        }}
+        })}
         className={`flex h-8 min-w-[38px] shrink-0 items-center justify-center rounded-md px-2 text-xs font-semibold transition-colors cursor-pointer ${
           altActive
             ? "bg-[var(--primary)] text-black shadow-sm font-bold"
@@ -167,7 +210,8 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
       {/* Ctrl+C Quick Kill */}
       <button
         type="button"
-        onClick={() => handleKeyClick("\x03")}
+        tabIndex={-1}
+        {...makePressHandler(() => handleKeyClick("\x03"))}
         className="flex h-8 min-w-[42px] shrink-0 items-center justify-center rounded-md bg-[var(--surface-container)] px-2 font-mono text-xs font-semibold text-[var(--text-primary)] active:bg-[var(--danger)] active:text-white cursor-pointer"
         title="Send SIGINT (Ctrl+C)"
       >
@@ -178,10 +222,8 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
       <div className="flex shrink-0 items-center gap-1 px-0.5">
         <button
           type="button"
-          onPointerDown={() => startRepeat("\x1b[A")}
-          onPointerUp={stopRepeat}
-          onPointerLeave={stopRepeat}
-          onPointerCancel={stopRepeat}
+          tabIndex={-1}
+          {...makeRepeatHandler("\x1b[A")}
           className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--surface-container)] text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
           title="Up (Hold to repeat)"
         >
@@ -189,10 +231,8 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
         </button>
         <button
           type="button"
-          onPointerDown={() => startRepeat("\x1b[B")}
-          onPointerUp={stopRepeat}
-          onPointerLeave={stopRepeat}
-          onPointerCancel={stopRepeat}
+          tabIndex={-1}
+          {...makeRepeatHandler("\x1b[B")}
           className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--surface-container)] text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
           title="Down (Hold to repeat)"
         >
@@ -200,10 +240,8 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
         </button>
         <button
           type="button"
-          onPointerDown={() => startRepeat("\x1b[D")}
-          onPointerUp={stopRepeat}
-          onPointerLeave={stopRepeat}
-          onPointerCancel={stopRepeat}
+          tabIndex={-1}
+          {...makeRepeatHandler("\x1b[D")}
           className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--surface-container)] text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
           title="Left (Hold to repeat)"
         >
@@ -211,10 +249,8 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
         </button>
         <button
           type="button"
-          onPointerDown={() => startRepeat("\x1b[C")}
-          onPointerUp={stopRepeat}
-          onPointerLeave={stopRepeat}
-          onPointerCancel={stopRepeat}
+          tabIndex={-1}
+          {...makeRepeatHandler("\x1b[C")}
           className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--surface-container)] text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
           title="Right (Hold to repeat)"
         >
@@ -225,14 +261,16 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
       {/* Navigation: Home / End */}
       <button
         type="button"
-        onClick={() => handleKeyClick("\x1b[H")}
+        tabIndex={-1}
+        {...makePressHandler(() => handleKeyClick("\x1b[H"))}
         className="flex h-8 min-w-[34px] shrink-0 items-center justify-center rounded-md bg-[var(--surface-container)] px-1.5 text-[11px] font-semibold text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
       >
         HOME
       </button>
       <button
         type="button"
-        onClick={() => handleKeyClick("\x1b[F")}
+        tabIndex={-1}
+        {...makePressHandler(() => handleKeyClick("\x1b[F"))}
         className="flex h-8 min-w-[34px] shrink-0 items-center justify-center rounded-md bg-[var(--surface-container)] px-1.5 text-[11px] font-semibold text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
       >
         END
@@ -241,28 +279,32 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
       {/* Frequent terminal symbols */}
       <button
         type="button"
-        onClick={() => handleKeyClick("|")}
+        tabIndex={-1}
+        {...makePressHandler(() => handleKeyClick("|"))}
         className="flex h-8 min-w-[28px] shrink-0 items-center justify-center rounded-md bg-[var(--surface-container)] px-2 font-mono text-xs text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
       >
         |
       </button>
       <button
         type="button"
-        onClick={() => handleKeyClick("~")}
+        tabIndex={-1}
+        {...makePressHandler(() => handleKeyClick("~"))}
         className="flex h-8 min-w-[28px] shrink-0 items-center justify-center rounded-md bg-[var(--surface-container)] px-2 font-mono text-xs text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
       >
         ~
       </button>
       <button
         type="button"
-        onClick={() => handleKeyClick("/")}
+        tabIndex={-1}
+        {...makePressHandler(() => handleKeyClick("/"))}
         className="flex h-8 min-w-[28px] shrink-0 items-center justify-center rounded-md bg-[var(--surface-container)] px-2 font-mono text-xs text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
       >
         /
       </button>
       <button
         type="button"
-        onClick={() => handleKeyClick("`")}
+        tabIndex={-1}
+        {...makePressHandler(() => handleKeyClick("`"))}
         className="flex h-8 min-w-[28px] shrink-0 items-center justify-center rounded-md bg-[var(--surface-container)] px-2 font-mono text-xs text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
       >
         `
@@ -271,7 +313,8 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
       {/* Paste button */}
       <button
         type="button"
-        onClick={handlePaste}
+        tabIndex={-1}
+        {...makePressHandler(handlePaste)}
         className="flex h-8 shrink-0 items-center gap-1 rounded-md bg-[var(--surface-container)] px-2 text-xs font-medium text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
         title="Paste Clipboard"
       >
@@ -282,7 +325,8 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
       {/* Enter */}
       <button
         type="button"
-        onClick={() => handleKeyClick("\r")}
+        tabIndex={-1}
+        {...makePressHandler(() => handleKeyClick("\r"))}
         className="flex h-8 min-w-[34px] shrink-0 items-center justify-center rounded-md bg-[var(--surface-container)] px-2 text-xs text-[var(--text-primary)] active:bg-[var(--primary)] active:text-black cursor-pointer"
       >
         <CornerDownLeft className="h-3.5 w-3.5" />
@@ -292,10 +336,11 @@ export function MobileAccessoryBar({ onSendInput, onClose, className = "" }: Mob
       {onClose && (
         <button
           type="button"
-          onClick={() => {
+          tabIndex={-1}
+          {...makePressHandler(() => {
             triggerHaptic();
             onClose();
-          }}
+          })}
           className="flex h-8 min-w-[32px] shrink-0 items-center justify-center rounded-md bg-[var(--surface-container)] px-1.5 text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] active:bg-[var(--surface-active)] cursor-pointer"
           title="Hide Key Toolbar"
         >

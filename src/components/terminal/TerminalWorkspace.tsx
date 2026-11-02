@@ -8,6 +8,7 @@ import { useWorkspaceStore, WorkspacePreset } from "../../stores/useWorkspaceSto
 import { findPaneById, getAllLeafPanes } from "../../lib/layoutTree";
 import { PaneContainer } from "./PaneContainer";
 import { PaneView } from "./PaneView";
+import { focusActiveTerminal } from "./XtermView";
 import { SnippetSidebar } from "../snippets/SnippetSidebar";
 import { useDeviceLayout } from "../../hooks/useDeviceLayout";
 import { useVirtualKeyboard } from "../../hooks/useVirtualKeyboard";
@@ -77,6 +78,8 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
         api.writeSsh(sid, bytes).catch(() => {});
       }
     });
+
+    focusActiveTerminal(activeTabId);
   }, []);
 
   // Global pointer tracking for tab drag-and-drop

@@ -121,6 +121,25 @@ export function applyTerminalThemeToAll() {
   }
 }
 
+/**
+ * Ensures the active terminal session retains DOM input focus,
+ * keeping the software keyboard open when accessory buttons are tapped.
+ */
+export function focusActiveTerminal(sessionId?: string) {
+  try {
+    if (sessionId) {
+      terminalPool.get(sessionId)?.term.focus();
+      return;
+    }
+    const activeTabId = useSessionStore.getState().activeTabId;
+    if (activeTabId) {
+      terminalPool.get(activeTabId)?.term.focus();
+    }
+  } catch {
+    // ignore
+  }
+}
+
 function checkIsMac(): boolean {
   if (typeof window === "undefined" || typeof navigator === "undefined") return false;
   return /Macintosh|Mac OS X/i.test(navigator.userAgent);

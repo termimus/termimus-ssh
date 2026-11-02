@@ -3,7 +3,7 @@ import { X, Terminal as TerminalIcon, Laptop, Keyboard } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { useSessionStore } from "../../stores/useSessionStore";
-import { XtermView } from "../terminal/XtermView";
+import { XtermView, focusActiveTerminal } from "../terminal/XtermView";
 import { MobileAccessoryBar } from "./MobileAccessoryBar";
 import { useVirtualKeyboard } from "../../hooks/useVirtualKeyboard";
 import { api } from "../../lib/api";
@@ -40,6 +40,7 @@ export function MobileTerminalView({ visible, onOpenHosts }: MobileTerminalViewP
       } else {
         api.writeSsh(activeTab.id, encoded).catch(() => {});
       }
+      focusActiveTerminal(activeTab.id);
     },
     [activeTab]
   );
