@@ -368,6 +368,75 @@ impl SftpManager {
         Ok(())
     }
 
+    pub async fn transfer_remote_to_remote(
+        &self,
+        src_session_id: &str,
+        src_path: &str,
+        dst_session_id: &str,
+        dst_path: &str,
+        on_progress: &(dyn Fn(u64, u64) + Send + Sync),
+    ) -> Result<(), String> {
+        let src_conn = self.connection(src_session_id).await?;
+        let dst_conn = self.connection(dst_session_id).await?;
+
+        let total_bytes = src_conn
+            .sftp
+            .metadata(src_path)
+            .await
+            .ok()
+            .and_then(|md| md.size)
+            .unwrap_or(0);
+
+        let mut src_file = src_conn
+            .sftp
+            .open_with_flags(src_path, OpenFlags::READ)
+            .await
+            .map_err(|e| format!("Failed to open source remote file: {e}"))?;
+
+        let mut dst_file = dst_conn
+            .sftp
+            .open_with_flags(
+                dst_path,
+                OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE,
+            )
+            .await
+            .map_err(|e| format!("Failed to create destination remote file: {e}"))?;
+
+        on_progress(0, total_bytes);
+        let mut bytes_done: u64 = 0;
+        let mut last_emit = Instant::now();
+        let mut buffer = vec![0u8; 64 * 1024]; // 64KB chunks
+        loop {
+            let bytes_read = src_file
+                .read(&mut buffer)
+                .await
+                .map_err(|e| format!("Error reading from source server: {e}"))?;
+            if bytes_read == 0 {
+                break;
+            }
+            dst_file
+                .write_all(&buffer[..bytes_read])
+                .await
+                .map_err(|e| format!("Error writing to destination server: {e}"))?;
+            bytes_done += bytes_read as u64;
+            if last_emit.elapsed() >= Duration::from_millis(100) {
+                on_progress(bytes_done, total_bytes);
+                last_emit = Instant::now();
+            }
+        }
+        dst_file
+            .flush()
+            .await
+            .map_err(|e| format!("Error flushing destination file: {e}"))?;
+        dst_file
+            .shutdown()
+            .await
+            .map_err(|e| format!("Error closing destination file: {e}"))?;
+        on_progress(total_bytes, total_bytes);
+
+        Ok(())
+    }
+
     pub async fn read_text_file(
         &self,
         session_id: &str,

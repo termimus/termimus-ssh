@@ -3,7 +3,13 @@ import type { sftpEn } from "../en/sftp";
 export const sftpZh: typeof sftpEn = {
   title: "SFTP 文件浏览器",
   local: "本地文件系统",
+  localMachine: "本地电脑",
   remote: "远程服务器",
+  source: "源",
+  destination: "目标",
+  copy: "复制",
+  copyToTarget: "复制到 {{target}}",
+  cloudBridgeInfo: "远程服务器之间的传输将直接通过 Termimus 内存流式传输。",
   selectHost: "选择要连接的主机...",
   upload: "上传",
   download: "下载",

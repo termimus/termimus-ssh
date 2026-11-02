@@ -4,8 +4,10 @@ import {
   ArrowRight,
   ArrowLeft,
   Server,
+  Laptop,
   AlertCircle,
   Unplug,
+  CloudLightning,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { SelectMods, useSftpStore } from "../../stores/useSftpStore";
@@ -17,9 +19,27 @@ import { TransferProgressOverlay } from "./TransferProgressOverlay";
 import { FileEntry } from "../../lib/api";
 import { CustomSelect } from "../ui/CustomSelect";
 
-function transferButtonTitle(files: FileEntry[], verb: "Upload" | "Download"): string {
+function getTransferButtonTitle(
+  files: FileEntry[],
+  direction: "leftToRight" | "rightToLeft",
+  leftLabel: string,
+  rightLabel: string,
+  leftIsRemote: boolean,
+  rightIsRemote: boolean
+): string {
+  let verb = "Copy";
+  if (!leftIsRemote && rightIsRemote) {
+    verb = direction === "leftToRight" ? "Upload" : "Download";
+  } else if (leftIsRemote && !rightIsRemote) {
+    verb = direction === "leftToRight" ? "Download" : "Upload";
+  } else if (leftIsRemote && rightIsRemote) {
+    const target = direction === "leftToRight" ? rightLabel : leftLabel;
+    verb = `Copy to ${target}`;
+  }
+
   if (files.length === 0) {
-    return `Select ${verb === "Upload" ? "local" : "remote"} items to ${verb.toLowerCase()}`;
+    const source = direction === "leftToRight" ? leftLabel : rightLabel;
+    return `Select items in ${source} to transfer`;
   }
   if (files.length === 1) {
     const first = files[0];
@@ -38,180 +58,306 @@ function transferButtonTitle(files: FileEntry[], verb: "Upload" | "Download"): s
 export function SftpView() {
   const { t } = useTranslation();
   const hosts = useHostStore((s) => s.hosts);
-  const [editingFile, setEditingFile] = useState<{ file: FileEntry; isRemote: boolean } | null>(
-    null
-  );
+  const [editingFile, setEditingFile] = useState<{
+    file: FileEntry;
+    isRemote: boolean;
+    sessionId?: string | null;
+    pane: "left" | "right";
+  } | null>(null);
 
-  // Shallow subscription: progress ticks during transfers must not re-render
-  // this tree just because the whole state object is new.
   const {
-    remoteHost,
-    remoteSessionId,
-    remotePath,
-    remoteEntries,
-    remoteLoading,
-    selectedRemoteFiles,
-    localPath,
-    localEntries,
-    localLoading,
-    selectedLocalFiles,
+    leftSourceType,
+    leftHost,
+    leftSessionId,
+    leftPath,
+    leftEntries,
+    leftLoading,
+    selectedLeftFiles,
+
+    rightHost,
+    rightSessionId,
+    rightPath,
+    rightEntries,
+    rightLoading,
+    selectedRightFiles,
+
     transferring,
     error,
+
     initLocal,
-    navigateLocal,
+    setLeftSourceLocal,
+    connectLeftRemote,
+    disconnectLeft,
+    connectRightRemote,
+    disconnectRight,
+    navigatePane,
+    createFolder,
+    deleteItems,
     selectFiles,
     setSelection,
     clearSelection,
     selectAll,
-    createLocalFolder,
-    deleteLocalItems,
-    connectRemote,
-    navigateRemote,
-    createRemoteFolder,
-    deleteRemoteItems,
-    disconnectRemote,
-    uploadSelected,
-    downloadSelected,
+    transferLeftToRight,
+    transferRightToLeft,
   } = useSftpStore(
     useShallow((s) => ({
-      remoteHost: s.remoteHost,
-      remoteSessionId: s.remoteSessionId,
-      remotePath: s.remotePath,
-      remoteEntries: s.remoteEntries,
-      remoteLoading: s.remoteLoading,
-      selectedRemoteFiles: s.selectedRemoteFiles,
-      localPath: s.localPath,
-      localEntries: s.localEntries,
-      localLoading: s.localLoading,
-      selectedLocalFiles: s.selectedLocalFiles,
+      leftSourceType: s.leftSourceType,
+      leftHost: s.leftHost,
+      leftSessionId: s.leftSessionId,
+      leftPath: s.leftPath,
+      leftEntries: s.leftEntries,
+      leftLoading: s.leftLoading,
+      selectedLeftFiles: s.selectedLeftFiles,
+
+      rightHost: s.rightHost,
+      rightSessionId: s.rightSessionId,
+      rightPath: s.rightPath,
+      rightEntries: s.rightEntries,
+      rightLoading: s.rightLoading,
+      selectedRightFiles: s.selectedRightFiles,
+
       transferring: s.transferring,
       error: s.error,
+
       initLocal: s.initLocal,
-      navigateLocal: s.navigateLocal,
+      setLeftSourceLocal: s.setLeftSourceLocal,
+      connectLeftRemote: s.connectLeftRemote,
+      disconnectLeft: s.disconnectLeft,
+      connectRightRemote: s.connectRightRemote,
+      disconnectRight: s.disconnectRight,
+      navigatePane: s.navigatePane,
+      createFolder: s.createFolder,
+      deleteItems: s.deleteItems,
       selectFiles: s.selectFiles,
       setSelection: s.setSelection,
       clearSelection: s.clearSelection,
       selectAll: s.selectAll,
-      createLocalFolder: s.createLocalFolder,
-      deleteLocalItems: s.deleteLocalItems,
-      connectRemote: s.connectRemote,
-      navigateRemote: s.navigateRemote,
-      createRemoteFolder: s.createRemoteFolder,
-      deleteRemoteItems: s.deleteRemoteItems,
-      disconnectRemote: s.disconnectRemote,
-      uploadSelected: s.uploadSelected,
-      downloadSelected: s.downloadSelected,
+      transferLeftToRight: s.transferLeftToRight,
+      transferRightToLeft: s.transferRightToLeft,
     }))
   );
 
-  // Stable pane callbacks. FilePane and its rows are memoized on handler
-  // identity, so inline arrows in the JSX below would defeat that and
-  // re-render every visible row on each store update.
-  const handleConnectHost = useCallback(
+  // Left pane connect / switch handler
+  const handleLeftSourceChange = useCallback(
+    (value: string) => {
+      if (value === "local" || !value) {
+        setLeftSourceLocal();
+      } else {
+        const host = hosts.find((h) => h.id === value);
+        if (host) connectLeftRemote(host);
+      }
+    },
+    [hosts, setLeftSourceLocal, connectLeftRemote]
+  );
+
+  // Right pane connect handler
+  const handleRightHostChange = useCallback(
     (hostId: string) => {
       const host = hosts.find((h) => h.id === hostId);
-      if (host) connectRemote(host);
+      if (host) connectRightRemote(host);
     },
-    [hosts, connectRemote]
+    [hosts, connectRightRemote]
   );
 
-  const selectLocal = useCallback(
+  // Selection callbacks
+  const selectLeft = useCallback(
     (entry: FileEntry, mods: SelectMods, ordered: FileEntry[]) =>
-      selectFiles("local", entry, mods, ordered),
+      selectFiles("left", entry, mods, ordered),
     [selectFiles]
   );
-  const selectRemote = useCallback(
+  const selectRight = useCallback(
     (entry: FileEntry, mods: SelectMods, ordered: FileEntry[]) =>
-      selectFiles("remote", entry, mods, ordered),
+      selectFiles("right", entry, mods, ordered),
     [selectFiles]
   );
 
-  const replaceLocalSelection = useCallback(
-    (entries: FileEntry[]) => setSelection("local", entries),
+  const replaceLeftSelection = useCallback(
+    (entries: FileEntry[]) => setSelection("left", entries),
     [setSelection]
   );
-  const replaceRemoteSelection = useCallback(
-    (entries: FileEntry[]) => setSelection("remote", entries),
+  const replaceRightSelection = useCallback(
+    (entries: FileEntry[]) => setSelection("right", entries),
     [setSelection]
   );
 
-  const clearLocalSelection = useCallback(() => clearSelection("local"), [clearSelection]);
-  const clearRemoteSelection = useCallback(() => clearSelection("remote"), [clearSelection]);
+  const clearLeftSelection = useCallback(() => clearSelection("left"), [clearSelection]);
+  const clearRightSelection = useCallback(() => clearSelection("right"), [clearSelection]);
 
-  const selectAllLocal = useCallback(
-    (entries: FileEntry[]) => selectAll("local", entries),
+  const selectAllLeft = useCallback(
+    (entries: FileEntry[]) => selectAll("left", entries),
     [selectAll]
   );
-  const selectAllRemote = useCallback(
-    (entries: FileEntry[]) => selectAll("remote", entries),
+  const selectAllRight = useCallback(
+    (entries: FileEntry[]) => selectAll("right", entries),
     [selectAll]
   );
 
-  const refreshLocal = useCallback(() => navigateLocal(localPath), [navigateLocal, localPath]);
-  const refreshRemote = useCallback(() => navigateRemote(remotePath), [navigateRemote, remotePath]);
-
-  const openLocalFile = useCallback(
-    (entry: FileEntry) => setEditingFile({ file: entry, isRemote: false }),
-    []
+  // Navigation & CRUD
+  const navigateLeft = useCallback(
+    (path: string) => navigatePane("left", path),
+    [navigatePane]
   );
-  const openRemoteFile = useCallback(
-    (entry: FileEntry) => setEditingFile({ file: entry, isRemote: true }),
-    []
+  const navigateRight = useCallback(
+    (path: string) => navigatePane("right", path),
+    [navigatePane]
   );
 
-  const transferLocal = useCallback((entries: FileEntry[]) => uploadSelected(entries), [uploadSelected]);
-  const transferRemote = useCallback(
-    (entries: FileEntry[]) => downloadSelected(entries),
-    [downloadSelected]
+  const refreshLeft = useCallback(() => navigatePane("left", leftPath), [navigatePane, leftPath]);
+  const refreshRight = useCallback(() => navigatePane("right", rightPath), [navigatePane, rightPath]);
+
+  const createLeftFolder = useCallback(
+    (name: string) => createFolder("left", name),
+    [createFolder]
+  );
+  const createRightFolder = useCallback(
+    (name: string) => createFolder("right", name),
+    [createFolder]
+  );
+
+  const deleteLeftItems = useCallback(
+    (entries: FileEntry[]) => deleteItems("left", entries),
+    [deleteItems]
+  );
+  const deleteRightItems = useCallback(
+    (entries: FileEntry[]) => deleteItems("right", entries),
+    [deleteItems]
+  );
+
+  const openLeftFile = useCallback(
+    (entry: FileEntry) =>
+      setEditingFile({
+        file: entry,
+        isRemote: leftSourceType === "remote",
+        sessionId: leftSessionId,
+        pane: "left",
+      }),
+    [leftSourceType, leftSessionId]
+  );
+
+  const openRightFile = useCallback(
+    (entry: FileEntry) =>
+      setEditingFile({
+        file: entry,
+        isRemote: true,
+        sessionId: rightSessionId,
+        pane: "right",
+      }),
+    [rightSessionId]
+  );
+
+  const transferLeft = useCallback(
+    (entries: FileEntry[]) => transferLeftToRight(entries),
+    [transferLeftToRight]
+  );
+  const transferRight = useCallback(
+    (entries: FileEntry[]) => transferRightToLeft(entries),
+    [transferRightToLeft]
   );
 
   useEffect(() => {
     initLocal();
   }, [initLocal]);
 
+  const leftIsRemote = leftSourceType === "remote";
+  const rightIsRemote = true;
+  const isCloudToCloud = leftIsRemote && Boolean(rightSessionId);
+
+  const leftTitle = leftIsRemote ? (leftHost?.label ?? t("sftp.remote")) : t("sftp.localMachine");
+  const rightTitle = rightHost?.label ?? t("sftp.remote");
+
+  const leftDisabled = leftIsRemote && !leftSessionId;
+  const rightDisabled = !rightSessionId;
+
+  // Header selector for Left Pane
+  const leftHeaderSelector = (
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface-container)] px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">
+        {leftIsRemote ? (
+          <Server size={12} className="text-[var(--accent)]" />
+        ) : (
+          <Laptop size={12} className="text-[var(--text-muted)]" />
+        )}
+        <span>{t("sftp.source")}</span>
+      </div>
+
+      <div className="min-w-0 max-w-[260px] sm:max-w-xs flex-1">
+        <CustomSelect
+          value={leftIsRemote ? (leftHost?.id ?? "") : "local"}
+          onChange={handleLeftSourceChange}
+          disabled={leftLoading || transferring}
+          placeholder={t("sftp.selectHost")}
+          searchable
+          compact
+          options={[
+            {
+              value: "local",
+              label: `💻 ${t("sftp.localMachine")}`,
+              description: "(Local)",
+            },
+            ...hosts.map((h) => ({
+              value: h.id,
+              label: `🖥️ ${h.label}`,
+              description: `(${h.username}@${h.address})`,
+            })),
+          ]}
+        />
+      </div>
+
+      {leftIsRemote && leftSessionId && (
+        <button
+          onClick={disconnectLeft}
+          title="Disconnect and switch back to Local Machine"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface-container)] text-[var(--text-muted)] hover:border-[var(--danger)]/40 hover:bg-[var(--danger)]/15 hover:text-[var(--danger)] transition cursor-pointer"
+        >
+          <Unplug size={12} />
+        </button>
+      )}
+    </div>
+  );
+
+  // Header selector for Right Pane
+  const rightHeaderSelector = (
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--primary)]/30 bg-[var(--primary)]/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--primary)]">
+        <Server size={12} />
+        <span>{t("sftp.destination")}</span>
+      </div>
+
+      <div className="min-w-0 max-w-[260px] sm:max-w-xs flex-1">
+        <CustomSelect
+          value={rightHost?.id ?? ""}
+          onChange={handleRightHostChange}
+          disabled={rightLoading || transferring}
+          placeholder={t("sftp.selectHost")}
+          searchable
+          compact
+          options={[
+            { value: "", label: t("sftp.selectHost") },
+            ...hosts.map((h) => ({
+              value: h.id,
+              label: `🖥️ ${h.label}`,
+              description: `(${h.username}@${h.address})`,
+            })),
+          ]}
+        />
+      </div>
+
+      {rightSessionId && (
+        <button
+          onClick={disconnectRight}
+          title="Disconnect SFTP Session"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface-container)] text-[var(--text-muted)] hover:border-[var(--danger)]/40 hover:bg-[var(--danger)]/15 hover:text-[var(--danger)] transition cursor-pointer"
+        >
+          <Unplug size={12} />
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] p-3">
       {/* Floating transfer progress widget (top-right, self-subscribing) */}
       <TransferProgressOverlay />
-
-      {/* Top SFTP Control Bar */}
-      <div className="mb-3 flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--card)] px-4 py-2.5">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Server size={16} className="text-[var(--accent)]" />
-            <span className="text-xs font-semibold text-[var(--text-primary)]">
-              Remote Server:
-            </span>
-          </div>
-          <div className="w-64 sm:w-80">
-            <CustomSelect
-              value={remoteHost?.id ?? ""}
-              onChange={handleConnectHost}
-              disabled={remoteLoading || transferring}
-              placeholder={t("sftp.selectHost")}
-              searchable
-              options={[
-                { value: "", label: t("sftp.selectHost") },
-                ...hosts.map((h) => ({
-                  value: h.id,
-                  label: h.label,
-                  description: `(${h.username}@${h.address})`,
-                })),
-              ]}
-            />
-          </div>
-
-          {remoteSessionId && (
-            <button
-              onClick={disconnectRemote}
-              title="Disconnect SFTP"
-              className="flex items-center gap-1 rounded bg-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-muted)] hover:text-white"
-            >
-              <Unplug size={12} /> {t("common.close")}
-            </button>
-          )}
-        </div>
-      </div>
 
       {/* Error alert if any */}
       {error && (
@@ -223,74 +369,98 @@ export function SftpView() {
 
       {/* Dual Pane + Center Transfer Buttons */}
       <div className="flex min-h-0 flex-1 gap-2 overflow-hidden">
-        {/* Left Pane: Local Files */}
+        {/* Left Pane: Local or Remote 1 */}
         <FilePane
-          title={t("sftp.local")}
-          subtitle={localPath}
-          path={localPath}
-          entries={localEntries}
-          loading={localLoading}
-          selectedFiles={selectedLocalFiles}
-          onSelect={selectLocal}
-          onSelectionReplace={replaceLocalSelection}
-          onClearSelection={clearLocalSelection}
-          onSelectAll={selectAllLocal}
-          onNavigate={navigateLocal}
-          onCreateFolder={createLocalFolder}
-          onDeleteItems={deleteLocalItems}
-          onRefresh={refreshLocal}
-          onOpenFile={openLocalFile}
-          onTransfer={transferLocal}
+          headerLeft={leftHeaderSelector}
+          path={leftPath}
+          entries={leftEntries}
+          loading={leftLoading}
+          selectedFiles={selectedLeftFiles}
+          onSelect={selectLeft}
+          onSelectionReplace={replaceLeftSelection}
+          onClearSelection={clearLeftSelection}
+          onSelectAll={selectAllLeft}
+          onNavigate={navigateLeft}
+          onCreateFolder={createLeftFolder}
+          onDeleteItems={deleteLeftItems}
+          onRefresh={refreshLeft}
+          onOpenFile={openLeftFile}
+          disabled={leftDisabled}
+          onTransfer={transferLeft}
         />
 
-        {/* Center Transfer Buttons */}
+        {/* Center Transfer Buttons & Bridge Badge */}
         <div className="flex shrink-0 flex-col items-center justify-center gap-2 px-1">
+          {isCloudToCloud && (
+            <div
+              className="mb-1 flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--accent)]/40 bg-[var(--accent)]/15 text-[var(--accent)] shadow-sm transition hover:bg-[var(--accent)]/25 cursor-help"
+              title={t("sftp.cloudBridgeInfo")}
+            >
+              <CloudLightning size={16} />
+            </div>
+          )}
+
           <button
-            onClick={() => uploadSelected()}
+            onClick={() => transferLeftToRight()}
             disabled={
-              selectedLocalFiles.length === 0 || !remoteSessionId || transferring
+              selectedLeftFiles.length === 0 ||
+              rightDisabled ||
+              leftDisabled ||
+              transferring
             }
-            title={transferButtonTitle(selectedLocalFiles, "Upload")}
-            className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-md transition hover:bg-[var(--accent-hover)] disabled:opacity-20"
+            title={getTransferButtonTitle(
+              selectedLeftFiles,
+              "leftToRight",
+              leftTitle,
+              rightTitle,
+              leftIsRemote,
+              rightIsRemote
+            )}
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-md transition hover:bg-[var(--accent-hover)] disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed"
           >
             <ArrowRight size={16} />
           </button>
 
           <button
-            onClick={() => downloadSelected()}
+            onClick={() => transferRightToLeft()}
             disabled={
-              selectedRemoteFiles.length === 0 || !remoteSessionId || transferring
+              selectedRightFiles.length === 0 ||
+              rightDisabled ||
+              leftDisabled ||
+              transferring
             }
-            title={transferButtonTitle(selectedRemoteFiles, "Download")}
-            className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-md transition hover:bg-[var(--accent-hover)] disabled:opacity-20"
+            title={getTransferButtonTitle(
+              selectedRightFiles,
+              "rightToLeft",
+              leftTitle,
+              rightTitle,
+              leftIsRemote,
+              rightIsRemote
+            )}
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--accent)] text-white shadow-md transition hover:bg-[var(--accent-hover)] disabled:opacity-20 cursor-pointer disabled:cursor-not-allowed"
           >
             <ArrowLeft size={16} />
           </button>
         </div>
 
-        {/* Right Pane: Remote Server Files */}
+        {/* Right Pane: Remote Server 2 */}
         <FilePane
-          title={remoteHost ? remoteHost.label : t("sftp.remote")}
-          subtitle={
-            remoteHost
-              ? `${remoteHost.username}@${remoteHost.address}`
-              : "No connection"
-          }
-          path={remotePath}
-          entries={remoteEntries}
-          loading={remoteLoading}
-          selectedFiles={selectedRemoteFiles}
-          onSelect={selectRemote}
-          onSelectionReplace={replaceRemoteSelection}
-          onClearSelection={clearRemoteSelection}
-          onSelectAll={selectAllRemote}
-          onNavigate={navigateRemote}
-          onCreateFolder={createRemoteFolder}
-          onDeleteItems={deleteRemoteItems}
-          onRefresh={refreshRemote}
-          onOpenFile={openRemoteFile}
-          disabled={!remoteSessionId}
-          onTransfer={transferRemote}
+          headerLeft={rightHeaderSelector}
+          path={rightPath}
+          entries={rightEntries}
+          loading={rightLoading}
+          selectedFiles={selectedRightFiles}
+          onSelect={selectRight}
+          onSelectionReplace={replaceRightSelection}
+          onClearSelection={clearRightSelection}
+          onSelectAll={selectAllRight}
+          onNavigate={navigateRight}
+          onCreateFolder={createRightFolder}
+          onDeleteItems={deleteRightItems}
+          onRefresh={refreshRight}
+          onOpenFile={openRightFile}
+          disabled={rightDisabled}
+          onTransfer={transferRight}
         />
       </div>
 
@@ -302,13 +472,13 @@ export function SftpView() {
         <FileEditorModal
           file={editingFile.file}
           isRemote={editingFile.isRemote}
-          sessionId={remoteSessionId}
+          sessionId={editingFile.sessionId}
           onClose={() => setEditingFile(null)}
           onSaved={() => {
-            if (editingFile.isRemote) {
-              navigateRemote(remotePath);
+            if (editingFile.pane === "left") {
+              navigatePane("left", leftPath);
             } else {
-              navigateLocal(localPath);
+              navigatePane("right", rightPath);
             }
           }}
         />

@@ -303,6 +303,18 @@ export const api = {
     invoke<void>("sftp_upload", { sessionId, localPath, remotePath }),
   downloadSftp: (sessionId: string, remotePath: string, localPath: string) =>
     invoke<void>("sftp_download", { sessionId, remotePath, localPath }),
+  transferRemoteSftp: (
+    srcSessionId: string,
+    srcPath: string,
+    dstSessionId: string,
+    dstPath: string
+  ) =>
+    invoke<void>("sftp_transfer_remote", {
+      srcSessionId,
+      srcPath,
+      dstSessionId,
+      dstPath,
+    }),
   sftpStatMany: (sessionId: string, paths: string[]) =>
     invoke<(FileEntry | null)[]>("sftp_stat_many", { sessionId, paths }),
   localStatMany: (paths: string[]) =>
