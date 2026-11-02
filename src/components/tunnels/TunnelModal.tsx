@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, ArrowLeftRight } from "lucide-react";
+import { X, ArrowLeftRight, Globe, Network } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useTunnelStore } from "../../stores/useTunnelStore";
 import { useHostStore } from "../../stores/useHostStore";
@@ -13,7 +13,7 @@ export function TunnelModal() {
 
   const [label, setLabel] = useState("");
   const [hostId, setHostId] = useState("");
-  const [forwardType, setForwardType] = useState<"local" | "remote">("local");
+  const [forwardType, setForwardType] = useState<"local" | "dynamic">("local");
   const [localAddress, setLocalAddress] = useState("127.0.0.1");
   const [localPort, setLocalPort] = useState(8080);
   const [remoteAddress, setRemoteAddress] = useState("127.0.0.1");
@@ -25,11 +25,12 @@ export function TunnelModal() {
     if (editingRule) {
       setLabel(editingRule.label);
       setHostId(editingRule.host_id);
-      setForwardType(editingRule.forward_type === "remote" ? "remote" : "local");
+      const isDynamic = editingRule.forward_type === "dynamic";
+      setForwardType(isDynamic ? "dynamic" : "local");
       setLocalAddress(editingRule.local_address);
       setLocalPort(editingRule.local_port);
-      setRemoteAddress(editingRule.remote_address);
-      setRemotePort(editingRule.remote_port);
+      setRemoteAddress(editingRule.remote_address || "127.0.0.1");
+      setRemotePort(editingRule.remote_port || 80);
     } else {
       setLabel("");
       setHostId(hosts.length > 0 ? hosts[0].id : "");
@@ -63,8 +64,8 @@ export function TunnelModal() {
       forward_type: forwardType,
       local_address: localAddress.trim() || "127.0.0.1",
       local_port: Number(localPort),
-      remote_address: remoteAddress.trim() || "127.0.0.1",
-      remote_port: Number(remotePort),
+      remote_address: forwardType === "dynamic" ? "dynamic" : remoteAddress.trim() || "127.0.0.1",
+      remote_port: forwardType === "dynamic" ? 0 : Number(remotePort),
     };
 
     setSubmitting(true);
@@ -105,6 +106,55 @@ export function TunnelModal() {
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <div>
             <label className="mb-1.5 block font-medium text-[var(--text-muted)]">
+              {t("tunnels.modal.forwardTypeField")}
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setForwardType("local");
+                  if (localPort === 1080) setLocalPort(8080);
+                }}
+                className={`flex flex-col text-left rounded-xl border p-2.5 transition-colors cursor-pointer ${
+                  forwardType === "local"
+                    ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--text-primary)]"
+                    : "border-[var(--border)] bg-[var(--surface-container)]/40 text-[var(--text-muted)] hover:border-[var(--border)]/80"
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-semibold text-xs text-[var(--text-primary)]">
+                  <Network size={13} className="text-[var(--primary)] shrink-0" />
+                  <span>{t("tunnels.modal.typeLocalLabel")}</span>
+                </div>
+                <span className="text-[10px] text-[var(--text-muted)] mt-1 line-clamp-2">
+                  {t("tunnels.modal.typeLocalDesc")}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setForwardType("dynamic");
+                  if (localPort === 8080) setLocalPort(1080);
+                }}
+                className={`flex flex-col text-left rounded-xl border p-2.5 transition-colors cursor-pointer ${
+                  forwardType === "dynamic"
+                    ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--text-primary)]"
+                    : "border-[var(--border)] bg-[var(--surface-container)]/40 text-[var(--text-muted)] hover:border-[var(--border)]/80"
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-semibold text-xs text-[var(--text-primary)]">
+                  <Globe size={13} className="text-[var(--primary)] shrink-0" />
+                  <span>{t("tunnels.modal.typeDynamicLabel")}</span>
+                </div>
+                <span className="text-[10px] text-[var(--text-muted)] mt-1 line-clamp-2">
+                  {t("tunnels.modal.typeDynamicDesc")}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block font-medium text-[var(--text-muted)]">
               {t("tunnels.modal.labelField")}
             </label>
             <input
@@ -125,6 +175,7 @@ export function TunnelModal() {
               value={hostId}
               onChange={setHostId}
               placeholder={t("tunnels.modal.selectHostPlaceholder")}
+              searchable
               options={[
                 { value: "", label: t("tunnels.modal.selectHostPlaceholder") },
                 ...hosts.map((h) => ({
@@ -168,38 +219,53 @@ export function TunnelModal() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-container)]/40 p-3.5 space-y-3">
-            <div className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
-              {t("tunnels.modal.destinationEndpointTitle")}
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-2">
-                <label className="mb-1 block text-[11px] text-[var(--text-muted)]">
-                  {t("tunnels.modal.destinationHostField")}
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={remoteAddress}
-                  onChange={(e) => setRemoteAddress(e.target.value)}
-                  placeholder="127.0.0.1 or db.internal"
-                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-2.5 py-1.5 text-xs font-mono text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors"
-                />
+          {forwardType === "local" ? (
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-container)]/40 p-3.5 space-y-3">
+              <div className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+                {t("tunnels.modal.destinationEndpointTitle")}
               </div>
-              <div>
-                <label className="mb-1 block text-[11px] text-[var(--text-muted)]">
-                  {t("tunnels.modal.destinationPortField")}
-                </label>
-                <input
-                  type="number"
-                  required
-                  value={remotePort}
-                  onChange={(e) => setRemotePort(Number(e.target.value))}
-                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-2.5 py-1.5 text-xs font-mono text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors"
-                />
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="mb-1 block text-[11px] text-[var(--text-muted)]">
+                    {t("tunnels.modal.destinationHostField")}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={remoteAddress}
+                    onChange={(e) => setRemoteAddress(e.target.value)}
+                    placeholder="127.0.0.1 or db.internal"
+                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-2.5 py-1.5 text-xs font-mono text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] text-[var(--text-muted)]">
+                    {t("tunnels.modal.destinationPortField")}
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    value={remotePort}
+                    onChange={(e) => setRemotePort(Number(e.target.value))}
+                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-2.5 py-1.5 text-xs font-mono text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none transition-colors"
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="rounded-xl border border-[var(--primary)]/30 bg-[var(--primary)]/5 p-3.5 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--primary)]">
+                <Globe size={14} className="shrink-0" />
+                <span>{t("tunnels.modal.dynamicInfoTitle")}</span>
+              </div>
+              <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                {t("tunnels.modal.dynamicInfoDesc", {
+                  address: localAddress.trim() || "127.0.0.1",
+                  port: localPort || 1080,
+                })}
+              </p>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-3 border-t border-[var(--border)]">
             <button

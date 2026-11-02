@@ -13,6 +13,7 @@ import {
   Copy,
   Check,
   RefreshCw,
+  Globe,
 } from "lucide-react";
 import { useTunnelStore } from "../../stores/useTunnelStore";
 import { useHostStore } from "../../stores/useHostStore";
@@ -215,35 +216,52 @@ export function TunnelView() {
 
               <div className="my-1 h-[1px] bg-[var(--border)]" />
 
-              {/* Copy Local Address */}
-              <button
-                onClick={async () => {
-                  await navigator.clipboard.writeText(
-                    `${contextMenu.rule!.local_address}:${contextMenu.rule!.local_port}`
-                  );
-                  showCopyToast(t("tunnels.copiedLocalAddress"));
-                  setContextMenu(null);
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
-              >
-                <Copy size={13} />
-                <span>{t("tunnels.copyLocalAddress")}</span>
-              </button>
+              {/* Copy Addresses */}
+              {contextMenu.rule!.forward_type === "dynamic" ? (
+                <button
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(
+                      `${contextMenu.rule!.local_address}:${contextMenu.rule!.local_port}`
+                    );
+                    showCopyToast(t("tunnels.copiedSocks5Address"));
+                    setContextMenu(null);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
+                >
+                  <Copy size={13} />
+                  <span>{t("tunnels.copySocks5Address")}</span>
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(
+                        `${contextMenu.rule!.local_address}:${contextMenu.rule!.local_port}`
+                      );
+                      showCopyToast(t("tunnels.copiedLocalAddress"));
+                      setContextMenu(null);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
+                  >
+                    <Copy size={13} />
+                    <span>{t("tunnels.copyLocalAddress")}</span>
+                  </button>
 
-              {/* Copy Remote Address */}
-              <button
-                onClick={async () => {
-                  await navigator.clipboard.writeText(
-                    `${contextMenu.rule!.remote_address}:${contextMenu.rule!.remote_port}`
-                  );
-                  showCopyToast(t("tunnels.copiedRemoteAddress"));
-                  setContextMenu(null);
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
-              >
-                <Copy size={13} />
-                <span>{t("tunnels.copyRemoteAddress")}</span>
-              </button>
+                  <button
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(
+                        `${contextMenu.rule!.remote_address}:${contextMenu.rule!.remote_port}`
+                      );
+                      showCopyToast(t("tunnels.copiedRemoteAddress"));
+                      setContextMenu(null);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
+                  >
+                    <Copy size={13} />
+                    <span>{t("tunnels.copyRemoteAddress")}</span>
+                  </button>
+                </>
+              )}
 
               <div className="my-1 h-[1px] bg-[var(--border)]" />
 
@@ -339,6 +357,8 @@ const TunnelCard = memo(function TunnelCard({
   onContextMenu,
 }: TunnelCardProps) {
   const { t } = useTranslation();
+  const isDynamic = rule.forward_type === "dynamic";
+
   return (
     <div
       onContextMenu={(e) => onContextMenu?.(e, rule)}
@@ -360,6 +380,15 @@ const TunnelCard = memo(function TunnelCard({
           <h3 className="truncate text-sm font-semibold text-[var(--text-primary)]">
             {rule.label}
           </h3>
+          {isDynamic ? (
+            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              SOCKS5
+            </span>
+          ) : (
+            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium font-mono bg-sky-500/15 text-sky-400 border border-sky-500/30">
+              Local
+            </span>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
@@ -392,9 +421,16 @@ const TunnelCard = memo(function TunnelCard({
         </div>
         <div className="flex items-center justify-between text-[var(--text-muted)]">
           <span>{t("tunnels.targetLabel")}</span>
-          <span className="text-[var(--text-primary)]">
-            {rule.remote_address}:{rule.remote_port}
-          </span>
+          {isDynamic ? (
+            <span className="text-emerald-400 flex items-center gap-1 font-sans text-[11px] font-medium">
+              <Globe size={11} className="shrink-0" />
+              {t("tunnels.dynamicTarget")}
+            </span>
+          ) : (
+            <span className="text-[var(--text-primary)]">
+              {rule.remote_address}:{rule.remote_port}
+            </span>
+          )}
         </div>
       </div>
 

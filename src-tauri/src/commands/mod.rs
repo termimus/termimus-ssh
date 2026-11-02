@@ -1,4 +1,4 @@
-use crate::db::models::{Folder, Host, HostInput, Credential, KeychainItem, KeychainKeyInput, KeychainIdentityInput, PortForwardRule, PortForwardInput, Snippet, SnippetInput, KnownHost, BackupBundle, EncryptedBackupEnvelope, ImportSummary, WorkspacePreset, WorkspacePresetInput};
+use crate::db::models::{Folder, Host, HostInput, Credential, KeychainItem, KeychainKeyInput, KeychainIdentityInput, PortForwardRule, PortForwardInput, ForwardType, Snippet, SnippetInput, KnownHost, BackupBundle, EncryptedBackupEnvelope, ImportSummary, WorkspacePreset, WorkspacePresetInput};
 use crate::db::Database;
 use crate::pty::PtyManager;
 use crate::sftp::{self, FileEntry, SftpManager};
@@ -1247,22 +1247,45 @@ pub async fn tunnel_start(
 
     let auth = resolve_host_auth(&state, &host)?;
 
-    state
-        .tunnel
-        .start_local_forward(
-            app,
-            state.db.clone(),
-            rule_id,
-            host.address,
-            host.port,
-            host.username,
-            auth,
-            rule.local_address,
-            rule.local_port,
-            rule.remote_address,
-            rule.remote_port,
-        )
-        .await
+    match ForwardType::from_str(&rule.forward_type) {
+        ForwardType::Dynamic => {
+            state
+                .tunnel
+                .start_dynamic_forward(
+                    app,
+                    state.db.clone(),
+                    rule_id,
+                    host.address,
+                    host.port,
+                    host.username,
+                    auth,
+                    rule.local_address,
+                    rule.local_port,
+                )
+                .await
+        }
+        ForwardType::Local => {
+            state
+                .tunnel
+                .start_local_forward(
+                    app,
+                    state.db.clone(),
+                    rule_id,
+                    host.address,
+                    host.port,
+                    host.username,
+                    auth,
+                    rule.local_address,
+                    rule.local_port,
+                    rule.remote_address,
+                    rule.remote_port,
+                )
+                .await
+        }
+        ForwardType::Remote => {
+            Err("Remote port forwarding (-R) is not yet supported".to_string())
+        }
+    }
 }
 
 #[tauri::command]

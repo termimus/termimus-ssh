@@ -1,3 +1,5 @@
+pub mod socks5;
+
 use russh::client::{self, Handle};
 use russh::keys::decode_secret_key;
 use russh::ChannelMsg;
@@ -59,38 +61,7 @@ impl TunnelManager {
             }
         }
 
-        let config = crate::ssh::default_client_config();
-        let handler = SshClientHandler {
-            address: address.clone(),
-            port,
-            db,
-        };
-        let socket = match tokio::net::TcpStream::connect((address.as_str(), port)).await {
-            Ok(s) => {
-                crate::ssh::configure_tcp_stream(&s);
-                s
-            }
-            Err(e) => return Err(format!("Tunnel TCP connection failed: {e}")),
-        };
-        let mut handle = client::connect_stream(config, socket, handler)
-            .await
-            .map_err(|e| format!("Tunnel SSH connection failed: {e}"))?;
-
-        let authenticated = match auth {
-            SshAuth::Password(password) => handle
-                .authenticate_password(&username, &password)
-                .await
-                .map_err(|e| format!("Auth error: {e}"))?,
-            SshAuth::PrivateKey { pem, passphrase } => {
-                let key_pair = decode_secret_key(&pem, passphrase.as_deref())
-                    .map_err(|e| format!("Invalid private key: {e}"))?;
-                crate::ssh::authenticate_publickey_smart(&mut handle, &username, key_pair).await?
-            }
-        };
-
-        if !authenticated.success() {
-            return Err("Authentication rejected by server".to_string());
-        }
+        let handle = connect_ssh(db, &address, port, &username, auth).await?;
 
         let bind_addr = format!("{local_address}:{local_port}");
         let listener = TcpListener::bind(&bind_addr)
@@ -147,6 +118,79 @@ impl TunnelManager {
         Ok(())
     }
 
+    /// Start dynamic SOCKS5 forwarding: listen on local_address:local_port as a SOCKS5 proxy server.
+    /// Each incoming connection's requested destination host and port are dynamically
+    /// forwarded via SSH direct-tcpip through the remote SSH host.
+    pub async fn start_dynamic_forward(
+        &self,
+        app: AppHandle,
+        db: Arc<Database>,
+        rule_id: String,
+        address: String,
+        port: u16,
+        username: String,
+        auth: SshAuth,
+        local_address: String,
+        local_port: u16,
+    ) -> Result<(), String> {
+        {
+            let active = self.active.lock().await;
+            if active.contains_key(&rule_id) {
+                return Err("Tunnel is already running".to_string());
+            }
+        }
+
+        let handle = connect_ssh(db, &address, port, &username, auth).await?;
+
+        let bind_addr = format!("{local_address}:{local_port}");
+        let listener = TcpListener::bind(&bind_addr)
+            .await
+            .map_err(|e| format!("Failed to bind {bind_addr}: {e}"))?;
+
+        let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
+        let handle = Arc::new(handle);
+        let status_event = format!("tunnel-status-{rule_id}");
+        let app_for_status = app.clone();
+        let rule_id_for_task = rule_id.clone();
+
+        tokio::spawn(async move {
+            let _ = app_for_status.emit(&status_event, "started");
+            loop {
+                tokio::select! {
+                    _ = &mut stop_rx => {
+                        break;
+                    }
+                    accept_result = listener.accept() => {
+                        match accept_result {
+                            Ok((stream, peer_addr)) => {
+                                let handle = handle.clone();
+                                tokio::spawn(async move {
+                                    if let Err(e) = socks5::handle_socks5_client(
+                                        handle,
+                                        stream,
+                                        peer_addr,
+                                    ).await {
+                                        eprintln!("SOCKS5 tunnel error: {e}");
+                                    }
+                                });
+                            }
+                            Err(e) => {
+                                eprintln!("SOCKS5 listener accept error: {e}");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            let _ = app_for_status.emit(&format!("tunnel-status-{rule_id_for_task}"), "stopped");
+        });
+
+        let mut active = self.active.lock().await;
+        active.insert(rule_id.clone(), ActiveTunnel { rule_id, stop_tx });
+
+        Ok(())
+    }
+
     pub async fn stop(&self, rule_id: &str) -> Result<(), String> {
         let mut active = self.active.lock().await;
         if let Some(tunnel) = active.remove(rule_id) {
@@ -154,6 +198,49 @@ impl TunnelManager {
         }
         Ok(())
     }
+}
+
+async fn connect_ssh(
+    db: Arc<Database>,
+    address: &str,
+    port: u16,
+    username: &str,
+    auth: SshAuth,
+) -> Result<Handle<SshClientHandler>, String> {
+    let config = crate::ssh::default_client_config();
+    let handler = SshClientHandler {
+        address: address.to_string(),
+        port,
+        db,
+    };
+    let socket = match tokio::net::TcpStream::connect((address, port)).await {
+        Ok(s) => {
+            crate::ssh::configure_tcp_stream(&s);
+            s
+        }
+        Err(e) => return Err(format!("Tunnel TCP connection failed: {e}")),
+    };
+    let mut handle = client::connect_stream(config, socket, handler)
+        .await
+        .map_err(|e| format!("Tunnel SSH connection failed: {e}"))?;
+
+    let authenticated = match auth {
+        SshAuth::Password(password) => handle
+            .authenticate_password(username, &password)
+            .await
+            .map_err(|e| format!("Auth error: {e}"))?,
+        SshAuth::PrivateKey { pem, passphrase } => {
+            let key_pair = decode_secret_key(&pem, passphrase.as_deref())
+                .map_err(|e| format!("Invalid private key: {e}"))?;
+            crate::ssh::authenticate_publickey_smart(&mut handle, username, key_pair).await?
+        }
+    };
+
+    if !authenticated.success() {
+        return Err("Authentication rejected by server".to_string());
+    }
+
+    Ok(handle)
 }
 
 async fn forward_connection(
