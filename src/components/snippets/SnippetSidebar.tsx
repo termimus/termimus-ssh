@@ -13,7 +13,6 @@ import {
   Check,
   Radio,
   Unlink,
-  PanelRightClose,
   X,
   Tag,
   Lock,
@@ -22,6 +21,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
+import { RightPanelTabs, RightPanelCloseButton } from "../terminal/RightPanelTabs";
 import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
@@ -37,7 +37,6 @@ export function SnippetSidebar() {
     deleteSnippet,
     openCreateModal,
     openEditModal,
-    toggleSidebar,
   } = useSnippetStore();
 
   const {
@@ -196,24 +195,16 @@ export function SnippetSidebar() {
   );
 
   return (
-    <aside
+    <div
       onContextMenu={handleBackgroundContextMenu}
-      className="flex h-full w-80 shrink-0 flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--canvas)] select-none z-20 transition-all duration-200"
+      className="flex h-full w-full min-h-0 flex-col overflow-hidden bg-[var(--canvas)] select-none"
       aria-label="Snippets Sidebar"
     >
       {/* ── Top Header ────────────────────────────────────────────────────── */}
-      <div className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
-        <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--primary)]/10 text-[var(--primary)]">
-            <Braces size={14} />
-          </div>
-          <span className="text-xs font-semibold text-[var(--text-primary)]">{t("snippets.sidebar.title")}</span>
-          <span className="rounded-full bg-[var(--surface-container)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--text-muted)] border border-[var(--border)]">
-            {snippets.length}
-          </span>
-        </div>
+      <div className="flex h-11 shrink-0 items-center justify-between gap-1 border-b border-[var(--border)] px-2">
+        <RightPanelTabs />
 
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5">
           <button
             onClick={openCreateModal}
             title={t("snippets.sidebar.createTooltip")}
@@ -222,13 +213,7 @@ export function SnippetSidebar() {
             <Plus size={14} />
             <span className="text-[11px]">{t("snippets.sidebar.new")}</span>
           </button>
-          <button
-            onClick={toggleSidebar}
-            title={t("snippets.sidebar.collapseTooltip")}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-          >
-            <PanelRightClose size={15} />
-          </button>
+          <RightPanelCloseButton />
         </div>
       </div>
 
@@ -520,7 +505,7 @@ export function SnippetSidebar() {
           )}
         </div>
       )}
-    </aside>
+    </div>
   );
 }
 

@@ -18,12 +18,14 @@ import {
   Palette,
   Cloud,
   SlidersHorizontal,
+  Sparkles,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { GeneralTab } from "./GeneralTab";
 import { BackupRestoreSection } from "../vault/BackupRestoreSection";
 import { SyncSection } from "../sync/SyncSection";
 import { TerminalThemeTab } from "./TerminalThemeTab";
+import { AiSettingsTab } from "./AiSettingsTab";
 import { useVaultStore } from "../../stores/useVaultStore";
 import { useKnownHostsStore } from "../../stores/useKnownHostsStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
@@ -35,7 +37,7 @@ import {
 import { CustomSelect } from "../ui/CustomSelect";
 import { api } from "../../lib/api";
 
-type SettingsTab = "general" | "security" | "terminal" | "sync" | "known_hosts" | "backup";
+type SettingsTab = "general" | "security" | "terminal" | "sync" | "ai" | "known_hosts" | "backup";
 
 export function SettingsView() {
   const { t } = useTranslation();
@@ -55,6 +57,7 @@ export function SettingsView() {
     { id: "security", label: t("settings.tabs.security"), icon: Lock },
     { id: "terminal", label: t("settings.tabs.terminal"), icon: Palette },
     { id: "sync", label: t("settings.tabs.sync"), icon: Cloud },
+    { id: "ai", label: t("settings.tabs.ai"), icon: Sparkles },
     {
       id: "known_hosts",
       label: t("settings.tabs.knownHosts"),
@@ -146,6 +149,7 @@ export function SettingsView() {
           {activeTab === "security" && <SecurityVaultTab />}
           {activeTab === "terminal" && <TerminalThemeTab />}
           {activeTab === "sync" && <SyncSection />}
+          {activeTab === "ai" && <AiSettingsTab />}
           {activeTab === "known_hosts" && <KnownHostsTab />}
           {activeTab === "backup" && <BackupRestoreSection />}
         </div>

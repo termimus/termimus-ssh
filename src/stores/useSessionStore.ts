@@ -18,6 +18,7 @@ import {
   updateSplitRatio,
 } from "../lib/layoutTree";
 import { disposeTerminalSession } from "../components/terminal/XtermView";
+import { lineClearSequence, resetInputTracker, markInputUnknown } from "../lib/inputTracker";
 
 const textEncoder = new TextEncoder();
 let cachedLocalShellName: string | null = null;
@@ -114,6 +115,12 @@ interface SessionState {
   setSessionConnected: (sessionId: string, connected: boolean) => void;
   setSessionError: (sessionId: string, error: string) => void;
   sendTextToActiveSession: (text: string) => Promise<boolean>;
+  /**
+   * Writes an AI-generated command to ONE session (never broadcast). The
+   * current input line is cleared first, so leftover text (e.g. the
+   * `# request` that produced the command) can't turn it into a comment.
+   */
+  writeCommandToSession: (sessionId: string, text: string, execute: boolean) => Promise<boolean>;
   sendSnippetToTerminals: (
     text: string,
     targetMode?: "auto" | "broadcast" | "single"
@@ -940,10 +947,33 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       targetSessionIds.map((sid) => {
         const targetTab = tabs.find((t) => t.id === sid);
         const writeFn = targetTab?.isLocal ? api.writeLocalPty : api.writeSsh;
+        // Executed with Enter: the shell starts a fresh line.
+        resetInputTracker(sid);
         return writeFn(sid, bytes).catch((e) => console.error("write broadcast failed:", e));
       })
     );
     return true;
+  },
+
+  // Writes only to the given session — intentionally NOT broadcast, so an
+  // AI-generated command never fans out to every server in a broadcast group.
+  writeCommandToSession: async (sessionId: string, text: string, execute: boolean) => {
+    const tab = get().tabs.find((t) => t.id === sessionId);
+    if (!tab || !tab.connected) return false;
+    const command = text.replace(/[\r\n]+$/, "");
+    const payload = lineClearSequence(sessionId) + command + (execute ? "\n" : "");
+    const bytes = Array.from(textEncoder.encode(payload));
+    const writeFn = tab.isLocal || sessionId.startsWith("local-") ? api.writeLocalPty : api.writeSsh;
+    try {
+      await writeFn(sessionId, bytes);
+      if (execute) resetInputTracker(sessionId);
+      else markInputUnknown(sessionId);
+      return true;
+    } catch (e) {
+      console.error("write to terminal failed:", e);
+      markInputUnknown(sessionId);
+      return false;
+    }
   },
 
   sendSnippetToTerminals: async (
@@ -985,6 +1015,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       targetSessionIds.map((sid) => {
         const targetTab = tabs.find((t) => t.id === sid);
         const writeFn = targetTab?.isLocal ? api.writeLocalPty : api.writeSsh;
+        // Executed with Enter: the shell starts a fresh line.
+        resetInputTracker(sid);
         return writeFn(sid, bytes).catch((e) => console.error("write snippet failed:", e));
       })
     );

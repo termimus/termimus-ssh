@@ -3,7 +3,7 @@ pub mod models;
 use rusqlite::{params, Connection, Result};
 use std::fs;
 use std::path::PathBuf;
-use models::{Folder, Host, Credential, KeychainItem, PortForwardRule, Snippet, KnownHost, BackupBundle, ImportSummary, Tombstone, WorkspacePreset, PresetNode};
+use models::{Folder, Host, Credential, KeychainItem, PortForwardRule, Snippet, KnownHost, BackupBundle, ImportSummary, Tombstone, WorkspacePreset, PresetNode, AiProvider};
 
 pub struct Database {
     conn: std::sync::Mutex<Connection>,
@@ -124,6 +124,19 @@ impl Database {
                 entity_id TEXT NOT NULL,
                 deleted_at TEXT NOT NULL,
                 PRIMARY KEY (entity_type, entity_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS ai_providers (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                provider_type TEXT NOT NULL DEFAULT 'openai_compatible',
+                base_url TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                credential_id TEXT,
+                is_active INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY(credential_id) REFERENCES credentials(id) ON DELETE SET NULL
             );
             ",
         )?;
@@ -840,6 +853,152 @@ impl Database {
         Ok(())
     }
 
+    pub fn list_ai_providers(&self) -> Result<Vec<AiProvider>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, provider_type, base_url, model_name, credential_id, is_active, created_at, updated_at FROM ai_providers ORDER BY name ASC"
+        )?;
+
+        let providers = stmt.query_map([], |row| {
+            let is_active_int: i32 = row.get(6)?;
+            Ok(AiProvider {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                provider_type: row.get(2)?,
+                base_url: row.get(3)?,
+                model_name: row.get(4)?,
+                credential_id: row.get(5)?,
+                is_active: is_active_int != 0,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })?.filter_map(|r| r.ok()).collect();
+
+        Ok(providers)
+    }
+
+    pub fn get_ai_provider(&self, id: &str) -> Result<Option<AiProvider>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, provider_type, base_url, model_name, credential_id, is_active, created_at, updated_at FROM ai_providers WHERE id = ?1"
+        )?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            let is_active_int: i32 = row.get(6)?;
+            Ok(Some(AiProvider {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                provider_type: row.get(2)?,
+                base_url: row.get(3)?,
+                model_name: row.get(4)?,
+                credential_id: row.get(5)?,
+                is_active: is_active_int != 0,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn get_active_ai_provider(&self) -> Result<Option<AiProvider>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, provider_type, base_url, model_name, credential_id, is_active, created_at, updated_at FROM ai_providers WHERE is_active = 1 LIMIT 1"
+        )?;
+        let mut rows = stmt.query([])?;
+        if let Some(row) = rows.next()? {
+            let is_active_int: i32 = row.get(6)?;
+            Ok(Some(AiProvider {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                provider_type: row.get(2)?,
+                base_url: row.get(3)?,
+                model_name: row.get(4)?,
+                credential_id: row.get(5)?,
+                is_active: is_active_int != 0,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            }))
+        } else {
+            // If none explicitly active, return first available
+            let mut stmt2 = conn.prepare(
+                "SELECT id, name, provider_type, base_url, model_name, credential_id, is_active, created_at, updated_at FROM ai_providers ORDER BY created_at ASC LIMIT 1"
+            )?;
+            let mut rows2 = stmt2.query([])?;
+            if let Some(row) = rows2.next()? {
+                let is_active_int: i32 = row.get(6)?;
+                Ok(Some(AiProvider {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    provider_type: row.get(2)?,
+                    base_url: row.get(3)?,
+                    model_name: row.get(4)?,
+                    credential_id: row.get(5)?,
+                    is_active: is_active_int != 0,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                }))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+
+    pub fn save_ai_provider(&self, provider: &AiProvider) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let is_active_int = if provider.is_active { 1 } else { 0 };
+
+        // If this provider is marked active, deactivate others
+        if provider.is_active {
+            let _ = conn.execute("UPDATE ai_providers SET is_active = 0 WHERE id != ?1", params![provider.id]);
+        }
+
+        conn.execute(
+            "INSERT INTO ai_providers (id, name, provider_type, base_url, model_name, credential_id, is_active, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name,
+                provider_type=excluded.provider_type,
+                base_url=excluded.base_url,
+                model_name=excluded.model_name,
+                credential_id=excluded.credential_id,
+                is_active=excluded.is_active,
+                updated_at=excluded.updated_at",
+            params![
+                provider.id,
+                provider.name,
+                provider.provider_type,
+                provider.base_url,
+                provider.model_name,
+                provider.credential_id,
+                is_active_int,
+                provider.created_at,
+                provider.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_active_ai_provider(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("UPDATE ai_providers SET is_active = 0", [])?;
+        conn.execute("UPDATE ai_providers SET is_active = 1 WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn delete_ai_provider(&self, id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM ai_providers WHERE id = ?1", params![id])?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let _ = conn.execute(
+            "INSERT INTO tombstones (entity_type, entity_id, deleted_at) VALUES ('ai_provider', ?1, ?2)
+             ON CONFLICT(entity_type, entity_id) DO UPDATE SET deleted_at=excluded.deleted_at",
+            params![id, now],
+        );
+        Ok(())
+    }
+
     pub fn get_known_host(&self, address: &str, port: u16) -> Result<Option<KnownHost>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -962,6 +1121,7 @@ impl Database {
             known_hosts: self.list_known_hosts()?,
             tombstones: self.list_tombstones()?,
             workspace_presets: self.list_workspace_presets()?,
+            ai_providers: self.list_ai_providers()?,
         })
     }
 
@@ -987,6 +1147,7 @@ impl Database {
                      DELETE FROM known_hosts;
                      DELETE FROM snippets;
                      DELETE FROM workspace_presets;
+                     DELETE FROM ai_providers;
                      DELETE FROM port_forwards;
                      DELETE FROM hosts;
                      DELETE FROM credentials;
@@ -1065,6 +1226,14 @@ impl Database {
                             if local.updated_at <= ts.deleted_at {
                                 let conn = self.conn.lock().unwrap();
                                 let _ = conn.execute("DELETE FROM workspace_presets WHERE id = ?1", params![&ts.entity_id]);
+                            }
+                        }
+                    }
+                    "ai_provider" => {
+                        if let Ok(Some(local)) = self.get_ai_provider(&ts.entity_id) {
+                            if local.updated_at <= ts.deleted_at {
+                                let conn = self.conn.lock().unwrap();
+                                let _ = conn.execute("DELETE FROM ai_providers WHERE id = ?1", params![&ts.entity_id]);
                             }
                         }
                     }
@@ -1182,6 +1351,47 @@ impl Database {
             workspace_presets_imported += 1;
         }
 
+        let mut ai_providers_imported: usize = 0;
+        for provider in &bundle.ai_providers {
+            if !replace_all {
+                if let Ok(Some(del_at)) = self.is_tombstoned("ai_provider", &provider.id) {
+                    if provider.updated_at <= del_at {
+                        continue;
+                    } else {
+                        let _ = self.remove_tombstone("ai_provider", &provider.id);
+                    }
+                }
+                if let Ok(Some(local)) = self.get_ai_provider(&provider.id) {
+                    if local.updated_at > provider.updated_at {
+                        continue;
+                    }
+                }
+            }
+            let mut provider = provider.clone();
+            // The referenced API-key credential may have been skipped (tombstoned /
+            // newer local copy missing) — with foreign_keys=ON a dangling id would
+            // fail the insert and abort the whole import, so drop the link instead.
+            if let Some(ref cid) = provider.credential_id {
+                if !matches!(self.get_credential(cid), Ok(Some(_))) {
+                    provider.credential_id = None;
+                }
+            }
+            // During a merge, don't let an imported "active" flag steal activation
+            // from the provider the user currently has selected locally.
+            if !replace_all && provider.is_active {
+                if let Ok(Some(local_active)) = self.get_active_ai_provider() {
+                    if local_active.is_active && local_active.id != provider.id {
+                        provider.is_active = false;
+                    }
+                }
+            }
+            if let Err(e) = self.save_ai_provider(&provider) {
+                eprintln!("Skipping AI provider {} during import: {e}", provider.id);
+                continue;
+            }
+            ai_providers_imported += 1;
+        }
+
         // Post-import cleanup: ensure referential consistency if any parent entity was deleted
         {
             let conn = self.conn.lock().unwrap();
@@ -1241,6 +1451,7 @@ impl Database {
             known_hosts: known_hosts_imported,
             known_hosts_conflicts,
             workspace_presets: workspace_presets_imported,
+            ai_providers: ai_providers_imported,
             vault_meta_restored,
             safety_snapshot_path: None, // filled in by the command layer after writing to disk
         }, safety_snapshot_json))

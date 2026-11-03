@@ -4,7 +4,6 @@ import {
   Home,
   PanelRightClose,
   PanelRightOpen,
-  Braces,
   Plus,
   X,
   Loader2,
@@ -24,10 +23,10 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useShallow } from "zustand/react/shallow";
 import { useSessionStore, SshTab } from "../../stores/useSessionStore";
-import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSyncStore } from "../../stores/useSyncStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { useVaultStore } from "../../stores/useVaultStore";
+import { useRightPanelStore } from "../../stores/useRightPanelStore";
 import { getAllSessionIdsInTree, getAllLeafPanes, findPaneById } from "../../lib/layoutTree";
 import { QuickConnectModal } from "./QuickConnectModal";
 import { ActiveTab } from "./Sidebar";
@@ -91,8 +90,8 @@ export function Header({
   );
 
   const { t } = useTranslation();
-  const isSnippetSidebarOpen = useSnippetStore((s) => s.isSidebarOpen);
-  const toggleSnippetSidebar = useSnippetStore((s) => s.toggleSidebar);
+  const isRightPanelOpen = useRightPanelStore((s) => s.isOpen);
+  const toggleRightPanel = useRightPanelStore((s) => s.toggle);
   const isVaultInitialized = useVaultStore((s) => s.isInitialized);
   const lockApp = useVaultStore((s) => s.lockApp);
   const onGoHomeRef = useRef(onGoHome);
@@ -561,29 +560,20 @@ export function Header({
           </button>
         )}
 
-        {/* Snippets Right Sidebar Collapse/Expand Toggle Button (Visible when Terminal is active) */}
+        {/* Right side panel toggle (Snippets / AI Copilot tabs) — visible when Terminal is active */}
         {isTerminalActive && (
           <button
             data-tauri-drag-region="false"
-            onClick={toggleSnippetSidebar}
-            title={
-              isSnippetSidebarOpen
-                ? t("nav.snippetsToggleCollapse")
-                : t("nav.snippetsToggleExpand")
-            }
-            className={`flex h-7 items-center gap-1.5 rounded-md px-2 mr-1 text-[11px] font-mono transition-colors ${
-              isSnippetSidebarOpen
-                ? "text-[var(--primary)] bg-[var(--primary)]/15 border border-[var(--primary)]/30 font-medium"
+            onClick={toggleRightPanel}
+            title={isRightPanelOpen ? t("nav.sidePanelCollapse") : t("nav.sidePanelExpand")}
+            aria-pressed={isRightPanelOpen}
+            className={`flex h-7 w-7 items-center justify-center rounded-md mr-1 transition-colors cursor-pointer ${
+              isRightPanelOpen
+                ? "text-[var(--primary)] bg-[var(--primary)]/15 border border-[var(--primary)]/30"
                 : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container)]"
             }`}
           >
-            <Braces size={13} className={isSnippetSidebarOpen ? "text-[var(--primary)]" : ""} />
-            <span className="hidden sm:inline">{t("nav.snippets")}</span>
-            {isSnippetSidebarOpen ? (
-              <PanelRightClose size={13} className="opacity-70" />
-            ) : (
-              <PanelRightOpen size={13} className="opacity-70" />
-            )}
+            {isRightPanelOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
           </button>
         )}
 

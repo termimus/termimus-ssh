@@ -8,6 +8,7 @@ export const settingsZh: typeof settingsEn = {
     security: "安全与保险库",
     terminal: "终端与主题",
     sync: "自建同步",
+    ai: "AI 助手",
     knownHosts: "受信任主机密钥",
     backup: "备份与恢复",
   },

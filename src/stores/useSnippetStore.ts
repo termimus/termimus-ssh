@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { api, Snippet, SnippetInput } from "../lib/api";
+import { useRightPanelStore } from "./useRightPanelStore";
 
 interface SnippetState {
   snippets: Snippet[];
@@ -7,7 +8,6 @@ interface SnippetState {
   error: string | null;
   isModalOpen: boolean;
   editingSnippet: Snippet | null;
-  isSidebarOpen: boolean;
 
   refresh: () => Promise<void>;
   saveSnippet: (input: SnippetInput, snippetId?: string) => Promise<void>;
@@ -15,6 +15,7 @@ interface SnippetState {
   openCreateModal: () => void;
   openEditModal: (snippet: Snippet) => void;
   closeModal: () => void;
+  /** Toggles the Snippets tab of the shared right panel (Alt+S). */
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
 }
@@ -25,13 +26,6 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
   error: null,
   isModalOpen: false,
   editingSnippet: null,
-  isSidebarOpen: (() => {
-    try {
-      return localStorage.getItem("termimus_snippet_sidebar_open") === "true";
-    } catch {
-      return false;
-    }
-  })(),
 
   refresh: async () => {
     if (get().snippets.length === 0) {
@@ -61,24 +55,12 @@ export const useSnippetStore = create<SnippetState>((set, get) => ({
   openEditModal: (snippet) => set({ isModalOpen: true, editingSnippet: snippet }),
   closeModal: () => set({ isModalOpen: false, editingSnippet: null }),
 
-  toggleSidebar: () => {
-    set((state) => {
-      const next = !state.isSidebarOpen;
-      try {
-        localStorage.setItem("termimus_snippet_sidebar_open", String(next));
-      } catch {
-        // ignore
-      }
-      return { isSidebarOpen: next };
-    });
-  },
+  // Snippets live in a tab of the shared right panel (see useRightPanelStore).
+  toggleSidebar: () => useRightPanelStore.getState().toggleTab("snippets"),
 
   setSidebarOpen: (open: boolean) => {
-    try {
-      localStorage.setItem("termimus_snippet_sidebar_open", String(open));
-    } catch {
-      // ignore
-    }
-    set({ isSidebarOpen: open });
+    const panel = useRightPanelStore.getState();
+    if (open) panel.open("snippets");
+    else if (panel.activeTab === "snippets") panel.close();
   },
 }));

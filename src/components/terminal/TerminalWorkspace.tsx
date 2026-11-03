@@ -8,7 +8,8 @@ import { useWorkspaceStore, WorkspacePreset } from "../../stores/useWorkspaceSto
 import { findPaneById, getAllLeafPanes } from "../../lib/layoutTree";
 import { PaneContainer } from "./PaneContainer";
 import { PaneView } from "./PaneView";
-import { SnippetSidebar } from "../snippets/SnippetSidebar";
+import { RightPanel } from "./RightPanel";
+import { useAiStore } from "../../stores/useAiStore";
 
 interface TerminalWorkspaceProps {
   visible: boolean;
@@ -81,10 +82,24 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
         e.preventDefault();
         toggleGroupBroadcast(activeGroupId || undefined);
       }
-      // Alt+S toggles snippets right sidebar
+      // Alt+S toggles the Snippets tab of the right panel
       if (e.altKey && e.key.toLowerCase() === "s") {
         e.preventDefault();
         useSnippetStore.getState().toggleSidebar();
+      }
+      // Alt+I (Linux/Win) / Cmd+I (Mac) toggles the AI Copilot tab of the right panel.
+      // Not Ctrl+I: that is the Tab control byte (0x09) remote apps rely on.
+      // Skip when xterm's key handler already consumed it (it calls preventDefault
+      // but the event still bubbles here) — otherwise the sidebar toggles twice.
+      const isMac = navigator.platform.toUpperCase().includes("MAC");
+      if (
+        !e.defaultPrevented &&
+        (isMac ? e.metaKey : e.altKey && !e.ctrlKey && !e.metaKey) &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === "i"
+      ) {
+        e.preventDefault();
+        useAiStore.getState().toggleSidebar();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -92,7 +107,6 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
   }, [maximizedPaneId, toggleMaximizePane, activeGroupId, toggleGroupBroadcast]);
 
   const draggedTab = draggedTabId ? tabs.find((t) => t.id === draggedTabId) : null;
-  const isSidebarOpen = useSnippetStore((s) => s.isSidebarOpen);
 
   const handleSaveGroupSplit = (group: (typeof groups)[0]) => {
     const leaves = getAllLeafPanes(group.rootPane);
@@ -246,8 +260,8 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
         )}
       </div>
 
-      {/* Snippets Right Sidebar (Collapsible) */}
-      {isSidebarOpen && <SnippetSidebar />}
+      {/* Right side panel: Snippets / AI Copilot tabs (collapsible) */}
+      <RightPanel />
 
       {/* Floating Drag Badge that follows the cursor during tab drag */}
       {isDraggingTab && draggedTab && (

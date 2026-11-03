@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Check,
   Search,
+  Sparkles,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { useSessionStore } from "../../stores/useSessionStore";
@@ -30,6 +31,17 @@ import { TerminalHighlighter } from "../../lib/terminalHighlighter";
 import { findPaneContainingTab } from "../../lib/layoutTree";
 import { ConnectionProgress, ConnectionLog } from "./ConnectionProgress";
 import { TerminalSearchBar } from "./TerminalSearchBar";
+import { useAiStore, AI_COPILOT_SHORTCUT_LABEL, AI_BUSY_MESSAGE } from "../../stores/useAiStore";
+import { buildAiRequest, parseInlineQuery, isInsertableCommand } from "../../lib/aiContext";
+import { InlineAiStatus } from "./InlineAiStatus";
+import {
+  trackInput,
+  getInputTracker,
+  setInputTracker,
+  lineClearSequence,
+  disposeInputTracker,
+} from "../../lib/inputTracker";
+import { runConfirmationFor, isProductionHost } from "./AiRunConfirmDialog";
 
 interface XtermViewProps {
   sessionId: string;
@@ -70,8 +82,227 @@ interface TerminalSessionEntry {
 // React layout reconciliations (splitting, moving tabs, un-splitting, resizing).
 const terminalPool = new Map<string, TerminalSessionEntry>();
 
+/**
+ * Extracts the last N lines from the active buffer of a pooled terminal session.
+ */
+export function getTerminalBufferSlice(sessionId: string, maxLines = 50): string {
+  const entry = terminalPool.get(sessionId);
+  if (!entry?.term) return "";
+  const buffer = entry.term.buffer.active;
+  const end = buffer.baseY + buffer.cursorY;
+  const start = Math.max(0, end - maxLines);
+  const lines: string[] = [];
+  for (let i = start; i <= end; i++) {
+    const line = buffer.getLine(i);
+    if (line) {
+      lines.push(line.translateToString(true));
+    }
+  }
+  return lines.join("\n").trim();
+}
+
+/**
+ * Focuses the terminal instance for a given session.
+ */
+export function focusTerminalSession(sessionId: string) {
+  const entry = terminalPool.get(sessionId);
+  entry?.term?.focus();
+}
+
 // Shared module-level text encoder to prevent GC pressure during high-speed typing
 const textEncoder = new TextEncoder();
+
+// ── Inline `# prompt` AI ──────────────────────────────────────────────────────
+// Typing `# find big log files` at the shell prompt and pressing the Copilot
+// shortcut replaces that line with the generated command. The command is only
+// *typed*, never executed: the user still reviews it and presses Enter.
+
+interface InlineQuery {
+  query: string;
+  /** "typed" = from the input tracker (exact); "screen" = parsed from the buffer line. */
+  source: "typed" | "screen";
+}
+
+/** Resolves the `# query` on the current input line, if any. */
+function getInlineQuery(sessionId: string): InlineQuery | null {
+  const entry = terminalPool.get(sessionId);
+  // Full-screen apps (vim, htop, less) use the alternate screen: never inline there.
+  if (!entry?.term || entry.term.buffer.active.type !== "normal") return null;
+
+  const tracked = getInputTracker(sessionId);
+  if (tracked?.reliable) {
+    // We know exactly what was typed: it must itself start with `#` (not a `#!` shebang).
+    const typed = tracked.text.trimStart();
+    if (!typed.startsWith("#") || typed.startsWith("#!")) return null;
+    const query = parseInlineQuery(tracked.text);
+    return query ? { query, source: "typed" } : null;
+  }
+  const line = readCursorLine(sessionId);
+  const query = line ? parseInlineQuery(line) : null;
+  return query ? { query, source: "screen" } : null;
+}
+
+/**
+ * Whether a plain Enter on a typed `# query` line may be intercepted for AI.
+ * Enter is far more ambiguous than the explicit shortcut, so we only take it
+ * when the line really looks like an interactive shell prompt:
+ * - the typed text is echoed at the end of the screen line (rules out
+ *   no-echo password prompts — a password starting with `#` must never be
+ *   sent to the AI provider);
+ * - something precedes it on the line (a prompt — rules out programs reading
+ *   stdin such as `cat`);
+ * - that prompt isn't a continuation / REPL prompt ending in `>` (heredoc and
+ *   `\` continuation PS2, python `>>>`/`...`, mysql `->`, node, irb…), where a
+ *   `#` line is real input.
+ */
+function isShellPromptLine(sessionId: string, typed: string): boolean {
+  const line = readCursorLine(sessionId);
+  if (line === null) return false;
+  const screen = line.trimEnd();
+  const text = typed.trimEnd();
+  if (!text || !screen.endsWith(text)) return false;
+  const prefix = screen.slice(0, screen.length - text.length).trimEnd();
+  if (!prefix) return false;
+  if (/(>|\.\.\.|\?)$/.test(prefix)) return false;
+  return true;
+}
+
+let providersRequested = false;
+/** Inline `#` needs to know whether a provider exists before the sidebar was ever opened. */
+function ensureAiProvidersLoaded() {
+  if (providersRequested) return;
+  providersRequested = true;
+  void useAiStore.getState().loadProviders();
+}
+
+/** Reads the logical (un-wrapped) line at the cursor on the normal screen. */
+function readCursorLine(sessionId: string): string | null {
+  const entry = terminalPool.get(sessionId);
+  if (!entry?.term) return null;
+  const buffer = entry.term.buffer.active;
+  // Full-screen apps (vim, htop, less) use the alternate screen: never inline there.
+  if (buffer.type !== "normal") return null;
+  let row = buffer.baseY + buffer.cursorY;
+  let text = buffer.getLine(row)?.translateToString(true) ?? "";
+  while (row > 0 && buffer.getLine(row)?.isWrapped) {
+    row--;
+    text = (buffer.getLine(row)?.translateToString(false) ?? "") + text;
+  }
+  return text;
+}
+
+async function writeToSession(sessionId: string, text: string) {
+  const tab = useSessionStore.getState().tabs.find((t) => t.id === sessionId);
+  const writeFn = tab?.isLocal || sessionId.startsWith("local-") ? api.writeLocalPty : api.writeSsh;
+  await writeFn(sessionId, Array.from(textEncoder.encode(text)));
+}
+
+async function runInlineAi(sessionId: string, query: string) {
+  const ai = useAiStore.getState();
+  if (ai.inline[sessionId]?.status === "generating") return;
+  if (!ai.activeProvider) await ai.loadProviders();
+  if (!useAiStore.getState().activeProvider) {
+    ai.setInline(sessionId, {
+      status: "error",
+      prompt: query,
+      message: "No AI provider configured — open Settings › AI Copilot.",
+    });
+    return;
+  }
+
+  // From here on everything up to generateCommand() is synchronous, so the
+  // generate slot is claimed before any other request can start.
+  if (useAiStore.getState().isGenerating) {
+    ai.setInline(sessionId, { status: "error", prompt: query, message: AI_BUSY_MESSAGE });
+    return;
+  }
+  ai.setInline(sessionId, { status: "generating", prompt: query });
+
+  // Context = recent output without the `# query` line itself.
+  const context = getTerminalBufferSlice(sessionId, 51).split("\n").slice(0, -1).join("\n");
+  const outcome = await useAiStore
+    .getState()
+    .generateCommand(buildAiRequest(sessionId, query, context));
+  const result = outcome.value;
+
+  const st = useAiStore.getState();
+  if (st.inline[sessionId]?.status !== "generating") return; // dismissed meanwhile
+
+  if (!result) {
+    st.setInline(
+      sessionId,
+      outcome.cancelled
+        ? { status: "cancelled", prompt: query }
+        : { status: "error", prompt: query, message: outcome.error ?? "Generation failed." }
+    );
+    return;
+  }
+
+  // Never typed into the shell (review in the Copilot instead):
+  // - destructive commands;
+  // - multi-line ones (a newline would execute immediately);
+  // - anything that would need a confirmation when run from the Copilot
+  //   (e.g. modifying commands on a production host).
+  const tab = useSessionStore.getState().tabs.find((t) => t.id === sessionId);
+  const isLocal = !tab || !!tab.isLocal || sessionId.startsWith("local-");
+  const host = tab ? useHostStore.getState().hosts.find((h) => h.id === tab.hostId) : undefined;
+  const gate = runConfirmationFor(result.risk, !isLocal && isProductionHost(host?.tags));
+  if (gate !== "none" || !isInsertableCommand(result.command)) {
+    st.setInline(sessionId, {
+      status: "review",
+      prompt: query,
+      command: result,
+      message:
+        result.risk === "destructive"
+          ? "Destructive command — review it in AI Copilot before running."
+          : gate !== "none"
+          ? "Production host — review it in AI Copilot before running."
+          : "Multi-line command — review it in AI Copilot.",
+    });
+    st.openSidebar(sessionId);
+    return;
+  }
+
+  // Only replace the line if it still holds the same query (the user may have
+  // kept typing or run something else while we were generating).
+  const current = getInlineQuery(sessionId);
+  if (!current || current.query !== query) {
+    st.setInline(sessionId, {
+      status: "review",
+      prompt: query,
+      command: result,
+      message: "The line changed while generating — the result is in AI Copilot.",
+    });
+    st.openSidebar(sessionId);
+    return;
+  }
+
+  try {
+    const clear = current.source === "typed" ? lineClearSequence(sessionId) : "\x05\x15";
+    await writeToSession(sessionId, clear + result.command);
+    setInputTracker(sessionId, result.command, current.source === "typed");
+    st.setInline(sessionId, { status: "inserted", prompt: query, command: result });
+  } catch (e) {
+    st.setInline(sessionId, { status: "error", prompt: query, message: String(e) });
+  }
+  // Only reclaim focus if it is still in this terminal (don't steal it from
+  // another split pane or input the user moved to meanwhile).
+  const entry = terminalPool.get(sessionId);
+  const active = document.activeElement;
+  if (entry && (!active || active === document.body || entry.element.contains(active))) {
+    entry.term.focus();
+  }
+}
+
+/** Copilot shortcut: inline-generate when the line holds `# query`, else toggle the sidebar. */
+function handleCopilotShortcut(sessionId: string) {
+  const inline = getInlineQuery(sessionId);
+  if (inline) {
+    void runInlineAi(sessionId, inline.query);
+  } else {
+    useAiStore.getState().toggleSidebar(sessionId);
+  }
+}
 
 /**
  * Applies the current theme + font settings from the store to a pooled
@@ -208,13 +439,61 @@ function bindTerminalShortcuts(
   fitAddon: FitAddon,
   targetSessionId: string,
   onCopyNotify?: (msg: string) => void,
-  onOpenSearch?: () => void
+  onOpenSearch?: () => void,
+  onOpenCopilot?: () => void
 ) {
+  ensureAiProvidersLoaded();
   term.attachCustomKeyEventHandler((event: KeyboardEvent) => {
     if (event.type !== "keydown") return true;
 
     const isMac = checkIsMac();
     const modKey = isMac ? event.metaKey : event.ctrlKey;
+
+    // Esc cancels an in-flight inline `# prompt` generation for this terminal.
+    if (
+      event.key === "Escape" &&
+      useAiStore.getState().inline[targetSessionId]?.status === "generating"
+    ) {
+      event.preventDefault();
+      void useAiStore.getState().cancelInFlight("generate");
+      return false;
+    }
+
+    // Inline AI: Enter on a line the user typed as `# query` generates a command
+    // instead of sending a no-op comment (zsh would print "command not found: #").
+    // Only for exactly-tracked input, so a `# ` *prompt* (root sh in containers)
+    // followed by a real command is never intercepted.
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      !event.isComposing
+    ) {
+      const inline = getInlineQuery(targetSessionId);
+      if (
+        inline?.source === "typed" &&
+        useAiStore.getState().activeProvider &&
+        isShellPromptLine(targetSessionId, getInputTracker(targetSessionId)?.text ?? "")
+      ) {
+        event.preventDefault();
+        void runInlineAi(targetSessionId, inline.query);
+        return false;
+      }
+    }
+
+    // AI Copilot: Alt+I (Linux/Win) or Cmd+I (Mac). Ctrl+I is deliberately left
+    // alone — it is the Tab control byte and must still reach the remote shell.
+    if (
+      !event.shiftKey &&
+      event.key.toLowerCase() === "i" &&
+      (isMac ? event.metaKey : event.altKey && !event.ctrlKey && !event.metaKey)
+    ) {
+      event.preventDefault();
+      onOpenCopilot?.();
+      return false;
+    }
 
     // Find / Search: Ctrl+F (Linux/Win) or Cmd+F (Mac)
     if (
@@ -350,6 +629,8 @@ export function disposeTerminalSession(sessionId: string) {
   }
 
   terminalPool.delete(sessionId);
+  disposeInputTracker(sessionId);
+  useAiStore.getState().forgetSession(sessionId);
 }
 
 export function XtermView({ sessionId, hostId, visible, isFocused = true }: XtermViewProps) {
@@ -558,7 +839,8 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
         entry.fitAddon,
         sessionId,
         showCopyToast,
-        () => setIsSearchOpen(true)
+        () => setIsSearchOpen(true),
+        () => handleCopilotShortcut(sessionId)
       );
 
       if (entry.element.parentElement !== containerRef.current) {
@@ -656,7 +938,8 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
         fitAddon,
         sessionId,
         showCopyToast,
-        () => setIsSearchOpen(true)
+        () => setIsSearchOpen(true),
+        () => handleCopilotShortcut(sessionId)
       );
 
       // Keystroke forwarding (supports broadcast to interconnected split panes)
@@ -668,6 +951,7 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
 
         const storeTabs = useSessionStore.getState().tabs;
         for (const tid of targetSessionIds) {
+          trackInput(tid, data);
           const targetTab = storeTabs.find((t) => t.id === tid);
           const writeFn = (targetTab?.isLocal || tid.startsWith("local-"))
             ? api.writeLocalPty
@@ -965,6 +1249,23 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
 
           <div className="my-1 h-[1px] bg-[var(--border)]" />
 
+          {/* AI Copilot */}
+          <button
+            onClick={() => {
+              useAiStore.getState().openSidebar(sessionId);
+              setContextMenu(null);
+            }}
+            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles size={13} className="text-[var(--primary)] group-hover:text-black" />
+              <span>AI Copilot</span>
+            </div>
+            <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
+              {AI_COPILOT_SHORTCUT_LABEL}
+            </span>
+          </button>
+
           {/* Find in Terminal */}
           <button
             onClick={() => {
@@ -1086,6 +1387,9 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
           </button>
         </div>
       )}
+
+      {/* Inline `# prompt` AI status */}
+      <InlineAiStatus sessionId={sessionId} />
 
       {/* Toast Notification on Copy */}
       {copyToast && (

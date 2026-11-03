@@ -17,6 +17,8 @@ export const navigationId: typeof navigationEn = {
   localTerminalDesc: "Buka sesi terminal lokal",
   snippetsToggleCollapse: "Tutup bilah cuplikan (Alt+S)",
   snippetsToggleExpand: "Buka bilah cuplikan (Alt+S)",
+  sidePanelCollapse: "Sembunyikan panel samping — Cuplikan & AI Copilot",
+  sidePanelExpand: "Tampilkan panel samping — Cuplikan & AI Copilot",
   minimize: "Kecilkan",
   maximize: "Perbesar (F11 untuk Layar Penuh)",
   restore: "Pulihkan",

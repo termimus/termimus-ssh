@@ -15,6 +15,8 @@ export const navigationEn = {
   localTerminalDesc: "Spawn a local terminal session",
   snippetsToggleCollapse: "Collapse snippets sidebar (Alt+S)",
   snippetsToggleExpand: "Expand snippets sidebar (Alt+S)",
+  sidePanelCollapse: "Hide side panel — Snippets & AI Copilot",
+  sidePanelExpand: "Show side panel — Snippets & AI Copilot",
   minimize: "Minimize",
   maximize: "Maximize (F11 for Full Screen)",
   restore: "Restore",

@@ -1,10 +1,11 @@
-use crate::db::models::{Folder, Host, HostInput, Credential, KeychainItem, KeychainKeyInput, KeychainIdentityInput, PortForwardRule, PortForwardInput, ForwardType, Snippet, SnippetInput, KnownHost, BackupBundle, EncryptedBackupEnvelope, ImportSummary, WorkspacePreset, WorkspacePresetInput};
+use crate::db::models::{Folder, Host, HostInput, Credential, KeychainItem, KeychainKeyInput, KeychainIdentityInput, PortForwardRule, PortForwardInput, ForwardType, Snippet, SnippetInput, KnownHost, BackupBundle, EncryptedBackupEnvelope, ImportSummary, WorkspacePreset, WorkspacePresetInput, AiProvider, AiProviderInput};
 use crate::db::Database;
 use crate::pty::PtyManager;
 use crate::sftp::{self, FileEntry, SftpManager};
 use crate::ssh::{SessionManager, SshAuth};
 use crate::tunnel::TunnelManager;
 use crate::vault::VaultManager;
+use crate::ai::AiClient;
 use chrono::Utc;
 use keyring::Entry as KeyringEntry;
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,7 @@ pub struct AppState {
     pub sftp: Arc<SftpManager>,
     pub tunnel: Arc<TunnelManager>,
     pub pty: Arc<PtyManager>,
+    pub ai: Arc<AiClient>,
 }
 
 #[derive(Serialize)]
@@ -1923,4 +1925,393 @@ pub async fn sync_get_devices(
 
     let body: DevicesResponse = res.json().await.unwrap_or(DevicesResponse { devices: Vec::new() });
     Ok(body.devices)
+}
+
+// ================= AI COPILOT & BYOK COMMANDS =================
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TerminalAiRequest {
+    /// Unique per request: names the stream event (`ai-stream-{request_id}`)
+    /// and is the handle for `ai_cancel`.
+    pub request_id: String,
+    pub session_id: String,
+    pub prompt: String,
+    pub buffer_context: Option<String>,
+    pub host_label: Option<String>,
+    /// Detected via `ai_detect_environment`; preferred over the fallbacks below.
+    pub environment: Option<crate::ai::TerminalEnvironment>,
+    /// Fallback OS hint (host `os_icon`) when detection is unavailable.
+    pub os_type: Option<String>,
+    /// Fallback username (host config) when detection is unavailable.
+    pub username: Option<String>,
+}
+
+impl TerminalAiRequest {
+    fn prompt_target(&self) -> crate::ai::PromptTarget<'_> {
+        crate::ai::PromptTarget {
+            host_label: self.host_label.as_deref(),
+            environment: self.environment.as_ref(),
+            os_fallback: self.os_type.as_deref(),
+            user_fallback: self.username.as_deref(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AiProviderSummary {
+    pub id: String,
+    pub name: String,
+    pub provider_type: String,
+    pub base_url: String,
+    pub model_name: String,
+    pub has_api_key: bool,
+    pub is_active: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[tauri::command]
+pub fn ai_provider_list(state: State<AppState>) -> Result<Vec<AiProviderSummary>, String> {
+    let providers = state.db.list_ai_providers().map_err(|e| e.to_string())?;
+    let summaries = providers
+        .into_iter()
+        .map(|p| AiProviderSummary {
+            id: p.id,
+            name: p.name,
+            provider_type: p.provider_type,
+            base_url: p.base_url,
+            model_name: p.model_name,
+            has_api_key: p.credential_id.is_some(),
+            is_active: p.is_active,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+        })
+        .collect();
+    Ok(summaries)
+}
+
+#[tauri::command]
+pub fn ai_provider_get_active(state: State<AppState>) -> Result<Option<AiProviderSummary>, String> {
+    let active = state.db.get_active_ai_provider().map_err(|e| e.to_string())?;
+    Ok(active.map(|p| AiProviderSummary {
+        id: p.id,
+        name: p.name,
+        provider_type: p.provider_type,
+        base_url: p.base_url,
+        model_name: p.model_name,
+        has_api_key: p.credential_id.is_some(),
+        is_active: p.is_active,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+    }))
+}
+
+#[tauri::command]
+pub fn ai_provider_save(
+    state: State<AppState>,
+    id: Option<String>,
+    input: AiProviderInput,
+) -> Result<AiProviderSummary, String> {
+    let now = Utc::now().to_rfc3339();
+    let provider_id = id.unwrap_or_else(|| format!("ai-{}", Uuid::new_v4()));
+
+    let existing = state.db.get_ai_provider(&provider_id).map_err(|e| e.to_string())?;
+    let created_at = existing.as_ref().map(|p| p.created_at.clone()).unwrap_or_else(|| now.clone());
+    let mut credential_id = existing.as_ref().and_then(|p| p.credential_id.clone());
+
+    // Handle API key storage in Vault
+    if let Some(ref key) = input.api_key {
+        let trimmed_key = key.trim();
+        if !trimmed_key.is_empty() {
+            if !state.vault.is_unlocked() {
+                return Err("Vault is locked. Unlock the vault to save the API key.".to_string());
+            }
+
+            let (ciphertext, nonce) = state.vault.encrypt(trimmed_key.as_bytes())?;
+            let cred_id = credential_id.unwrap_or_else(|| format!("cred-ai-{}", Uuid::new_v4()));
+            let cred = Credential {
+                id: cred_id.clone(),
+                kind: "ai_api_key".to_string(),
+                ciphertext,
+                nonce,
+                passphrase_ciphertext: None,
+                passphrase_nonce: None,
+                name: format!("AI Key: {}", input.name),
+                key_type: "API_KEY".to_string(),
+                public_key: String::new(),
+                fingerprint: String::new(),
+                username: None,
+                created_at: now.clone(),
+                updated_at: now.clone(),
+            };
+            state.db.save_credential(&cred).map_err(|e| e.to_string())?;
+            credential_id = Some(cred_id);
+        } else if existing.is_some() && key.is_empty() {
+            // Explicitly cleared
+            if let Some(ref old_cid) = credential_id {
+                let _ = state.db.delete_credential(old_cid);
+            }
+            credential_id = None;
+        }
+    }
+
+    let provider = AiProvider {
+        id: provider_id,
+        name: input.name,
+        provider_type: input.provider_type,
+        base_url: input.base_url,
+        model_name: input.model_name,
+        credential_id: credential_id.clone(),
+        is_active: input.is_active,
+        created_at,
+        updated_at: now.clone(),
+    };
+
+    state.db.save_ai_provider(&provider).map_err(|e| e.to_string())?;
+
+    Ok(AiProviderSummary {
+        id: provider.id,
+        name: provider.name,
+        provider_type: provider.provider_type,
+        base_url: provider.base_url,
+        model_name: provider.model_name,
+        has_api_key: credential_id.is_some(),
+        is_active: provider.is_active,
+        created_at: provider.created_at,
+        updated_at: now,
+    })
+}
+
+#[tauri::command]
+pub fn ai_provider_set_active(state: State<AppState>, id: String) -> Result<(), String> {
+    state.db.set_active_ai_provider(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn ai_provider_delete(state: State<AppState>, id: String) -> Result<(), String> {
+    if let Ok(Some(provider)) = state.db.get_ai_provider(&id) {
+        if let Some(cred_id) = provider.credential_id {
+            let _ = state.db.delete_credential(&cred_id);
+        }
+    }
+    state.db.delete_ai_provider(&id).map_err(|e| e.to_string())
+}
+
+fn resolve_api_key_for_provider(state: &AppState, provider_id: &str) -> Result<Option<String>, String> {
+    let provider = state.db.get_ai_provider(provider_id).map_err(|e| e.to_string())?
+        .ok_or_else(|| "AI Provider not found".to_string())?;
+
+    if let Some(ref cred_id) = provider.credential_id {
+        if !state.vault.is_unlocked() {
+            return Err("Vault is locked. Unlock vault to use the saved API key.".to_string());
+        }
+        let cred = state.db.get_credential(cred_id).map_err(|e| e.to_string())?
+            .ok_or_else(|| "API Key credential not found in vault".to_string())?;
+        let decrypted_bytes = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
+        let key_str = String::from_utf8(decrypted_bytes)
+            .map_err(|_| "Failed to decode API key as valid UTF-8".to_string())?;
+        Ok(Some(key_str))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+pub async fn ai_provider_test(
+    state: State<'_, AppState>,
+    id: Option<String>,
+    temp_input: Option<AiProviderInput>,
+) -> Result<String, String> {
+    let (provider_type, base_url, model_name, api_key_opt) = if let Some(input) = temp_input {
+        let key = if let Some(k) = input.api_key {
+            if !k.trim().is_empty() {
+                Some(k.trim().to_string())
+            } else if let Some(ref existing_id) = id {
+                resolve_api_key_for_provider(&state, existing_id)?
+            } else {
+                None
+            }
+        } else if let Some(ref existing_id) = id {
+            resolve_api_key_for_provider(&state, existing_id)?
+        } else {
+            None
+        };
+        (input.provider_type, input.base_url, input.model_name, key)
+    } else if let Some(ref pid) = id {
+        let p = state.db.get_ai_provider(pid).map_err(|e| e.to_string())?
+            .ok_or_else(|| "AI Provider not found".to_string())?;
+        let key = resolve_api_key_for_provider(&state, pid)?;
+        (p.provider_type, p.base_url, p.model_name, key)
+    } else {
+        return Err("No provider configuration specified to test".to_string());
+    };
+
+    state.ai.test_connection(
+        &provider_type,
+        &base_url,
+        &model_name,
+        api_key_opt.as_deref(),
+    ).await
+}
+
+#[tauri::command]
+pub async fn ai_ollama_list_models(
+    state: State<'_, AppState>,
+    base_url: String,
+) -> Result<Vec<String>, String> {
+    state.ai.fetch_ollama_models(&base_url).await
+}
+
+/// Detects OS / shell / user / package manager of a terminal session.
+/// SSH: runs a probe on a new exec channel over the existing (already
+/// host-key-verified) connection — nothing is typed into the user's PTY.
+/// Local: runs the same probe on this machine.
+#[tauri::command]
+pub async fn ai_detect_environment(
+    state: State<'_, AppState>,
+    session_id: String,
+    is_local: bool,
+) -> Result<crate::ai::TerminalEnvironment, String> {
+    if is_local {
+        return crate::ai::detect_local_environment().await;
+    }
+    let output = state
+        .ssh
+        .exec_capture(
+            &session_id,
+            crate::ai::PROBE_SCRIPT,
+            std::time::Duration::from_secs(6),
+            16 * 1024,
+        )
+        .await?;
+    Ok(crate::ai::parse_probe_output(&output))
+}
+
+/// Aborts an in-flight `ai_generate_terminal_command` / `ai_explain_terminal_error`.
+#[tauri::command]
+pub fn ai_cancel(state: State<'_, AppState>, request_id: String) -> Result<bool, String> {
+    Ok(state.ai.cancel(&request_id))
+}
+
+/// Shared streaming runner: resolves the active provider + key, streams chunks
+/// to `ai-stream-{request_id}`, and makes the request cancellable.
+async fn run_ai_stream(
+    app: &AppHandle,
+    state: &AppState,
+    request_id: &str,
+    messages: Vec<crate::ai::ChatMessage>,
+) -> Result<String, String> {
+    let provider = state.db.get_active_ai_provider().map_err(|e| e.to_string())?
+        .ok_or_else(|| "No active AI provider configured. Open Settings > AI Copilot to configure a provider (OpenAI, DeepSeek, Ollama, etc.).".to_string())?;
+    let api_key = resolve_api_key_for_provider(state, &provider.id)?;
+
+    let event_name = format!("ai-stream-{request_id}");
+    let app_handle = app.clone();
+    let stream_event = event_name.clone();
+
+    let result = state
+        .ai
+        .run_cancellable(
+            request_id,
+            state.ai.stream_chat_completion(
+                &provider.provider_type,
+                &provider.base_url,
+                &provider.model_name,
+                api_key.as_deref(),
+                &messages,
+                move |chunk, done| {
+                    let _ = app_handle.emit(
+                        &stream_event,
+                        crate::ai::AiStreamChunk {
+                            chunk: chunk.to_string(),
+                            done,
+                            error: None,
+                        },
+                    );
+                    Ok(())
+                },
+            ),
+        )
+        .await;
+
+    if let Err(ref e) = result {
+        // A user cancel is not an error worth surfacing on the stream.
+        if e != crate::ai::AI_CANCELLED {
+            let _ = app.emit(
+                &event_name,
+                crate::ai::AiStreamChunk {
+                    chunk: String::new(),
+                    done: true,
+                    error: Some(e.clone()),
+                },
+            );
+        }
+    }
+    result
+}
+
+fn build_user_content(header: &str, buffer: Option<&str>) -> String {
+    let mut content = String::new();
+    if let Some(buf) = buffer {
+        let trimmed = buf.trim();
+        if !trimmed.is_empty() {
+            content.push_str(header);
+            content.push_str("\n```\n");
+            content.push_str(&crate::ai::sanitize_terminal_buffer(trimmed));
+            content.push_str("\n```\n\n");
+        }
+    }
+    content
+}
+
+#[tauri::command]
+pub async fn ai_generate_terminal_command(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: TerminalAiRequest,
+) -> Result<crate::ai::AiCommandResult, String> {
+    let system_prompt = crate::ai::build_command_system_prompt(&request.prompt_target());
+
+    let mut user_content =
+        build_user_content("Recent terminal output:", request.buffer_context.as_deref());
+    user_content.push_str("Task: ");
+    user_content.push_str(&request.prompt);
+
+    let messages = vec![
+        crate::ai::ChatMessage { role: "system".to_string(), content: system_prompt },
+        crate::ai::ChatMessage { role: "user".to_string(), content: user_content },
+    ];
+
+    let raw = run_ai_stream(&app, &state, &request.request_id, messages).await?;
+    let result = crate::ai::parse_command_response(&raw);
+    if result.command.trim().is_empty() {
+        return Err("The AI provider returned an empty command.".to_string());
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn ai_explain_terminal_error(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: TerminalAiRequest,
+) -> Result<String, String> {
+    let system_prompt = crate::ai::build_explain_system_prompt(&request.prompt_target());
+
+    let mut user_content =
+        build_user_content("Terminal error / output:", request.buffer_context.as_deref());
+    if !request.prompt.trim().is_empty() {
+        user_content.push_str("User note / question: ");
+        user_content.push_str(&request.prompt);
+    } else {
+        user_content.push_str("Please diagnose this terminal issue and provide the fix command.");
+    }
+
+    let messages = vec![
+        crate::ai::ChatMessage { role: "system".to_string(), content: system_prompt },
+        crate::ai::ChatMessage { role: "user".to_string(), content: user_content },
+    ];
+
+    let raw = run_ai_stream(&app, &state, &request.request_id, messages).await?;
+    Ok(crate::ai::command::strip_code_fences(&raw))
 }

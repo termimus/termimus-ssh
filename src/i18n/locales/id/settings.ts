@@ -8,6 +8,7 @@ export const settingsId: typeof settingsEn = {
     security: "Keamanan & Brankas",
     terminal: "Terminal & Tema",
     sync: "Sinkronisasi Mandiri",
+    ai: "AI Copilot",
     knownHosts: "Kunci Host Tepercaya",
     backup: "Cadangan & Pemulihan",
   },

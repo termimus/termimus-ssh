@@ -1,3 +1,4 @@
+pub mod ai;
 pub mod biometric;
 pub mod commands;
 pub mod db;
@@ -26,8 +27,9 @@ pub fn run() {
     let sftp = Arc::new(SftpManager::new());
     let tunnel = Arc::new(TunnelManager::new());
     let pty = Arc::new(PtyManager::new());
+    let ai = Arc::new(ai::AiClient::new());
 
-    let state = AppState { db, vault, ssh, sftp, tunnel, pty };
+    let state = AppState { db, vault, ssh, sftp, tunnel, pty, ai };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -115,6 +117,17 @@ pub fn run() {
             commands::sync_get_devices,
             commands::sync_secrets_save,
             commands::sync_secrets_load,
+            commands::ai_provider_list,
+            commands::ai_provider_get_active,
+            commands::ai_provider_save,
+            commands::ai_provider_set_active,
+            commands::ai_provider_delete,
+            commands::ai_provider_test,
+            commands::ai_ollama_list_models,
+            commands::ai_generate_terminal_command,
+            commands::ai_explain_terminal_error,
+            commands::ai_detect_environment,
+            commands::ai_cancel,
         ])
         .build(tauri::generate_context!())
         .expect("error while building termimus application")
