@@ -314,6 +314,7 @@ export const useAiStore = create<AiState>((set, get) => {
       try {
         const saved = await api.saveAiProvider(input, id);
         await get().loadProviders();
+        import("./useSyncStore").then((m) => m.useSyncStore.getState().triggerAutoPush()).catch(() => {});
         return saved;
       } catch (err: unknown) {
         set({ isLoading: false });
@@ -326,6 +327,7 @@ export const useAiStore = create<AiState>((set, get) => {
       try {
         await api.deleteAiProvider(id);
         await get().loadProviders();
+        import("./useSyncStore").then((m) => m.useSyncStore.getState().triggerAutoPush()).catch(() => {});
       } catch (err: unknown) {
         set({ isLoading: false });
         throw err;
