@@ -195,8 +195,75 @@ export interface ImportSummary {
   known_hosts: number;
   known_hosts_conflicts: number;
   workspace_presets?: number;
+  ai_providers?: number;
   vault_meta_restored: boolean;
   safety_snapshot_path: string | null;
+}
+
+export interface AiProviderSummary {
+  id: string;
+  name: string;
+  provider_type: "openai_compatible" | "anthropic" | "ollama";
+  base_url: string;
+  model_name: string;
+  has_api_key: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiProviderInput {
+  name: string;
+  provider_type: "openai_compatible" | "anthropic" | "ollama";
+  base_url: string;
+  model_name: string;
+  api_key?: string | null;
+  is_active: boolean;
+}
+
+export interface TerminalEnvironment {
+  os_name: string | null;
+  os_id: string | null;
+  kernel: string | null;
+  arch: string | null;
+  shell: string | null;
+  user: string | null;
+  is_root: boolean;
+  package_manager: string | null;
+  init_system: string | null;
+}
+
+export interface TerminalAiRequest {
+  /** Unique per request: names the `ai-stream-${request_id}` event and is the cancel handle. */
+  request_id: string;
+  session_id: string;
+  prompt: string;
+  buffer_context?: string | null;
+  host_label?: string | null;
+  environment?: TerminalEnvironment | null;
+  /** Fallbacks used only when environment detection is unavailable. */
+  os_type?: string | null;
+  username?: string | null;
+}
+
+export type AiRiskLevel = "safe" | "modifying" | "destructive";
+
+export interface AiCommandResult {
+  command: string;
+  explanation: string;
+  risk: AiRiskLevel;
+  needs_sudo: boolean;
+  risk_reasons: string[];
+  structured: boolean;
+}
+
+/** Error string the backend returns for a request aborted via `cancelAi`. */
+export const AI_CANCELLED = "__AI_CANCELLED__";
+
+export interface AiStreamChunk {
+  chunk: string;
+  done: boolean;
+  error?: string | null;
 }
 
 export const api = {
@@ -411,4 +478,23 @@ export const api = {
     invoke<void>("sync_secrets_save", { authToken, syncPassword }),
   syncSecretsLoad: () =>
     invoke<{ authToken: string; syncPassword: string } | null>("sync_secrets_load"),
+
+  // AI Copilot & BYOK
+  listAiProviders: () => invoke<AiProviderSummary[]>("ai_provider_list"),
+  getActiveAiProvider: () => invoke<AiProviderSummary | null>("ai_provider_get_active"),
+  saveAiProvider: (input: AiProviderInput, id?: string) =>
+    invoke<AiProviderSummary>("ai_provider_save", { input, id: id ?? null }),
+  setActiveAiProvider: (id: string) => invoke<void>("ai_provider_set_active", { id }),
+  deleteAiProvider: (id: string) => invoke<void>("ai_provider_delete", { id }),
+  testAiProvider: (id?: string, tempInput?: AiProviderInput) =>
+    invoke<string>("ai_provider_test", { id: id ?? null, tempInput: tempInput ?? null }),
+  listOllamaModels: (baseUrl: string) =>
+    invoke<string[]>("ai_ollama_list_models", { baseUrl }),
+  generateTerminalCommand: (request: TerminalAiRequest) =>
+    invoke<AiCommandResult>("ai_generate_terminal_command", { request }),
+  explainTerminalError: (request: TerminalAiRequest) =>
+    invoke<string>("ai_explain_terminal_error", { request }),
+  detectAiEnvironment: (sessionId: string, isLocal: boolean) =>
+    invoke<TerminalEnvironment>("ai_detect_environment", { sessionId, isLocal }),
+  cancelAi: (requestId: string) => invoke<boolean>("ai_cancel", { requestId }),
 };

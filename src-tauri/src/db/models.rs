@@ -305,6 +305,8 @@ pub struct BackupBundle {
     pub tombstones: Vec<Tombstone>,
     #[serde(default)]
     pub workspace_presets: Vec<WorkspacePreset>,
+    #[serde(default)]
+    pub ai_providers: Vec<AiProvider>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -317,8 +319,33 @@ pub struct ImportSummary {
     pub known_hosts: usize,
     pub known_hosts_conflicts: usize,
     pub workspace_presets: usize,
+    #[serde(default)]
+    pub ai_providers: usize,
     pub vault_meta_restored: bool,
     pub safety_snapshot_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiProvider {
+    pub id: String,
+    pub name: String,
+    pub provider_type: String, // "openai_compatible" | "anthropic" | "ollama"
+    pub base_url: String,
+    pub model_name: String,
+    pub credential_id: Option<String>,
+    pub is_active: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AiProviderInput {
+    pub name: String,
+    pub provider_type: String,
+    pub base_url: String,
+    pub model_name: String,
+    pub api_key: Option<String>,
+    pub is_active: bool,
 }
 
 /// An encrypted outer wrapper for a `BackupBundle`. When exported with a passphrase,

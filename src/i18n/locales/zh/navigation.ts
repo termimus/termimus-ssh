@@ -17,6 +17,8 @@ export const navigationZh: typeof navigationEn = {
   localTerminalDesc: "启动本地终端会话",
   snippetsToggleCollapse: "折叠代码片段侧边栏 (Alt+S)",
   snippetsToggleExpand: "展开代码片段侧边栏 (Alt+S)",
+  sidePanelCollapse: "隐藏侧边面板 — 代码片段与 AI 助手",
+  sidePanelExpand: "显示侧边面板 — 代码片段与 AI 助手",
   minimize: "最小化",
   maximize: "最大化 (F11 全屏)",
   restore: "向下还原",

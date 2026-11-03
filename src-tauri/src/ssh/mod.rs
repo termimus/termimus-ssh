@@ -751,6 +751,73 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Runs `command` on a fresh exec channel multiplexed over an already
+    /// established (and therefore already host-key-verified) session, and
+    /// returns its stdout. Never touches the interactive PTY channel, so nothing
+    /// shows up in the user's terminal. Output is capped at `max_bytes`.
+    pub async fn exec_capture(
+        &self,
+        session_id: &str,
+        command: &str,
+        timeout: Duration,
+        max_bytes: usize,
+    ) -> Result<String, String> {
+        let session = {
+            let sessions = self.sessions.read().await;
+            sessions
+                .get(session_id)
+                .cloned()
+                .ok_or_else(|| "Session not found".to_string())?
+        };
+
+        let deadline = tokio::time::Instant::now() + timeout;
+
+        let mut channel = tokio::time::timeout_at(deadline, session.handle.channel_open_session())
+            .await
+            .map_err(|_| "Remote command timed out".to_string())?
+            .map_err(|e| format!("Failed to open exec channel: {e}"))?;
+
+        // Only the exec + read loop runs under the deadline, so the channel is
+        // always closed below — even on timeout. A leaked channel would count
+        // against the server's MaxSessions until the whole connection drops.
+        let run = async {
+            channel
+                .exec(true, command)
+                .await
+                .map_err(|e| format!("Failed to exec: {e}"))?;
+
+            let mut output: Vec<u8> = Vec::new();
+            loop {
+                match channel.wait().await {
+                    Some(russh::ChannelMsg::Data { ref data }) => {
+                        output.extend_from_slice(data);
+                        if output.len() >= max_bytes {
+                            output.truncate(max_bytes);
+                            break;
+                        }
+                    }
+                    // The server refused the exec request (want_reply=true).
+                    Some(russh::ChannelMsg::Failure) => {
+                        return Err("Remote host rejected the exec request".to_string());
+                    }
+                    Some(russh::ChannelMsg::Eof)
+                    | Some(russh::ChannelMsg::Close)
+                    | None => break,
+                    _ => {}
+                }
+            }
+            Ok::<String, String>(String::from_utf8_lossy(&output).into_owned())
+        };
+
+        let result = tokio::time::timeout_at(deadline, run)
+            .await
+            .map_err(|_| "Remote command timed out".to_string())
+            .and_then(|r| r);
+
+        let _ = tokio::time::timeout(Duration::from_secs(2), channel.close()).await;
+        result
+    }
+
     /// Disconnects every live SSH session. Used for a clean shutdown when the
     /// application exits, so servers see a proper SSH disconnect message
     /// instead of a dropped TCP socket.

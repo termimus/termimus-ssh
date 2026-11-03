@@ -6,6 +6,7 @@ export const settingsEn = {
     security: "Security & Vault",
     terminal: "Terminal & Theme",
     sync: "Self-Hosted Sync",
+    ai: "AI Copilot",
     knownHosts: "Trusted Host Keys",
     backup: "Backup & Restore",
   },
