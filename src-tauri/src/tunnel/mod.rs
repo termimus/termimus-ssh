@@ -225,11 +225,7 @@ async fn connect_ssh(
         .map_err(|e| format!("Tunnel SSH connection failed: {e}"))?;
 
     let target = format!("{username}@{address}");
-    let authenticated = crate::ssh::authenticate(&mut handle, Some(app), &target, username, &auth).await?;
-
-    if !authenticated {
-        return Err("Authentication rejected by server".to_string());
-    }
+    crate::ssh::authenticate(&mut handle, Some(app), &target, username, &auth).await?;
 
     Ok(handle)
 }

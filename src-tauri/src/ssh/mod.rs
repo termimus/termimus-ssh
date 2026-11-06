@@ -292,13 +292,14 @@ async fn ask_auth_prompt(app: &AppHandle, payload: AuthPromptPayload) -> Result<
 /// for a password and/or a Google Authenticator code. Prompts are answered by
 /// the user through the frontend dialog; a stored host password auto-answers
 /// the first password prompt. `app = None` never prompts (background probes).
+/// On rejection the error names the failed step (key, password, or OTP code).
 pub async fn authenticate<H: Handler>(
     handle: &mut Handle<H>,
     app: Option<&AppHandle>,
     target: &str,
     username: &str,
     auth: &SshAuth,
-) -> Result<bool, String> {
+) -> Result<(), String> {
     let first = match auth {
         SshAuth::Password(password) => handle
             .authenticate_password(username, password)
@@ -312,12 +313,22 @@ pub async fn authenticate<H: Handler>(
     };
 
     let remaining = match first {
-        AuthResult::Success => return Ok(true),
+        AuthResult::Success => return Ok(()),
         AuthResult::Failure { remaining_methods } => remaining_methods,
     };
-    let Some(app) = app else { return Ok(false) };
+    let primary_rejected = match auth {
+        SshAuth::Password(_) => "Password rejected by server".to_string(),
+        // Publickey still offered = key refused; otherwise it was accepted as a first factor.
+        SshAuth::PrivateKey { .. } if remaining.contains(&MethodKind::PublicKey) => {
+            "SSH key rejected by server (is its public key in authorized_keys?)".to_string()
+        }
+        SshAuth::PrivateKey { .. } => {
+            "SSH key accepted, but the server requires another authentication method".to_string()
+        }
+    };
+    let Some(app) = app else { return Err(primary_rejected) };
     if !remaining.contains(&MethodKind::KeyboardInteractive) {
-        return Ok(false);
+        return Err(primary_rejected);
     }
 
     let mut stored_password = match auth {
@@ -330,18 +341,25 @@ pub async fn authenticate<H: Handler>(
         .await
         .map_err(kbd_err)?;
 
+    // Prompt text of the last question answered; PAM never says which step failed,
+    // so the failure is attributed to the step it happened right after.
+    let mut last_prompt: Option<String> = None;
     loop {
         let (name, instructions, prompts) = match reply {
-            KeyboardInteractiveAuthResponse::Success => return Ok(true),
-            KeyboardInteractiveAuthResponse::Failure { .. } => return Ok(false),
+            KeyboardInteractiveAuthResponse::Success => return Ok(()),
+            KeyboardInteractiveAuthResponse::Failure { .. } => {
+                return Err(kbd_failure_message(last_prompt.as_deref()))
+            }
             KeyboardInteractiveAuthResponse::InfoRequest { name, instructions, prompts } => {
                 (name, instructions, prompts)
             }
         };
 
-        let is_password_prompt = prompts.len() == 1
-            && !prompts[0].echo
-            && prompts[0].prompt.to_lowercase().contains("password");
+        let is_password_prompt =
+            prompts.len() == 1 && !prompts[0].echo && is_password_text(&prompts[0].prompt);
+        if let Some(p) = prompts.last() {
+            last_prompt = Some(p.prompt.clone());
+        }
 
         let responses = if prompts.is_empty() {
             Vec::new()
@@ -368,6 +386,26 @@ pub async fn authenticate<H: Handler>(
             .authenticate_keyboard_interactive_respond(responses)
             .await
             .map_err(kbd_err)?;
+    }
+}
+
+fn is_password_text(prompt: &str) -> bool {
+    prompt.to_lowercase().contains("password")
+}
+
+/// Human-readable reason for a keyboard-interactive rejection, based on the
+/// last prompt answered (e.g. "Password: " or "Verification code: ").
+fn kbd_failure_message(last_prompt: Option<&str>) -> String {
+    let Some(prompt) = last_prompt else {
+        return "Keyboard-interactive authentication rejected by server".to_string();
+    };
+    let lower = prompt.to_lowercase();
+    if is_password_text(&lower) {
+        "Password rejected by server".to_string()
+    } else if ["verification", "code", "otp", "token", "2fa"].iter().any(|k| lower.contains(k)) {
+        "Two-factor verification code rejected by server (wrong or expired code)".to_string()
+    } else {
+        format!("Server rejected the answer to \"{}\"", prompt.trim())
     }
 }
 
@@ -544,18 +582,8 @@ impl SessionManager {
             emit_progress(1, "authenticating", &format!("Authenticating to Jump Host as {}...", jump.username), false);
 
             let jump_target = format!("{}@{}", jump.username, jump.address);
-            let j_authenticated =
-                match authenticate(&mut j_handle, Some(&app), &jump_target, &jump.username, &jump.auth).await {
-                    Ok(ok) => ok,
-                    Err(e) => {
-                        let msg = format!("Jump Host {e}");
-                        emit_progress(1, "error", &msg, true);
-                        return Err(msg);
-                    }
-                };
-
-            if !j_authenticated {
-                let msg = "Jump Host authentication rejected by server".to_string();
+            if let Err(e) = authenticate(&mut j_handle, Some(&app), &jump_target, &jump.username, &jump.auth).await {
+                let msg = format!("Jump Host: {e}");
                 emit_progress(1, "error", &msg, true);
                 return Err(msg);
             }
@@ -624,16 +652,7 @@ impl SessionManager {
         emit_progress(3, "authenticating", &format!("Authenticating as {username}..."), false);
 
         let target = format!("{username}@{address}");
-        let authenticated = match authenticate(&mut handle, Some(&app), &target, &username, &auth).await {
-            Ok(ok) => ok,
-            Err(msg) => {
-                emit_progress(3, "error", &msg, true);
-                return Err(msg);
-            }
-        };
-
-        if !authenticated {
-            let msg = "Authentication rejected by server".to_string();
+        if let Err(msg) = authenticate(&mut handle, Some(&app), &target, &username, &auth).await {
             emit_progress(3, "error", &msg, true);
             return Err(msg);
         }
@@ -1049,9 +1068,7 @@ pub async fn detect_os_via_exec(
             .map_err(|e| e.to_string())?;
 
         // No prompting: a background probe must never pop a 2FA dialog.
-        let authenticated = authenticate(&mut handle, None, "", &username, &auth).await?;
-
-        if !authenticated {
+        if authenticate(&mut handle, None, "", &username, &auth).await.is_err() {
             return Ok(None);
         }
 
@@ -1104,6 +1121,16 @@ mod tests {
     #[test]
     fn test_channel_into_stream_trait() {
         _assert_stream::<russh::ChannelStream<russh::client::Msg>>();
+    }
+
+    #[test]
+    fn test_kbd_failure_message_names_failed_step() {
+        use super::kbd_failure_message as msg;
+        assert_eq!(msg(Some("Password: ")), "Password rejected by server");
+        assert!(msg(Some("Verification code: ")).starts_with("Two-factor verification code rejected"));
+        assert!(msg(Some("Enter OTP:")).starts_with("Two-factor"));
+        assert_eq!(msg(Some("Favourite colour? ")), "Server rejected the answer to \"Favourite colour?\"");
+        assert_eq!(msg(None), "Keyboard-interactive authentication rejected by server");
     }
 
     #[test]

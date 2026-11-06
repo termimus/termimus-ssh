@@ -83,12 +83,7 @@ impl SftpManager {
             .map_err(|e| format!("SFTP SSH connection failed: {e}"))?;
 
         let target = format!("{username}@{address}");
-        let authenticated =
-            crate::ssh::authenticate(&mut handle, Some(&app), &target, &username, &auth).await?;
-
-        if !authenticated {
-            return Err("Authentication rejected by server".to_string());
-        }
+        crate::ssh::authenticate(&mut handle, Some(&app), &target, &username, &auth).await?;
 
         let channel = handle
             .channel_open_session()
