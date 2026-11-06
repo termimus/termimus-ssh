@@ -68,4 +68,9 @@ export const terminalEn = {
     resetZoom: "Reset",
     copied: "Copied to clipboard",
   },
+  authPrompt: {
+    title: "Additional Authentication",
+    subtitle: "{{target}} requires more verification",
+    submit: "Continue",
+  },
 };

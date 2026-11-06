@@ -1,13 +1,13 @@
-use russh::client::{self, Handle, Handler};
+use russh::client::{self, AuthResult, Handle, Handler, KeyboardInteractiveAuthResponse};
 use russh::keys::ssh_key::HashAlg;
 use russh::keys::{decode_secret_key, PrivateKeyWithHashAlg};
-use russh::Disconnect;
+use russh::{Disconnect, MethodKind};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 
 use crate::db::models::KnownHost;
 use crate::db::Database;
@@ -204,14 +204,19 @@ pub async fn authenticate_publickey_smart<H: russh::client::Handler>(
         .await
         .map_err(|e| format!("Auth error: {e}"))?;
 
-    if !res.success() && is_rsa {
+    // Rejected outright = server still offers publickey. Partial success (key
+    // accepted, second factor pending) drops publickey from the list.
+    let key_rejected = |r: &AuthResult| {
+        matches!(r, AuthResult::Failure { remaining_methods } if remaining_methods.contains(&MethodKind::PublicKey))
+    };
+    if is_rsa && key_rejected(&res) {
         for fallback in [Some(HashAlg::Sha256), Some(HashAlg::Sha512), None] {
             if fallback == best_hash {
                 continue;
             }
             let key = PrivateKeyWithHashAlg::new(Arc::new(key_pair.clone()), fallback);
             if let Ok(r) = handle.authenticate_publickey(username, key).await {
-                if r.success() {
+                if !key_rejected(&r) {
                     res = r;
                     break;
                 }
@@ -220,6 +225,150 @@ pub async fn authenticate_publickey_smart<H: russh::client::Handler>(
     }
 
     Ok(res)
+}
+
+/// Keyboard-interactive prompts waiting for the user's answers, keyed by request id.
+/// Process-wide because terminal, SFTP and tunnel connections all share one dialog.
+static PENDING_AUTH_PROMPTS: LazyLock<
+    std::sync::Mutex<HashMap<String, oneshot::Sender<Option<Vec<String>>>>>,
+> = LazyLock::new(Default::default);
+
+/// How long a connection waits for the user to answer a password/OTP prompt.
+const AUTH_PROMPT_TIMEOUT: Duration = Duration::from_secs(180);
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AuthPromptField {
+    pub prompt: String,
+    pub echo: bool,
+}
+
+/// Emitted as `ssh-auth-prompt` when the server asks keyboard-interactive
+/// questions (e.g. PAM password + Google Authenticator verification code).
+#[derive(Debug, Clone, Serialize)]
+pub struct AuthPromptPayload {
+    pub request_id: String,
+    pub target: String,
+    pub name: String,
+    pub instructions: String,
+    pub prompts: Vec<AuthPromptField>,
+}
+
+/// Delivers the user's answers (`None` = cancelled) to a pending prompt.
+pub fn answer_auth_prompt(request_id: &str, responses: Option<Vec<String>>) -> Result<(), String> {
+    let tx = PENDING_AUTH_PROMPTS
+        .lock()
+        .unwrap()
+        .remove(request_id)
+        .ok_or_else(|| "Authentication prompt has expired".to_string())?;
+    let _ = tx.send(responses);
+    Ok(())
+}
+
+async fn ask_auth_prompt(app: &AppHandle, payload: AuthPromptPayload) -> Result<Vec<String>, String> {
+    let (tx, rx) = oneshot::channel();
+    let id = payload.request_id.clone();
+    PENDING_AUTH_PROMPTS.lock().unwrap().insert(id.clone(), tx);
+
+    if let Err(e) = app.emit("ssh-auth-prompt", payload) {
+        PENDING_AUTH_PROMPTS.lock().unwrap().remove(&id);
+        return Err(format!("Could not show authentication prompt: {e}"));
+    }
+
+    let res = tokio::time::timeout(AUTH_PROMPT_TIMEOUT, rx).await;
+    PENDING_AUTH_PROMPTS.lock().unwrap().remove(&id);
+    match res {
+        Ok(Ok(Some(responses))) => Ok(responses),
+        Ok(_) => Err("Authentication cancelled".to_string()),
+        Err(_) => {
+            let _ = app.emit("ssh-auth-prompt-closed", &id);
+            Err("Timed out waiting for authentication input".to_string())
+        }
+    }
+}
+
+/// Full client authentication: the host's configured method (password or
+/// private key), then keyboard-interactive when the server still requires it —
+/// e.g. `AuthenticationMethods publickey,keyboard-interactive` with PAM asking
+/// for a password and/or a Google Authenticator code. Prompts are answered by
+/// the user through the frontend dialog; a stored host password auto-answers
+/// the first password prompt. `app = None` never prompts (background probes).
+pub async fn authenticate<H: Handler>(
+    handle: &mut Handle<H>,
+    app: Option<&AppHandle>,
+    target: &str,
+    username: &str,
+    auth: &SshAuth,
+) -> Result<bool, String> {
+    let first = match auth {
+        SshAuth::Password(password) => handle
+            .authenticate_password(username, password)
+            .await
+            .map_err(|e| format!("Auth error: {e}"))?,
+        SshAuth::PrivateKey { pem, passphrase } => {
+            let key_pair = decode_secret_key(pem, passphrase.as_deref())
+                .map_err(|e| format!("Invalid private key: {e}"))?;
+            authenticate_publickey_smart(handle, username, key_pair).await?
+        }
+    };
+
+    let remaining = match first {
+        AuthResult::Success => return Ok(true),
+        AuthResult::Failure { remaining_methods } => remaining_methods,
+    };
+    let Some(app) = app else { return Ok(false) };
+    if !remaining.contains(&MethodKind::KeyboardInteractive) {
+        return Ok(false);
+    }
+
+    let mut stored_password = match auth {
+        SshAuth::Password(p) => Some(p.clone()),
+        SshAuth::PrivateKey { .. } => None,
+    };
+    let kbd_err = |e: russh::Error| format!("Keyboard-interactive auth error: {e}");
+    let mut reply = handle
+        .authenticate_keyboard_interactive_start(username, None::<String>)
+        .await
+        .map_err(kbd_err)?;
+
+    loop {
+        let (name, instructions, prompts) = match reply {
+            KeyboardInteractiveAuthResponse::Success => return Ok(true),
+            KeyboardInteractiveAuthResponse::Failure { .. } => return Ok(false),
+            KeyboardInteractiveAuthResponse::InfoRequest { name, instructions, prompts } => {
+                (name, instructions, prompts)
+            }
+        };
+
+        let is_password_prompt = prompts.len() == 1
+            && !prompts[0].echo
+            && prompts[0].prompt.to_lowercase().contains("password");
+
+        let responses = if prompts.is_empty() {
+            Vec::new()
+        } else if let Some(pw) = stored_password.take_if(|_| is_password_prompt) {
+            vec![pw]
+        } else {
+            ask_auth_prompt(
+                app,
+                AuthPromptPayload {
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                    target: target.to_string(),
+                    name,
+                    instructions,
+                    prompts: prompts
+                        .into_iter()
+                        .map(|p| AuthPromptField { prompt: p.prompt, echo: p.echo })
+                        .collect(),
+                },
+            )
+            .await?
+        };
+
+        reply = handle
+            .authenticate_keyboard_interactive_respond(responses)
+            .await
+            .map_err(kbd_err)?;
+    }
 }
 
 pub struct SshSession {
@@ -394,33 +543,16 @@ impl SessionManager {
 
             emit_progress(1, "authenticating", &format!("Authenticating to Jump Host as {}...", jump.username), false);
 
-            let j_authenticated = match &jump.auth {
-                SshAuth::Password(password) => match j_handle.authenticate_password(&jump.username, password).await {
-                    Ok(r) => r.success(),
+            let jump_target = format!("{}@{}", jump.username, jump.address);
+            let j_authenticated =
+                match authenticate(&mut j_handle, Some(&app), &jump_target, &jump.username, &jump.auth).await {
+                    Ok(ok) => ok,
                     Err(e) => {
-                        let msg = format!("Jump Host auth error: {e}");
+                        let msg = format!("Jump Host {e}");
                         emit_progress(1, "error", &msg, true);
                         return Err(msg);
                     }
-                },
-                SshAuth::PrivateKey { pem, passphrase } => {
-                    let key_pair = match decode_secret_key(pem, passphrase.as_deref()) {
-                        Ok(k) => k,
-                        Err(e) => {
-                            let msg = format!("Invalid Jump Host private key: {e}");
-                            emit_progress(1, "error", &msg, true);
-                            return Err(msg);
-                        }
-                    };
-                    match authenticate_publickey_smart(&mut j_handle, &jump.username, key_pair).await {
-                        Ok(r) => r.success(),
-                        Err(msg) => {
-                            emit_progress(1, "error", &msg, true);
-                            return Err(msg);
-                        }
-                    }
-                }
-            };
+                };
 
             if !j_authenticated {
                 let msg = "Jump Host authentication rejected by server".to_string();
@@ -491,35 +623,16 @@ impl SessionManager {
 
         emit_progress(3, "authenticating", &format!("Authenticating as {username}..."), false);
 
-        let authenticated = match &auth {
-            SshAuth::Password(password) => match handle.authenticate_password(&username, password).await {
-                Ok(r) => r,
-                Err(e) => {
-                    let msg = format!("Auth error: {e}");
-                    emit_progress(3, "error", &msg, true);
-                    return Err(msg);
-                }
-            },
-            SshAuth::PrivateKey { pem, passphrase } => {
-                let key_pair = match decode_secret_key(pem, passphrase.as_deref()) {
-                    Ok(k) => k,
-                    Err(e) => {
-                        let msg = format!("Invalid private key: {e}");
-                        emit_progress(3, "error", &msg, true);
-                        return Err(msg);
-                    }
-                };
-                match authenticate_publickey_smart(&mut handle, &username, key_pair).await {
-                    Ok(r) => r,
-                    Err(msg) => {
-                        emit_progress(3, "error", &msg, true);
-                        return Err(msg);
-                    }
-                }
+        let target = format!("{username}@{address}");
+        let authenticated = match authenticate(&mut handle, Some(&app), &target, &username, &auth).await {
+            Ok(ok) => ok,
+            Err(msg) => {
+                emit_progress(3, "error", &msg, true);
+                return Err(msg);
             }
         };
 
-        if !authenticated.success() {
+        if !authenticated {
             let msg = "Authentication rejected by server".to_string();
             emit_progress(3, "error", &msg, true);
             return Err(msg);
@@ -935,21 +1048,10 @@ pub async fn detect_os_via_exec(
             .await
             .map_err(|e| e.to_string())?;
 
-        let authenticated = match auth {
-            SshAuth::Password(password) => handle
-                .authenticate_password(&username, &password)
-                .await
-                .map_err(|e| e.to_string())?,
-            SshAuth::PrivateKey { pem, passphrase } => {
-                let key_pair = russh::keys::decode_secret_key(&pem, passphrase.as_deref())
-                    .map_err(|e| e.to_string())?;
-                authenticate_publickey_smart(&mut handle, &username, key_pair)
-                    .await
-                    .map_err(|e| e.to_string())?
-            }
-        };
+        // No prompting: a background probe must never pop a 2FA dialog.
+        let authenticated = authenticate(&mut handle, None, "", &username, &auth).await?;
 
-        if !authenticated.success() {
+        if !authenticated {
             return Ok(None);
         }
 
@@ -1002,5 +1104,16 @@ mod tests {
     #[test]
     fn test_channel_into_stream_trait() {
         _assert_stream::<russh::ChannelStream<russh::client::Msg>>();
+    }
+
+    #[test]
+    fn test_answer_auth_prompt_delivers_once() {
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        super::PENDING_AUTH_PROMPTS.lock().unwrap().insert("req-1".into(), tx);
+
+        super::answer_auth_prompt("req-1", Some(vec!["123456".into()])).unwrap();
+        assert_eq!(rx.try_recv().unwrap(), Some(vec!["123456".to_string()]));
+        // A second answer (or an unknown id) must not be accepted.
+        assert!(super::answer_auth_prompt("req-1", None).is_err());
     }
 }

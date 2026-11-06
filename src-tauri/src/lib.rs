@@ -74,6 +74,7 @@ pub fn run() {
             commands::keychain_get_private_key,
             commands::host_get_password,
             commands::credential_get_secret,
+            commands::ssh_auth_prompt_respond,
             commands::sftp_connect,
             commands::sftp_list,
             commands::sftp_mkdir,

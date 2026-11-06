@@ -1,7 +1,6 @@
 pub mod socks5;
 
 use russh::client::{self, Handle};
-use russh::keys::decode_secret_key;
 use russh::ChannelMsg;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -61,7 +60,7 @@ impl TunnelManager {
             }
         }
 
-        let handle = connect_ssh(db, &address, port, &username, auth).await?;
+        let handle = connect_ssh(&app, db, &address, port, &username, auth).await?;
 
         let bind_addr = format!("{local_address}:{local_port}");
         let listener = TcpListener::bind(&bind_addr)
@@ -140,7 +139,7 @@ impl TunnelManager {
             }
         }
 
-        let handle = connect_ssh(db, &address, port, &username, auth).await?;
+        let handle = connect_ssh(&app, db, &address, port, &username, auth).await?;
 
         let bind_addr = format!("{local_address}:{local_port}");
         let listener = TcpListener::bind(&bind_addr)
@@ -201,6 +200,7 @@ impl TunnelManager {
 }
 
 async fn connect_ssh(
+    app: &AppHandle,
     db: Arc<Database>,
     address: &str,
     port: u16,
@@ -224,19 +224,10 @@ async fn connect_ssh(
         .await
         .map_err(|e| format!("Tunnel SSH connection failed: {e}"))?;
 
-    let authenticated = match auth {
-        SshAuth::Password(password) => handle
-            .authenticate_password(username, &password)
-            .await
-            .map_err(|e| format!("Auth error: {e}"))?,
-        SshAuth::PrivateKey { pem, passphrase } => {
-            let key_pair = decode_secret_key(&pem, passphrase.as_deref())
-                .map_err(|e| format!("Invalid private key: {e}"))?;
-            crate::ssh::authenticate_publickey_smart(&mut handle, username, key_pair).await?
-        }
-    };
+    let target = format!("{username}@{address}");
+    let authenticated = crate::ssh::authenticate(&mut handle, Some(app), &target, username, &auth).await?;
 
-    if !authenticated.success() {
+    if !authenticated {
         return Err("Authentication rejected by server".to_string());
     }
 
