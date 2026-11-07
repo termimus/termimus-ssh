@@ -87,6 +87,15 @@ export interface SyncTestResult {
   error?: string;
 }
 
+/** Keyboard-interactive questions from the server (e.g. PAM password + 2FA code). */
+export interface AuthPromptRequest {
+  request_id: string;
+  target: string;
+  name: string;
+  instructions: string;
+  prompts: { prompt: string; echo: boolean }[];
+}
+
 export interface FileEntry {
   name: string;
   path: string;
@@ -309,6 +318,9 @@ export const api = {
     invoke<void>("ssh_resize", { sessionId, cols, rows }),
   disconnectSsh: (sessionId: string) =>
     invoke<void>("ssh_disconnect", { sessionId }),
+  /** Answer a keyboard-interactive prompt; `null` cancels the login. */
+  respondAuthPrompt: (requestId: string, responses: string[] | null) =>
+    invoke<void>("ssh_auth_prompt_respond", { requestId, responses }),
 
   // Local PTY Sessions
   getDefaultLocalShell: () => invoke<string>("local_pty_default_shell"),

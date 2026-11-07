@@ -959,10 +959,18 @@ pub fn credential_get_secret(state: State<AppState>, id: String) -> Result<Strin
     String::from_utf8(bytes).map_err(|e| format!("Invalid utf-8 secret: {e}"))
 }
 
+/// Answers (or cancels, with `responses = None`) a keyboard-interactive
+/// password/OTP prompt raised by an in-flight SSH, SFTP or tunnel connection.
+#[tauri::command]
+pub fn ssh_auth_prompt_respond(request_id: String, responses: Option<Vec<String>>) -> Result<(), String> {
+    crate::ssh::answer_auth_prompt(&request_id, responses)
+}
+
 // ================= SFTP COMMANDS =================
 
 #[tauri::command]
 pub async fn sftp_connect(
+    app: AppHandle,
     state: State<'_, AppState>,
     host_id: String,
     session_id: String,
@@ -978,6 +986,7 @@ pub async fn sftp_connect(
     state
         .sftp
         .connect(
+            app,
             state.db.clone(),
             session_id,
             host_id,

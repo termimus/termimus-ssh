@@ -70,4 +70,9 @@ export const terminalId: typeof terminalEn = {
     resetZoom: "Atur Ulang",
     copied: "Disalin ke papan klip",
   },
+  authPrompt: {
+    title: "Autentikasi Tambahan",
+    subtitle: "{{target}} memerlukan verifikasi tambahan",
+    submit: "Lanjutkan",
+  },
 };

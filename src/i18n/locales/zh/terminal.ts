@@ -70,4 +70,9 @@ export const terminalZh: typeof terminalEn = {
     resetZoom: "重置缩放",
     copied: "已复制到剪贴板",
   },
+  authPrompt: {
+    title: "附加身份验证",
+    subtitle: "{{target}} 需要进一步验证",
+    submit: "继续",
+  },
 };
