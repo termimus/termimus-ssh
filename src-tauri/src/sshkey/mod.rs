@@ -38,7 +38,8 @@ pub struct GeneratedKeyPair {
 /// standard 4096-bit RSA key, which is a safe default).
 pub fn generate_keypair(algo: &str, comment: &str) -> Result<GeneratedKeyPair, String> {
     let algorithm = parse_algorithm(algo)?;
-    let mut rng = rand::rngs::OsRng;
+    // Thread-local CSPRNG (ChaCha12, periodically reseeded from the OS).
+    let mut rng = rand_10::rng();
 
     let mut key = PrivateKey::random(&mut rng, algorithm)
         .map_err(|e| format!("Key generation failed: {e}"))?;
