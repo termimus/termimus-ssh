@@ -60,8 +60,12 @@ impl Handler for SshClientHandler {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &russh::keys::PublicKey,
+        server_key: &russh::keys::PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
+        // For host certificates, pin the host's own public key embedded in the
+        // certificate (not the CA), so TOFU behaves exactly as for plain keys
+        // and survives routine certificate re-issuance.
+        let server_public_key = &server_key.public_key();
         let fingerprint = format!("{}", server_public_key.fingerprint(HashAlg::Sha256));
         let key_type = server_public_key.algorithm().to_string();
         let now = chrono::Utc::now().to_rfc3339();
