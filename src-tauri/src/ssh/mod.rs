@@ -208,10 +208,11 @@ pub async fn authenticate_publickey_smart<H: russh::client::Handler>(
         .await
         .map_err(|e| format!("Auth error: {e}"))?;
 
-    // Rejected outright = server still offers publickey. Partial success (key
-    // accepted, second factor pending) drops publickey from the list.
+    // Rejected outright = no partial success and the server still offers
+    // publickey. Partial success (key accepted, second factor pending) must
+    // not trigger the RSA hash fallback.
     let key_rejected = |r: &AuthResult| {
-        matches!(r, AuthResult::Failure { remaining_methods } if remaining_methods.contains(&MethodKind::PublicKey))
+        matches!(r, AuthResult::Failure { remaining_methods, partial_success: false } if remaining_methods.contains(&MethodKind::PublicKey))
     };
     if is_rsa && key_rejected(&res) {
         for fallback in [Some(HashAlg::Sha256), Some(HashAlg::Sha512), None] {
@@ -316,18 +317,20 @@ pub async fn authenticate<H: Handler>(
         }
     };
 
-    let remaining = match first {
+    let (remaining, partial_success) = match first {
         AuthResult::Success => return Ok(()),
-        AuthResult::Failure { remaining_methods } => remaining_methods,
+        AuthResult::Failure { remaining_methods, partial_success } => (remaining_methods, partial_success),
     };
     let primary_rejected = match auth {
+        SshAuth::Password(_) if partial_success => {
+            "Password accepted, but the server requires another authentication method".to_string()
+        }
         SshAuth::Password(_) => "Password rejected by server".to_string(),
-        // Publickey still offered = key refused; otherwise it was accepted as a first factor.
-        SshAuth::PrivateKey { .. } if remaining.contains(&MethodKind::PublicKey) => {
-            "SSH key rejected by server (is its public key in authorized_keys?)".to_string()
+        SshAuth::PrivateKey { .. } if partial_success => {
+            "SSH key accepted, but the server requires another authentication method".to_string()
         }
         SshAuth::PrivateKey { .. } => {
-            "SSH key accepted, but the server requires another authentication method".to_string()
+            "SSH key rejected by server (is its public key in authorized_keys?)".to_string()
         }
     };
     let Some(app) = app else { return Err(primary_rejected) };
