@@ -10,6 +10,7 @@ import { tunnelsZh } from "./zh/tunnels";
 import { snippetsZh } from "./zh/snippets";
 import { vaultZh } from "./zh/vault";
 import { settingsZh } from "./zh/settings";
+import { aiZh } from "./zh/ai";
 
 export const zh: TranslationSchema = {
   common: commonZh,
@@ -23,4 +24,5 @@ export const zh: TranslationSchema = {
   snippets: snippetsZh,
   vault: vaultZh,
   settings: settingsZh,
+  ai: aiZh,
 };

@@ -10,6 +10,7 @@ import { tunnelsId } from "./id/tunnels";
 import { snippetsId } from "./id/snippets";
 import { vaultId } from "./id/vault";
 import { settingsId } from "./id/settings";
+import { aiId } from "./id/ai";
 
 export const id: TranslationSchema = {
   common: commonId,
@@ -23,4 +24,5 @@ export const id: TranslationSchema = {
   snippets: snippetsId,
   vault: vaultId,
   settings: settingsId,
+  ai: aiId,
 };

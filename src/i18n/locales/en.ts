@@ -9,6 +9,7 @@ import { tunnelsEn } from "./en/tunnels";
 import { snippetsEn } from "./en/snippets";
 import { vaultEn } from "./en/vault";
 import { settingsEn } from "./en/settings";
+import { aiEn } from "./en/ai";
 
 export const en = {
   common: commonEn,
@@ -22,6 +23,7 @@ export const en = {
   snippets: snippetsEn,
   vault: vaultEn,
   settings: settingsEn,
+  ai: aiEn,
 };
 
 export type TranslationSchema = typeof en;
