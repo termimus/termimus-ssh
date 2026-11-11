@@ -51,7 +51,7 @@ export function AuthPromptModal() {
       console.error("Auth prompt response failed:", e);
     } finally {
       setSubmitting(false);
-      setQueue((q) => q.slice(1));
+      setQueue((q) => q.filter((r) => r.request_id !== current.request_id));
     }
   }
 
@@ -61,7 +61,7 @@ export function AuthPromptModal() {
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  });
+  }, [current, submitting]);
 
   if (!current) return null;
 

@@ -11,6 +11,7 @@ import {
   Server,
 } from "lucide-react";
 import { AiProviderSummary, AiProviderInput } from "../../lib/api";
+import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { useAiStore } from "../../stores/useAiStore";
 import { useVaultStore } from "../../stores/useVaultStore";
@@ -74,6 +75,7 @@ const PRESETS: ProviderPreset[] = [
 ];
 
 export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModalProps) {
+  const { t } = useTranslation();
   const { saveProvider, testProvider, fetchOllamaModels } = useAiStore(
     useShallow((s) => ({
       saveProvider: s.saveProvider,
@@ -150,7 +152,7 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
     } catch (err: unknown) {
       setTestResult({
         ok: false,
-        msg: `Could not connect to Ollama: ${err instanceof Error ? err.message : String(err)}`,
+        msg: t("ai.provider.ollamaConnectFailed", { error: err instanceof Error ? err.message : String(err) }),
       });
     } finally {
       setIsScanningOllama(false);
@@ -188,20 +190,20 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
     setSaveError(null);
 
     if (!name.trim()) {
-      setSaveError("Provider name is required.");
+      setSaveError(t("ai.provider.nameRequired"));
       return;
     }
     if (!baseUrl.trim()) {
-      setSaveError("Base URL is required.");
+      setSaveError(t("ai.provider.baseUrlRequired"));
       return;
     }
     if (!modelName.trim()) {
-      setSaveError("Model name is required.");
+      setSaveError(t("ai.provider.modelRequired"));
       return;
     }
 
     if (apiKey.trim() && !isUnlocked) {
-      setSaveError("Security Vault is locked. Please unlock your vault before saving API keys.");
+      setSaveError(t("ai.provider.vaultLocked"));
       return;
     }
 
@@ -236,10 +238,10 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
             </div>
             <div>
               <h3 className="text-base font-semibold text-[var(--text-primary)]">
-                {initialData ? "Edit AI Provider" : "Add AI Provider (BYOK)"}
+                {initialData ? t("ai.provider.editTitle") : t("ai.provider.addTitle")}
               </h3>
               <p className="text-xs text-[var(--text-muted)]">
-                Bring your own key or connect to a local Ollama instance
+                {t("ai.provider.subtitle")}
               </p>
             </div>
           </div>
@@ -257,7 +259,7 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
           {/* Preset Selector */}
           <div>
             <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1.5">
-              Service Preset
+              {t("ai.provider.servicePreset")}
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {PRESETS.map((p) => {
@@ -275,7 +277,7 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
                   >
                     <div className="font-semibold truncate">{p.name}</div>
                     <div className="text-[10px] text-[var(--text-muted)] capitalize truncate">
-                      {p.type === "openai_compatible" ? "OpenAI API" : p.type}
+                      {p.type === "openai_compatible" ? t("ai.provider.openaiApi") : p.type}
                     </div>
                   </button>
                 );
@@ -286,13 +288,13 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
           {/* Provider Name */}
           <div>
             <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-              Provider Display Name
+              {t("ai.provider.displayName")}
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. DeepSeek Primary"
+              placeholder={t("ai.provider.displayNamePlaceholder")}
               className="w-full px-3 py-2 text-xs rounded-xl border border-[var(--border)] bg-[var(--surface-low)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-hidden focus:border-[var(--primary)]/60 focus:ring-1 focus:ring-[var(--primary)]/30 transition-all"
               required
             />
@@ -302,7 +304,7 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-medium text-[var(--text-secondary)]">
-                API Base URL
+                {t("ai.provider.baseUrl")}
               </label>
               {providerType === "ollama" && (
                 <button
@@ -312,7 +314,7 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
                   className="inline-flex items-center gap-1 text-[11px] text-[var(--primary)] hover:text-[var(--primary-hover)] disabled:opacity-50 cursor-pointer"
                 >
                   <RefreshCw className={`w-3 h-3 ${isScanningOllama ? "animate-spin" : ""}`} />
-                  {isScanningOllama ? "Scanning..." : "Scan Installed Models"}
+                  {isScanningOllama ? t("ai.provider.scanning") : t("ai.provider.scanModels")}
                 </button>
               )}
             </div>
@@ -329,7 +331,7 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
           {/* Model Name */}
           <div>
             <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
-              Model Identifier
+              {t("ai.provider.modelId")}
             </label>
             {ollamaModels.length > 0 ? (
               <select
@@ -348,7 +350,7 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
                 type="text"
                 value={modelName}
                 onChange={(e) => setModelName(e.target.value)}
-                placeholder="e.g. deepseek-chat, gpt-4o-mini, qwen2.5-coder:7b"
+                placeholder={t("ai.provider.modelPlaceholder")}
                 className="w-full px-3 py-2 text-xs rounded-xl border border-[var(--border)] bg-[var(--surface-low)] text-[var(--text-primary)] font-mono placeholder-[var(--text-muted)] focus:outline-hidden focus:border-[var(--primary)]/60 focus:ring-1 focus:ring-[var(--primary)]/30 transition-all"
                 required
               />
@@ -359,11 +361,11 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-medium text-[var(--text-secondary)]">
-                API Key (BYOK)
+                {t("ai.provider.apiKey")}
               </label>
               {initialData?.has_api_key && (
                 <span className="text-[11px] text-[var(--success)] flex items-center gap-1 font-medium">
-                  <CheckCircle2 className="w-3 h-3" /> Key saved in Vault
+                  <CheckCircle2 className="w-3 h-3" /> {t("ai.provider.keySaved")}
                 </span>
               )}
             </div>
@@ -374,9 +376,9 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder={
                   initialData?.has_api_key
-                    ? "•••••••••••••••• (Leave blank to keep current key)"
+                    ? t("ai.provider.keyKeepPlaceholder")
                     : providerType === "ollama"
-                    ? "Optional for local Ollama"
+                    ? t("ai.provider.keyOptionalOllama")
                     : "sk-..."
                 }
                 className="w-full px-3 py-2 pr-10 text-xs rounded-xl border border-[var(--border)] bg-[var(--surface-low)] text-[var(--text-primary)] font-mono placeholder-[var(--text-muted)] focus:outline-hidden focus:border-[var(--primary)]/60 focus:ring-1 focus:ring-[var(--primary)]/30 transition-all"
@@ -391,15 +393,15 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
             </div>
             <p className="text-[10px] text-[var(--text-muted)] mt-1">
               {providerType === "ollama"
-                ? "Local Ollama does not require an API key by default."
-                : "Your key is encrypted locally with AES-256-GCM in the Termimus Security Vault."}
+                ? t("ai.provider.keyHintOllama")
+                : t("ai.provider.keyHintVault")}
             </p>
           </div>
 
           {/* Active Provider Toggle */}
           <div className="flex items-center justify-between pt-1">
             <span className="text-xs text-[var(--text-primary)] font-medium">
-              Set as active Copilot provider
+              {t("ai.provider.setActive")}
             </span>
             <input
               type="checkbox"
@@ -446,12 +448,12 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
               {isTesting ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Testing...
+                  {t("ai.provider.testing")}
                 </>
               ) : (
                 <>
                   <Server className="w-3.5 h-3.5" />
-                  Test Connection
+                  {t("ai.provider.testConnection")}
                 </>
               )}
             </button>
@@ -462,7 +464,7 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
                 onClick={onClose}
                 className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container-high)] transition-colors cursor-pointer"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 type="submit"
@@ -470,7 +472,7 @@ export function AiProviderModal({ isOpen, onClose, initialData }: AiProviderModa
                 className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[var(--on-primary)] text-xs font-semibold shadow-xs disabled:opacity-50 transition-colors cursor-pointer"
               >
                 {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                Save Provider
+                {t("ai.provider.save")}
               </button>
             </div>
           </div>

@@ -9,6 +9,7 @@ import {
   Ban,
   PanelRightOpen,
 } from "lucide-react";
+import { Trans, useTranslation } from "react-i18next";
 import { useAiStore } from "../../stores/useAiStore";
 
 /** How long each finished state stays visible before auto-dismissing (ms). */
@@ -25,6 +26,7 @@ const AUTO_HIDE_MS = {
  * or why it was routed to the Copilot sidebar instead.
  */
 export function InlineAiStatus({ sessionId }: { sessionId: string }) {
+  const { t } = useTranslation();
   const state = useAiStore((s) => s.inline[sessionId]);
   const setInline = useAiStore((s) => s.setInline);
   const openSidebar = useAiStore((s) => s.openSidebar);
@@ -82,17 +84,17 @@ export function InlineAiStatus({ sessionId }: { sessionId: string }) {
             <span>
               {state.status === "generating"
                 ? streaming > 0
-                  ? "Writing command…"
-                  : "Generating command…"
+                  ? t("ai.inline.writing")
+                  : t("ai.inline.generating")
                 : state.status === "inserted"
                 ? cmd?.risk === "modifying"
-                  ? "Inserted — modifies the system"
-                  : "Inserted — review, then press Enter"
+                  ? t("ai.inline.insertedModifying")
+                  : t("ai.inline.inserted")
                 : state.status === "review"
-                ? "Needs review"
+                ? t("ai.inline.needsReview")
                 : state.status === "cancelled"
-                ? "Cancelled"
-                : "AI Copilot error"}
+                ? t("ai.inline.cancelled")
+                : t("ai.inline.error")}
             </span>
             {cmd?.needs_sudo && state.status === "inserted" && (
               <span className="rounded-full border border-[var(--warning)]/30 bg-[var(--warning)]/10 px-1.5 text-[9px] text-[var(--warning)]">
@@ -119,7 +121,10 @@ export function InlineAiStatus({ sessionId }: { sessionId: string }) {
 
           {state.status === "generating" && (
             <div className="text-[10px] text-[var(--text-muted)]">
-              Press <kbd className="rounded bg-[var(--surface-container-high)] px-1 font-mono">Esc</kbd> to cancel
+              <Trans
+                i18nKey="ai.inline.escToCancel"
+                components={{ kbd: <kbd className="rounded bg-[var(--surface-container-high)] px-1 font-mono" /> }}
+              />
             </div>
           )}
 
@@ -132,7 +137,7 @@ export function InlineAiStatus({ sessionId }: { sessionId: string }) {
               }}
               className="mt-0.5 inline-flex items-center gap-1 rounded-md border border-current/30 px-1.5 py-0.5 text-[10px] font-medium hover:bg-[var(--surface-container-high)] cursor-pointer"
             >
-              <PanelRightOpen size={11} /> Open AI Copilot
+              <PanelRightOpen size={11} /> {t("ai.inline.openCopilot")}
             </button>
           )}
         </div>
@@ -142,7 +147,7 @@ export function InlineAiStatus({ sessionId }: { sessionId: string }) {
             type="button"
             onClick={() => setInline(sessionId, null)}
             className="shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
-            title="Dismiss"
+            title={t("ai.inline.dismiss")}
           >
             <X size={12} />
           </button>

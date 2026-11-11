@@ -668,11 +668,12 @@ export const useSftpStore = create<SftpState>((set, get) => {
           leftLoading: false,
         });
       } catch (e) {
-        set({
-          leftLoading: false,
-          error: `Left SFTP Connection failed: ${String(e)}`,
-          leftSessionId: null,
-        });
+        // A newer connect/switch already took over the left pane; leave it alone.
+        if (get().leftSessionId !== sessionId) return;
+        // Fall back to Local so the pane isn't stranded as "remote" with no host.
+        set({ leftSessionId: null });
+        await get().setLeftSourceLocal();
+        set({ error: `Left SFTP Connection failed: ${String(e)}` });
       }
     },
 
@@ -713,12 +714,20 @@ export const useSftpStore = create<SftpState>((set, get) => {
           remoteLoading: false,
         });
       } catch (e) {
+        // A newer connect already took over the right pane; leave it alone.
+        if (get().rightSessionId !== sessionId) return;
         set({
           rightLoading: false,
           remoteLoading: false,
           error: `SFTP Connection failed: ${String(e)}`,
           rightSessionId: null,
           remoteSessionId: null,
+          rightHost: null,
+          remoteHost: null,
+          rightEntries: [],
+          remoteEntries: [],
+          rightPath: "/",
+          remotePath: "/",
         });
       }
     },
