@@ -1324,8 +1324,25 @@ pub async fn tunnel_start(
                 )
                 .await
         }
+        // For -R rules, remote_* is the listener bound on the SSH server and
+        // local_* is the destination dialed from this machine.
         ForwardType::Remote => {
-            Err("Remote port forwarding (-R) is not yet supported".to_string())
+            state
+                .tunnel
+                .start_remote_forward(
+                    app,
+                    state.db.clone(),
+                    rule_id,
+                    host.address,
+                    host.port,
+                    host.username,
+                    auth,
+                    rule.remote_address,
+                    rule.remote_port,
+                    rule.local_address,
+                    rule.local_port,
+                )
+                .await
         }
     }
 }

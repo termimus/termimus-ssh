@@ -70,6 +70,7 @@ impl SftpManager {
             address: address.clone(),
             port,
             db,
+            forwarded_tcpip: None,
         };
         let socket = match tokio::net::TcpStream::connect((address.as_str(), port)).await {
             Ok(s) => {
