@@ -68,4 +68,14 @@ export const terminalEn = {
     resetZoom: "Reset",
     copied: "Copied to clipboard",
   },
+  authPrompt: {
+    title: "Additional Authentication",
+    subtitle: "{{target}} requires more verification",
+    submit: "Continue",
+    passwordPlaceholder: "Enter your account password",
+    passwordHint: "The password of your account on this server.",
+    codePlaceholder: "6-digit code",
+    codeHint: "Open your authenticator app and enter the current code.",
+    answerPlaceholder: "Type your answer",
+  },
 };

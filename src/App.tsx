@@ -21,6 +21,7 @@ import { TunnelView } from "./components/tunnels/TunnelView";
 import { SnippetView } from "./components/snippets/SnippetView";
 import { KeychainView } from "./components/keychain/KeychainView";
 import { ConfirmModal } from "./components/layout/ConfirmModal";
+import { AuthPromptModal } from "./components/terminal/AuthPromptModal";
 import { SnippetModal } from "./components/snippets/SnippetModal";
 import { SettingsView } from "./components/settings/SettingsView";
 import { useKeychainStore } from "./stores/useKeychainStore";
@@ -235,6 +236,9 @@ function App() {
 
       {/* App-wide Delete & Action Confirmation Modal */}
       <ConfirmModal />
+
+      {/* SSH keyboard-interactive prompts (password / 2FA code) */}
+      <AuthPromptModal />
     </div>
   );
 }

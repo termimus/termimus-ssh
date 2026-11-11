@@ -1,5 +1,4 @@
 use russh::client::{self, Handle};
-use russh::keys::decode_secret_key;
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::OpenFlags;
 use serde::{Deserialize, Serialize};
@@ -9,6 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tauri::AppHandle;
 use tokio::sync::Mutex;
 
 use crate::db::Database;
@@ -56,6 +56,7 @@ impl SftpManager {
 
     pub async fn connect(
         &self,
+        app: AppHandle,
         db: Arc<Database>,
         session_id: String,
         host_id: String,
@@ -81,21 +82,8 @@ impl SftpManager {
             .await
             .map_err(|e| format!("SFTP SSH connection failed: {e}"))?;
 
-        let authenticated = match auth {
-            SshAuth::Password(password) => handle
-                .authenticate_password(&username, &password)
-                .await
-                .map_err(|e| format!("Auth error: {e}"))?,
-            SshAuth::PrivateKey { pem, passphrase } => {
-                let key_pair = decode_secret_key(&pem, passphrase.as_deref())
-                    .map_err(|e| format!("Invalid private key: {e}"))?;
-                crate::ssh::authenticate_publickey_smart(&mut handle, &username, key_pair).await?
-            }
-        };
-
-        if !authenticated.success() {
-            return Err("Authentication rejected by server".to_string());
-        }
+        let target = format!("{username}@{address}");
+        crate::ssh::authenticate(&mut handle, Some(&app), &target, &username, &auth).await?;
 
         let channel = handle
             .channel_open_session()
