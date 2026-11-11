@@ -55,6 +55,7 @@ Prebuilt installers for every release are published automatically to the **[GitH
 - **Split Panes & Dynamic Layouts**: Split terminals in any direction with resizable dividers, tab drag-and-drop, and auto-grouping tabs (`Web Server (2)`).
 - **Terminal Interconnection & Input Broadcast**: One-click synchronized input across all split panes (`SYNC` toggle / `Alt+B`) to broadcast keystrokes and run commands simultaneously across multiple servers.
 - **Session Geometry Protection**: Background tabs stay mounted without collapsing to 0×0 geometry, preventing remote `htop`, `vim`, and curses TUIs from corrupting due to bogus SIGWINCH events.
+- **Two-Factor Authentication (2FA)**: Keyboard-interactive prompts (e.g. PAM password + OTP / Google Authenticator) are supported after key or password auth, for terminal, SFTP, and tunnel connections.
 - **Quick Connect**: Instant fuzzy-search launcher accessible anywhere with `Ctrl+K`.
 
 ### 🗂️ Workspaces & Multi-Server Cluster Launcher
@@ -65,6 +66,7 @@ Prebuilt installers for every release are published automatically to the **[GitH
 
 ### 📂 Dual-Pane SFTP & In-App Code Editor
 - **Seamless Transfers**: Dual-pane local ↔ remote browser with fast click-to-transfer navigation.
+- **Dynamic Source Pane & Cloud-to-Cloud Transfers**: Switch the source pane from your local machine to any saved host and transfer files directly between two remote servers.
 - **Direct Remote Editor**: View and edit configuration files directly over SFTP with syntax highlighting and keyboard shortcut saving (`Ctrl+S`).
 
 ### 🔑 Keychain & Identity Management
@@ -74,7 +76,7 @@ Prebuilt installers for every release are published automatically to the **[GitH
 - **Password Identities**: Store reusable username & password combinations to assign across multiple hosts without re-typing.
 
 ### 🌐 Port Forwarding & SSH Tunnels
-- **Multi-Type Tunnels**: Support for Local (`-L`), Remote (`-R`), and Dynamic SOCKS5 (`-D`) port forwarding.
+- **Multi-Type Tunnels**: Support for Local (`-L`) and Dynamic SOCKS5 (`-D`) port forwarding.
 - **Live Status Toggles**: Monitor and manage forwarding rules with real-time active indicators.
 
 ### 📜 Snippets & Scripts

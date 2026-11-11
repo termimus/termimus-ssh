@@ -12,6 +12,7 @@ import {
 import { AiProviderSummary } from "../../lib/api";
 import { useShallow } from "zustand/react/shallow";
 import { useAiStore, AI_COPILOT_SHORTCUT_LABEL } from "../../stores/useAiStore";
+import { useConfirmStore } from "../../stores/useConfirmStore";
 import { AiProviderModal } from "./AiProviderModal";
 
 export function AiSettingsTab() {
@@ -25,6 +26,7 @@ export function AiSettingsTab() {
   );
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<AiProviderSummary | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     loadProviders();
@@ -32,33 +34,49 @@ export function AiSettingsTab() {
 
   const handleOpenAdd = () => {
     setEditingProvider(null);
+    setActionError(null);
     setIsModalOpen(true);
   };
 
   const handleOpenEdit = (p: AiProviderSummary) => {
     setEditingProvider(p);
+    setActionError(null);
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete AI provider "${name}"?`)) return;
-    try {
-      await deleteProvider(id);
-    } catch (e) {
-      alert(`Failed to delete AI provider: ${e instanceof Error ? e.message : String(e)}`);
-    }
+  const handleDelete = (id: string, name: string) => {
+    setActionError(null);
+    useConfirmStore.getState().confirm({
+      title: "Delete AI Provider",
+      message: `Are you sure you want to delete AI provider "${name}"?`,
+      confirmLabel: "Delete",
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await deleteProvider(id);
+        } catch (e) {
+          setActionError(`Failed to delete AI provider: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      },
+    });
   };
 
   const handleSetActive = async (id: string) => {
+    setActionError(null);
     try {
       await setActiveProvider(id);
     } catch (e) {
-      alert(`Failed to activate AI provider: ${e instanceof Error ? e.message : String(e)}`);
+      setActionError(`Failed to activate AI provider: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
   return (
     <div className="space-y-6">
+      {actionError && (
+        <div className="rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-4 py-2.5 text-xs text-[var(--danger)]">
+          {actionError}
+        </div>
+      )}
       {/* Overview Card */}
       <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-container-low)] p-5">
         <div className="flex items-start justify-between gap-4">
