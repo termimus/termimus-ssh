@@ -4,6 +4,13 @@ import { KeyRound, X, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api, AuthPromptRequest } from "../../lib/api";
 
+/** Classifies a server prompt so the field can show a fitting placeholder and hint. */
+function promptKind(prompt: string): "password" | "code" | "answer" {
+  if (/code|otp|token|verification|2fa/i.test(prompt)) return "code";
+  if (/password|passphrase/i.test(prompt)) return "password";
+  return "answer";
+}
+
 /**
  * Answers SSH keyboard-interactive prompts (e.g. `AuthenticationMethods
  * publickey,keyboard-interactive` with PAM password + Google Authenticator).
@@ -99,23 +106,33 @@ export function AuthPromptModal() {
         )}
 
         <div className="space-y-3 mb-5">
-          {current.prompts.map((p, i) => (
-            <label key={`${current.request_id}-${i}`} className="block">
-              <span className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">
-                {p.prompt.trim()}
-              </span>
-              <input
-                type={p.echo ? "text" : "password"}
-                autoFocus={i === 0}
-                autoComplete={/code|otp|token|verification/i.test(p.prompt) ? "one-time-code" : "off"}
-                value={answers[i] ?? ""}
-                onChange={(e) =>
-                  setAnswers((a) => a.map((v, j) => (j === i ? e.target.value : v)))
-                }
-                className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] font-mono outline-none focus:border-[var(--primary)]"
-              />
-            </label>
-          ))}
+          {current.prompts.map((p, i) => {
+            const kind = promptKind(p.prompt);
+            return (
+              <label key={`${current.request_id}-${i}`} className="block">
+                <span className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">
+                  {p.prompt.trim().replace(/:$/, "")}
+                </span>
+                <input
+                  type={p.echo ? "text" : "password"}
+                  autoFocus={i === 0}
+                  autoComplete={kind === "code" ? "one-time-code" : "off"}
+                  inputMode={kind === "code" ? "numeric" : undefined}
+                  placeholder={t(`terminal.authPrompt.${kind}Placeholder`)}
+                  value={answers[i] ?? ""}
+                  onChange={(e) =>
+                    setAnswers((a) => a.map((v, j) => (j === i ? e.target.value : v)))
+                  }
+                  className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] font-mono outline-none placeholder:font-sans placeholder:text-[var(--text-muted)] focus:border-[var(--primary)]"
+                />
+                {kind !== "answer" && (
+                  <span className="mt-1 block text-[11px] leading-snug text-[var(--text-muted)]">
+                    {t(`terminal.authPrompt.${kind}Hint`)}
+                  </span>
+                )}
+              </label>
+            );
+          })}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] pt-3.5">

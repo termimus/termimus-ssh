@@ -74,5 +74,10 @@ export const terminalId: typeof terminalEn = {
     title: "Autentikasi Tambahan",
     subtitle: "{{target}} memerlukan verifikasi tambahan",
     submit: "Lanjutkan",
+    passwordPlaceholder: "Masukkan kata sandi akun Anda",
+    passwordHint: "Kata sandi akun Anda di server ini.",
+    codePlaceholder: "Kode 6 digit",
+    codeHint: "Buka aplikasi authenticator Anda dan masukkan kode yang sedang berlaku.",
+    answerPlaceholder: "Ketik jawaban Anda",
   },
 };

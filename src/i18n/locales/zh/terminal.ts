@@ -74,5 +74,10 @@ export const terminalZh: typeof terminalEn = {
     title: "附加身份验证",
     subtitle: "{{target}} 需要进一步验证",
     submit: "继续",
+    passwordPlaceholder: "输入您的账户密码",
+    passwordHint: "您在此服务器上的账户密码。",
+    codePlaceholder: "6 位验证码",
+    codeHint: "打开身份验证器应用并输入当前验证码。",
+    answerPlaceholder: "输入您的回答",
   },
 };
