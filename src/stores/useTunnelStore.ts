@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { listen } from "@tauri-apps/api/event";
+import i18n from "../i18n";
 import { api, PortForwardRule, PortForwardInput } from "../lib/api";
 
 interface TunnelState {
@@ -80,3 +82,20 @@ export const useTunnelStore = create<TunnelState>((set, get) => ({
   openEditModal: (rule) => set({ isModalOpen: true, editingRule: rule }),
   closeModal: () => set({ isModalOpen: false, editingRule: null }),
 }));
+
+// The backend emits this whenever a tunnel task ends — including on its own
+// (SSH connection lost, listener error), when no user action would trigger a
+// refresh. Re-read the authoritative active list rather than patching the set
+// locally, so a quick Stop → Start of the same rule can't be clobbered by the
+// old run's late event.
+listen<{ rule_id: string; unexpected: boolean }>("tunnel-ended", async (event) => {
+  const { rule_id, unexpected } = event.payload;
+  const store = useTunnelStore.getState();
+  await store.refresh();
+  if (unexpected && !useTunnelStore.getState().activeRuleIds.has(rule_id)) {
+    const rule = useTunnelStore.getState().rules.find((r) => r.id === rule_id);
+    useTunnelStore.setState({
+      error: i18n.t("tunnels.connectionLost", { label: rule?.label ?? rule_id }),
+    });
+  }
+}).catch((e) => console.error("Failed to listen tunnel-ended:", e));

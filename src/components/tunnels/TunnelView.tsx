@@ -358,6 +358,14 @@ const TunnelCard = memo(function TunnelCard({
 }: TunnelCardProps) {
   const { t } = useTranslation();
   const isDynamic = rule.forward_type === "dynamic";
+  // -R rules listen on the server (remote_*) and dial local_* from this machine.
+  const isRemote = rule.forward_type === "remote";
+  const listen = isRemote
+    ? { label: t("tunnels.serverLabel"), addr: `${rule.remote_address}:${rule.remote_port}` }
+    : { label: t("tunnels.localLabel"), addr: `${rule.local_address}:${rule.local_port}` };
+  const target = isRemote
+    ? `${rule.local_address}:${rule.local_port}`
+    : `${rule.remote_address}:${rule.remote_port}`;
 
   return (
     <div
@@ -383,6 +391,10 @@ const TunnelCard = memo(function TunnelCard({
           {isDynamic ? (
             <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
               SOCKS5
+            </span>
+          ) : isRemote ? (
+            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium font-mono bg-amber-500/15 text-amber-400 border border-amber-500/30">
+              Remote
             </span>
           ) : (
             <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium font-mono bg-sky-500/15 text-sky-400 border border-sky-500/30">
@@ -414,10 +426,8 @@ const TunnelCard = memo(function TunnelCard({
       {/* Endpoint Routing Diagram */}
       <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-2.5 text-xs mb-3 space-y-1 font-mono">
         <div className="flex items-center justify-between text-[var(--text-muted)]">
-          <span>{t("tunnels.localLabel")}</span>
-          <span className="text-[var(--accent)] font-semibold">
-            {rule.local_address}:{rule.local_port}
-          </span>
+          <span>{listen.label}</span>
+          <span className="text-[var(--accent)] font-semibold">{listen.addr}</span>
         </div>
         <div className="flex items-center justify-between text-[var(--text-muted)]">
           <span>{t("tunnels.targetLabel")}</span>
@@ -427,9 +437,7 @@ const TunnelCard = memo(function TunnelCard({
               {t("tunnels.dynamicTarget")}
             </span>
           ) : (
-            <span className="text-[var(--text-primary)]">
-              {rule.remote_address}:{rule.remote_port}
-            </span>
+            <span className="text-[var(--text-primary)]">{target}</span>
           )}
         </div>
       </div>

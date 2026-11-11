@@ -180,3 +180,27 @@
     backface-visibility: hidden;
   }
 }
+
+/* Port-forwarding diagram: dashes flowing along a tunnel connector. */
+@keyframes tunnel-flow {
+  to {
+    background-position: 12px 0;
+  }
+}
+.tunnel-flow {
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--primary) 0 6px,
+    transparent 6px 12px
+  );
+  background-size: 12px 100%;
+  animation: tunnel-flow 0.6s linear infinite;
+}
+.tunnel-flow-reverse {
+  animation-direction: reverse;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tunnel-flow {
+    animation: none;
+  }
+}
