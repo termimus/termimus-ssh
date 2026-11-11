@@ -31,7 +31,8 @@ import { TerminalHighlighter } from "../../lib/terminalHighlighter";
 import { findPaneContainingTab } from "../../lib/layoutTree";
 import { ConnectionProgress, ConnectionLog } from "./ConnectionProgress";
 import { TerminalSearchBar } from "./TerminalSearchBar";
-import { useAiStore, AI_COPILOT_SHORTCUT_LABEL, AI_BUSY_MESSAGE } from "../../stores/useAiStore";
+import { useAiStore, AI_COPILOT_SHORTCUT_LABEL, aiBusyMessage } from "../../stores/useAiStore";
+import i18n from "../../i18n";
 import { buildAiRequest, parseInlineQuery, isInsertableCommand } from "../../lib/aiContext";
 import { InlineAiStatus } from "./InlineAiStatus";
 import {
@@ -205,7 +206,7 @@ async function runInlineAi(sessionId: string, query: string) {
     ai.setInline(sessionId, {
       status: "error",
       prompt: query,
-      message: "No AI provider configured — open Settings › AI Copilot.",
+      message: i18n.t("ai.inline.noProvider"),
     });
     return;
   }
@@ -213,7 +214,7 @@ async function runInlineAi(sessionId: string, query: string) {
   // From here on everything up to generateCommand() is synchronous, so the
   // generate slot is claimed before any other request can start.
   if (useAiStore.getState().isGenerating) {
-    ai.setInline(sessionId, { status: "error", prompt: query, message: AI_BUSY_MESSAGE });
+    ai.setInline(sessionId, { status: "error", prompt: query, message: aiBusyMessage() });
     return;
   }
   ai.setInline(sessionId, { status: "generating", prompt: query });
@@ -233,7 +234,7 @@ async function runInlineAi(sessionId: string, query: string) {
       sessionId,
       outcome.cancelled
         ? { status: "cancelled", prompt: query }
-        : { status: "error", prompt: query, message: outcome.error ?? "Generation failed." }
+        : { status: "error", prompt: query, message: outcome.error ?? i18n.t("ai.generationFailed") }
     );
     return;
   }
@@ -254,10 +255,10 @@ async function runInlineAi(sessionId: string, query: string) {
       command: result,
       message:
         result.risk === "destructive"
-          ? "Destructive command — review it in AI Copilot before running."
+          ? i18n.t("ai.inline.reviewDestructive")
           : gate !== "none"
-          ? "Production host — review it in AI Copilot before running."
-          : "Multi-line command — review it in AI Copilot.",
+          ? i18n.t("ai.inline.reviewProduction")
+          : i18n.t("ai.inline.reviewMultiline"),
     });
     st.openSidebar(sessionId);
     return;
@@ -271,7 +272,7 @@ async function runInlineAi(sessionId: string, query: string) {
       status: "review",
       prompt: query,
       command: result,
-      message: "The line changed while generating — the result is in AI Copilot.",
+      message: i18n.t("ai.inline.lineChanged"),
     });
     st.openSidebar(sessionId);
     return;
@@ -1259,7 +1260,7 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
           >
             <div className="flex items-center gap-2">
               <Sparkles size={13} className="text-[var(--primary)] group-hover:text-black" />
-              <span>AI Copilot</span>
+              <span>{t("settings.tabs.ai")}</span>
             </div>
             <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
               {AI_COPILOT_SHORTCUT_LABEL}

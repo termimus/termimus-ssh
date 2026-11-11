@@ -11,6 +11,7 @@ import {
 } from "../lib/api";
 import { listen } from "@tauri-apps/api/event";
 import { useRightPanelStore } from "./useRightPanelStore";
+import i18n from "../i18n";
 
 /** Display label for the Copilot toggle shortcut (Alt+I, or Cmd+I on macOS). */
 export const AI_COPILOT_SHORTCUT_LABEL =
@@ -47,7 +48,8 @@ export interface AiOutcome<T> {
   busy?: boolean;
 }
 
-export const AI_BUSY_MESSAGE = "AI Copilot is busy with another request.";
+/** Resolved at call time so it follows the current UI language. */
+export const aiBusyMessage = () => i18n.t("ai.busy");
 
 export type EnvironmentStatus = "detecting" | "ready" | "failed";
 
@@ -179,7 +181,7 @@ export const useAiStore = create<AiState>((set, get) => {
     const busyKey = isGen ? "isGenerating" : "isExplaining";
 
     // Claim the slot synchronously — no await before this point.
-    if (get()[busyKey]) return { value: null, busy: true, error: AI_BUSY_MESSAGE };
+    if (get()[busyKey]) return { value: null, busy: true, error: aiBusyMessage() };
     const requestId = newRequestId();
     set((s) => ({
       [busyKey]: true,
@@ -203,7 +205,7 @@ export const useAiStore = create<AiState>((set, get) => {
       base = {
         id: requestId,
         mode,
-        prompt: input.prompt || (isGen ? "" : "Diagnose terminal error"),
+        prompt: input.prompt || (isGen ? "" : i18n.t("ai.diagnosePrompt")),
         timestamp: nowLabel(),
         sessionId: input.session_id,
         hostLabel: input.host_label ?? undefined,

@@ -19,6 +19,7 @@ import {
   Ban,
 } from "lucide-react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { Trans, useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import {
   useAiStore,
@@ -52,12 +53,6 @@ interface RunnableCommand {
   hostLabel?: string;
 }
 
-const RISK_LABEL: Record<AiRiskLevel, string> = {
-  safe: "Safe / Read-only",
-  modifying: "Modifies System",
-  destructive: "Destructive Action",
-};
-
 function describeEnvironment(env: TerminalEnvironment): string {
   const user = env.user ? `${env.user}${env.is_root ? " (root)" : ""}` : null;
   return [env.os_name, env.shell, user].filter(Boolean).join(" · ");
@@ -72,6 +67,7 @@ async function copyToClipboard(text: string) {
 }
 
 export function AiSidebar({ active = true }: { active?: boolean }) {
+  const { t } = useTranslation();
   const {
     activeProvider,
     loadProviders,
@@ -198,12 +194,12 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
       risk: item.risk,
       reasons: item.reasons,
       explanation: item.explanation,
-      targetLabel: isLocal ? "Local Machine" : activeTab.hostLabel,
+      targetLabel: isLocal ? t("sftp.localMachine") : activeTab.hostLabel,
       targetAddress: isLocal ? undefined : activeTab.hostAddress,
       isProduction,
       mode: gate,
       note: crossSession
-        ? `Generated for "${item.hostLabel ?? "another terminal"}", but will run in the active terminal.`
+        ? t("ai.sidebar.crossSessionNote", { host: item.hostLabel ?? t("ai.sidebar.anotherTerminal") })
         : undefined,
     });
   };
@@ -245,7 +241,7 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
   return (
     <div
       className="flex h-full w-full min-h-0 flex-col overflow-hidden bg-[var(--canvas)] select-none"
-      aria-label="AI Copilot Sidebar"
+      aria-label={t("ai.sidebar.ariaLabel")}
     >
       {/* ── Top Header ──────────────────────────────────────────────────────── */}
       <div className="flex h-11 shrink-0 items-center justify-between gap-1 border-b border-[var(--border)] px-2">
@@ -256,7 +252,7 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
             <button
               type="button"
               onClick={clearHistory}
-              title="Clear Interaction History"
+              title={t("ai.sidebar.clearHistory")}
               className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -266,7 +262,7 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
           <button
             type="button"
             onClick={() => setIsSettingsModalOpen(true)}
-            title="Configure AI Provider"
+            title={t("ai.sidebar.configureProvider")}
             className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container)] transition-colors cursor-pointer"
           >
             <Settings className="w-3.5 h-3.5" />
@@ -296,15 +292,15 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
               className="flex items-center gap-1 text-[11px] text-[var(--warning)] hover:underline cursor-pointer"
             >
               <AlertTriangle className="w-3 h-3" />
-              <span>Configure AI Provider (BYOK)</span>
+              <span>{t("ai.sidebar.configureProviderByok")}</span>
             </button>
           )}
 
           {/* Target Host Indicator */}
           <div className="flex items-center gap-1.5 text-[11px] font-mono text-[var(--text-muted)] truncate">
             <TerminalIcon className="w-3 h-3 text-[var(--primary)] shrink-0" />
-            <span className="truncate max-w-[110px]" title={activeTab?.hostLabel || "Local Machine"}>
-              {activeTab?.hostLabel || "Local"}
+            <span className="truncate max-w-[110px]" title={activeTab?.hostLabel || t("sftp.localMachine")}>
+              {activeTab?.hostLabel || t("ai.sidebar.localShort")}
             </span>
             {!isLocal && isProductionHost(host?.tags) && (
               <span className="shrink-0 rounded-full border border-[var(--danger)]/40 bg-[var(--danger)]/15 px-1 text-[9px] font-bold uppercase text-[var(--danger)]">
@@ -338,10 +334,10 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
               <span className="truncate">{describeEnvironment(environment)}</span>
             ) : environmentStatus === "detecting" ? (
               <span className="flex items-center gap-1">
-                <Loader2 className="w-2.5 h-2.5 animate-spin" /> Detecting environment…
+                <Loader2 className="w-2.5 h-2.5 animate-spin" /> {t("ai.sidebar.detectingEnv")}
               </span>
             ) : environmentStatus === "failed" ? (
-              <span className="text-[var(--warning)]">Environment unknown — using host defaults</span>
+              <span className="text-[var(--warning)]">{t("ai.sidebar.envUnknown")}</span>
             ) : null}
           </div>
         )}
@@ -362,7 +358,7 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
                   : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               }`}
             >
-              {m === "generate" ? "Generate Command" : "Explain Error"}
+              {m === "generate" ? t("ai.sidebar.modeGenerate") : t("ai.sidebar.modeExplain")}
             </button>
           ))}
         </div>
@@ -377,28 +373,28 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
               <Sparkles className="w-5 h-5" />
             </div>
             <h4 className="text-xs font-semibold text-[var(--text-primary)]">
-              {mode === "generate" ? "What do you want to do?" : "Something went wrong?"}
+              {mode === "generate" ? t("ai.sidebar.emptyGenerateTitle") : t("ai.sidebar.emptyExplainTitle")}
             </h4>
             <p className="text-[11px] text-[var(--text-muted)] mt-1.5 leading-relaxed max-w-xs mx-auto">
               {mode === "generate"
-                ? "Describe it in plain words and get a command for this server."
-                : "Copilot reads the recent output and tells you how to fix it."}
+                ? t("ai.sidebar.emptyGenerateDesc")
+                : t("ai.sidebar.emptyExplainDesc")}
             </p>
 
             <div className="mt-4 pt-3 border-t border-[var(--border)]/40 text-left space-y-1.5 text-[11px] text-[var(--text-muted)] font-mono">
               <div className="text-[10px] uppercase font-semibold text-[var(--text-secondary)]">
-                Examples
+                {t("ai.sidebar.examples")}
               </div>
               {(mode === "generate"
                 ? [
-                    ["Show disk usage per folder, largest first", "Disk usage per folder"],
-                    ["Show the top 5 processes by memory usage", "Top memory processes"],
-                    ["List failed services and their recent logs", "Failed services"],
+                    [t("ai.sidebar.exGenDisk"), t("ai.sidebar.exGenDiskShort")],
+                    [t("ai.sidebar.exGenMemory"), t("ai.sidebar.exGenMemoryShort")],
+                    [t("ai.sidebar.exGenFailed"), t("ai.sidebar.exGenFailedShort")],
                   ]
                 : [
-                    ["Why did the last command fail?", "Why did it fail?"],
-                    ["How do I fix this permission error?", "Fix permission error"],
-                    ["Why won't this service start?", "Service won't start"],
+                    [t("ai.sidebar.exExpWhy"), t("ai.sidebar.exExpWhyShort")],
+                    [t("ai.sidebar.exExpPermission"), t("ai.sidebar.exExpPermissionShort")],
+                    [t("ai.sidebar.exExpService"), t("ai.sidebar.exExpServiceShort")],
                   ]
               ).map(([full, short]) => (
                 <button
@@ -438,12 +434,12 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
                 {inProgress ? (
                   <>
                     <Loader2 className="w-3 h-3 animate-spin" />
-                    {environmentStatus === "detecting" && !currentResult ? "Detecting environment..." : "Synthesizing..."}
+                    {environmentStatus === "detecting" && !currentResult ? t("ai.sidebar.detectingEnv") : t("ai.sidebar.synthesizing")}
                   </>
                 ) : (
                   <>
                     <CheckCircle2 className="w-3 h-3" />
-                    Latest Result
+                    {t("ai.sidebar.latestResult")}
                   </>
                 )}
               </span>
@@ -481,7 +477,7 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
                 onChange={(e) => setIncludeBuffer(e.target.checked)}
                 className="w-3.5 h-3.5 rounded border-[var(--border)] accent-[var(--primary)] text-[var(--primary)] focus:ring-[var(--primary)] cursor-pointer"
               />
-              <span>Send sanitized terminal output (50 lines)</span>
+              <span>{t("ai.sidebar.sendBuffer")}</span>
             </label>
           </div>
 
@@ -494,8 +490,8 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
               onKeyDown={handleKeyDown}
               placeholder={
                 mode === "generate"
-                  ? "Describe command (e.g. 'find all .log files and delete')..."
-                  : "Explain error (press Enter to diagnose terminal output)..."
+                  ? t("ai.sidebar.placeholderGenerate")
+                  : t("ai.sidebar.placeholderExplain")
               }
               className="w-full resize-none p-2.5 pr-14 text-xs rounded-xl border border-[var(--border)] bg-[var(--surface-low)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-hidden focus:border-[var(--primary)]/60 focus:ring-1 focus:ring-[var(--primary)]/30 transition-all font-sans leading-relaxed"
             />
@@ -505,7 +501,7 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
                 type="button"
                 onClick={() => void cancelInFlight()}
                 className="absolute right-2 bottom-2.5 p-1.5 rounded-lg bg-[var(--danger)] hover:opacity-90 text-white transition-colors flex items-center justify-center shadow-xs cursor-pointer"
-                title="Stop generating"
+                title={t("ai.sidebar.stop")}
               >
                 <Square className="w-3.5 h-3.5 fill-current" />
               </button>
@@ -514,7 +510,7 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
                 type="submit"
                 disabled={inProgress || (mode === "generate" && !prompt.trim())}
                 className="absolute right-2 bottom-2.5 p-1.5 rounded-lg bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[var(--on-primary)] disabled:opacity-40 transition-colors flex items-center justify-center shadow-xs cursor-pointer"
-                title="Send to AI (Enter)"
+                title={t("ai.sidebar.send")}
               >
                 {inProgress ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -527,13 +523,17 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
 
           <div className="flex flex-col gap-0.5 text-[10px] text-[var(--text-muted)] px-0.5">
             <span>
-              Tip: type <kbd className="font-mono bg-[var(--surface-container-high)] px-1 rounded"># your request</kbd> in the terminal and press{" "}
-              <kbd className="font-mono bg-[var(--surface-container-high)] px-1 rounded">Enter</kbd> or{" "}
-              <kbd className="font-mono bg-[var(--surface-container-high)] px-1 rounded">{AI_COPILOT_SHORTCUT_LABEL}</kbd>
+              <Trans
+                i18nKey="ai.sidebar.tipInline"
+                values={{ shortcut: AI_COPILOT_SHORTCUT_LABEL }}
+                components={{ kbd: <kbd className="font-mono bg-[var(--surface-container-high)] px-1 rounded" /> }}
+              />
             </span>
             <span>
-              Press <kbd className="font-mono bg-[var(--surface-container-high)] px-1 rounded">Enter</kbd> to ask,{" "}
-              <kbd className="font-mono bg-[var(--surface-container-high)] px-1 rounded">Shift+Enter</kbd> for newline
+              <Trans
+                i18nKey="ai.sidebar.tipKeys"
+                components={{ kbd: <kbd className="font-mono bg-[var(--surface-container-high)] px-1 rounded" /> }}
+              />
             </span>
           </div>
         </form>
@@ -568,6 +568,7 @@ interface HistoryCardProps {
 }
 
 function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardProps) {
+  const { t } = useTranslation();
   const cmd = item.command;
   // Only complete, structured generate results are runnable — never a partial
   // (cancelled) command or an explanation.
@@ -578,7 +579,7 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardPro
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[var(--surface-container-high)] text-[var(--text-secondary)] uppercase">
-            {item.mode}
+            {t(`ai.mode.${item.mode}`)}
           </span>
           <span className="text-[10px] text-[var(--text-muted)] font-mono">{item.timestamp}</span>
           {item.hostLabel && (
@@ -596,7 +597,7 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardPro
           {cmd && !item.cancelled && <RiskBadge risk={cmd.risk} reasons={cmd.risk_reasons} />}
           {item.cancelled && (
             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold border border-[var(--border)] text-[var(--text-muted)]">
-              <Ban className="w-2.5 h-2.5" /> Cancelled
+              <Ban className="w-2.5 h-2.5" /> {t("ai.sidebar.cancelled")}
             </span>
           )}
         </div>
@@ -625,7 +626,7 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardPro
             </div>
           ) : (
             item.cancelled && (
-              <div className="text-[11px] text-[var(--text-muted)] italic">Stopped before any output.</div>
+              <div className="text-[11px] text-[var(--text-muted)] italic">{t("ai.sidebar.stoppedEmpty")}</div>
             )
           )}
 
@@ -641,7 +642,7 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardPro
                 type="button"
                 onClick={() => onCopy(item.result, item.id)}
                 className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container-high)] transition-colors cursor-pointer"
-                title="Copy"
+                title={t("common.copy")}
               >
                 {isCopied ? (
                   <Check className="w-3 h-3 text-[var(--success)]" />
@@ -658,13 +659,13 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardPro
                     disabled={!isInsertableCommand(cmd.command.trim())}
                     title={
                       isInsertableCommand(cmd.command.trim())
-                        ? "Insert command without executing"
-                        : "Multi-line command — use Run (with review) or Copy"
+                        ? t("ai.sidebar.insertTitle")
+                        : t("ai.sidebar.insertMultiline")
                     }
                     className="disabled:opacity-40 disabled:cursor-not-allowed px-2 py-0.5 rounded-md border border-[var(--border)] bg-[var(--surface-low)] text-[10px] font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container-high)] flex items-center gap-1 transition-colors cursor-pointer"
                   >
                     <ArrowRight className="w-3 h-3" />
-                    Insert
+                    {t("ai.sidebar.insert")}
                   </button>
 
                   <button
@@ -679,7 +680,7 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardPro
                         hostLabel: item.hostLabel,
                       })
                     }
-                    title={cmd.risk === "safe" ? "Run command in terminal" : "Review & run command"}
+                    title={cmd.risk === "safe" ? t("ai.sidebar.runTitle") : t("ai.sidebar.runReviewTitle")}
                     className={`px-2.5 py-0.5 rounded-md text-[10px] font-semibold flex items-center gap-1 shadow-xs transition-colors cursor-pointer ${
                       cmd.risk === "destructive"
                         ? "bg-[var(--danger)] text-white hover:opacity-90"
@@ -687,7 +688,7 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardPro
                     }`}
                   >
                     <Play className="w-3 h-3 fill-current" />
-                    Run
+                    {t("ai.sidebar.run")}
                   </button>
                 </>
               )}
@@ -700,6 +701,7 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardPro
 }
 
 function RiskBadge({ risk, reasons }: { risk: AiRiskLevel; reasons?: string[] }) {
+  const { t } = useTranslation();
   return (
     <span
       title={reasons && reasons.length > 0 ? reasons.join("\n") : undefined}
@@ -718,7 +720,7 @@ function RiskBadge({ risk, reasons }: { risk: AiRiskLevel; reasons?: string[] })
       ) : (
         <ShieldCheck className="w-2.5 h-2.5" />
       )}
-      {RISK_LABEL[risk]}
+      {t(`ai.risk.${risk}`)}
     </span>
   );
 }
