@@ -49,6 +49,8 @@ export const workspacesZh: typeof workspacesEn = {
     triple: "Web + DB + Worker（3）",
     quad: "四微服务（4）",
   },
+  missingHostsBadge: "缺失 {{count}} 个",
+  missingHostsBadgeTitle: "有 {{count}} 个分栏未分配主机或指向已删除的主机。点击重新分配。",
   deleteConfirm: {
     title: "删除工作区预设",
     message: "确定要删除 \"{{name}}\" 吗？此操作不可撤销。",

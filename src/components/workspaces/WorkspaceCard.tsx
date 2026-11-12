@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Play,
   Pencil,
   Trash2,
   Copy,
   Radio,
+  AlertTriangle,
   Loader2,
   Server,
 } from "lucide-react";
@@ -18,6 +19,7 @@ import { useHostStore } from "../../stores/useHostStore";
 import { usePingStore } from "../../stores/usePingStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
 import { DistroBadge } from "../hosts/DistroBadge";
+import { resolvePresetHosts } from "../../lib/workspaceLayout";
 
 interface WorkspaceCardProps {
   preset: WorkspacePreset;
@@ -169,6 +171,11 @@ export function WorkspaceCard({
   const [isLaunching, setIsLaunching] = useState(false);
 
   const layoutMeta = getLayoutMeta(preset.layout);
+  // Pane slots with no host or a host deleted since the preset was saved.
+  const missingCount = useMemo(
+    () => resolvePresetHosts(preset, hosts).missing,
+    [preset, hosts]
+  );
 
   // Map nodes to hosts
   const assignedNodes = preset.nodes.map((node) => {
@@ -225,6 +232,17 @@ export function WorkspaceCard({
                   <Radio size={10} className="animate-pulse" />
                   <span>{t("workspaces.broadcastBadge")}</span>
                 </span>
+              )}
+              {missingCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onEdit(preset)}
+                  title={t("workspaces.missingHostsBadgeTitle", { count: missingCount })}
+                  className="flex items-center gap-1 rounded bg-[var(--warning)]/15 px-1.5 py-0.5 text-[10px] font-mono text-[var(--warning)] shrink-0 hover:bg-[var(--warning)]/25 transition-colors cursor-pointer"
+                >
+                  <AlertTriangle size={10} />
+                  <span>{t("workspaces.missingHostsBadge", { count: missingCount })}</span>
+                </button>
               )}
             </div>
             {preset.description ? (

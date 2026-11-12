@@ -49,6 +49,8 @@ export const workspacesId: typeof workspacesEn = {
     triple: "Web + DB + Worker (3)",
     quad: "Empat Microservice (4)",
   },
+  missingHostsBadge: "{{count}} hilang",
+  missingHostsBadgeTitle: "{{count}} panel tidak punya host atau merujuk ke host yang sudah dihapus. Klik untuk memilih ulang.",
   deleteConfirm: {
     title: "Hapus Preset Ruang Kerja",
     message: "Apakah Anda yakin ingin menghapus \"{{name}}\"? Tindakan ini tidak dapat dibatalkan.",

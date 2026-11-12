@@ -124,4 +124,5 @@ export const hostsZh: typeof hostsEn = {
     usernameRequired: "用户名不能为空",
     keyRequired: "请从钥匙串中选择一个 SSH 密钥",
   },
+  deleteUsedByPresets: "该主机被 {{count}} 个工作区预设使用：{{names}}。这些分栏需要分配新主机后才能启动。",
 };

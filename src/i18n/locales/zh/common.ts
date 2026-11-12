@@ -31,4 +31,11 @@ export const commonZh: typeof commonEn = {
   selectOption: "请选择选项...",
   noOptionsAvailable: "无可用选项",
   noMatchesFor: "未找到与 \"{{query}}\" 匹配的项",
+  errorBoundary: {
+    title: "此视图出现错误",
+    description: "应用的其他部分仍在运行，已打开的 SSH 会话不受影响。请重试，或重新加载应用（重新加载会关闭已打开的终端标签页）。",
+    details: "错误详情",
+    retry: "重试",
+    reload: "重新加载应用",
+  },
 };
