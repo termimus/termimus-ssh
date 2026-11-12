@@ -85,4 +85,8 @@ export const terminalEn = {
     savePresetTitle: "Save this split screen as a Workspace Preset",
     disconnect: "Disconnect",
   },
+  maximizedBanner: {
+    hint: "Pane Maximized — Press ESC or click Restore to exit",
+    restore: "Restore Split",
+  },
 };

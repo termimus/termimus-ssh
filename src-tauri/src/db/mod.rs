@@ -768,7 +768,7 @@ impl Database {
     pub fn list_workspace_presets(&self) -> Result<Vec<WorkspacePreset>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, layout, nodes, broadcast_on_launch, created_at, updated_at FROM workspace_presets ORDER BY name ASC"
+            "SELECT id, name, description, layout, nodes, broadcast_on_launch, created_at, updated_at FROM workspace_presets ORDER BY name COLLATE NOCASE ASC"
         )?;
 
         let presets = stmt.query_map([], |row| {
@@ -1333,6 +1333,12 @@ impl Database {
 
         let mut workspace_presets_imported: usize = 0;
         for preset in &bundle.workspace_presets {
+            // Bundles come from files and the sync server, so they may carry a
+            // layout this version can't render or launch: skip those presets
+            // rather than store unusable rows.
+            if !WorkspacePreset::is_known_layout(&preset.layout) {
+                continue;
+            }
             if !replace_all {
                 if let Ok(Some(del_at)) = self.is_tombstoned("workspace_preset", &preset.id) {
                     if preset.updated_at <= del_at {

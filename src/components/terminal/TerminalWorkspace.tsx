@@ -183,14 +183,14 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
                   <div className="relative flex h-full w-full flex-col overflow-hidden">
                     <div className="flex items-center justify-between bg-[var(--surface-container)] px-3 py-1 text-xs text-[var(--primary)] border-b border-[var(--primary)]/30">
                       <span className="font-mono text-[11px] font-medium">
-                        Pane Maximized — Press ESC or click Restore to exit
+                        {t("terminal.maximizedBanner.hint")}
                       </span>
                       <button
                         onClick={() => toggleMaximizePane(groupMaximizedPane.id)}
                         className="flex items-center gap-1 rounded bg-[var(--primary)]/15 px-2 py-0.5 text-xs text-[var(--primary)] hover:bg-[var(--primary)]/25 transition-colors"
                       >
                         <Minimize2 size={12} />
-                        <span>Restore Split</span>
+                        <span>{t("terminal.maximizedBanner.restore")}</span>
                       </button>
                     </div>
                     <div className="flex-1 overflow-hidden">

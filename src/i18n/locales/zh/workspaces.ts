@@ -6,7 +6,6 @@ export const workspacesZh: typeof workspacesEn = {
   newWorkspace: "新建预设",
   launch: "启动工作区",
   launchCluster: "启动集群",
-  launching: "正在连接并分屏...",
   edit: "编辑工作区",
   delete: "删除工作区",
   duplicate: "复制预设",

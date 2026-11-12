@@ -1404,16 +1404,6 @@ pub fn snippet_delete(state: State<AppState>, id: String) -> Result<(), String> 
 
 // ================= WORKSPACE PRESET COMMANDS =================
 
-/// Layouts the frontend can render and launch (`PRESET_LAYOUTS` in
-/// `src/lib/workspaceLayout.ts`). Keep both lists in sync.
-const WORKSPACE_PRESET_LAYOUTS: &[&str] = &[
-    "split-vertical",
-    "split-horizontal",
-    "grid-4",
-    "split-1-2",
-    "split-2-1",
-    "triple-column",
-];
 
 #[tauri::command]
 pub fn workspace_preset_list(state: State<AppState>) -> Result<Vec<WorkspacePreset>, String> {
@@ -1426,7 +1416,7 @@ pub fn workspace_preset_save(
     input: WorkspacePresetInput,
     preset_id: Option<String>,
 ) -> Result<WorkspacePreset, String> {
-    if !WORKSPACE_PRESET_LAYOUTS.contains(&input.layout.as_str()) {
+    if !WorkspacePreset::is_known_layout(&input.layout) {
         return Err(format!("Unknown workspace layout: {}", input.layout));
     }
 

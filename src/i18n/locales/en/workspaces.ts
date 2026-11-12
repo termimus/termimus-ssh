@@ -4,7 +4,6 @@ export const workspacesEn = {
   newWorkspace: "New Preset",
   launch: "Launch Workspace",
   launchCluster: "Launch Cluster",
-  launching: "Connecting & Splitting...",
   edit: "Edit Workspace",
   delete: "Delete Workspace",
   duplicate: "Duplicate Preset",
