@@ -7,16 +7,32 @@ import {
   Check,
   Eye,
   EyeOff,
+  Sparkles,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useTranslation } from "react-i18next";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useKeychainStore } from "../../stores/useKeychainStore";
 import { api, KeychainKeyInput } from "../../lib/api";
+import { copyText } from "../../lib/clipboard";
+
+// Algorithms accepted by the backend's `sshkey::parse_algorithm`.
+const GENERATE_ALGORITHMS = [
+  { value: "ed25519", label: "Ed25519", defaultName: "id_ed25519" },
+  { value: "rsa", label: "RSA", defaultName: "id_rsa" },
+  { value: "ecdsa-p256", label: "ECDSA P-256", defaultName: "id_ecdsa" },
+] as const;
 
 export function KeyModal() {
   const { t } = useTranslation();
-  const { isKeyModalOpen, editingKey, closeKeyModal, saveKey } =
-    useKeychainStore();
+  const { isKeyModalOpen, editingKey, closeKeyModal, saveKey } = useKeychainStore(
+    useShallow((s) => ({
+      isKeyModalOpen: s.isKeyModalOpen,
+      editingKey: s.editingKey,
+      closeKeyModal: s.closeKeyModal,
+      saveKey: s.saveKey,
+    }))
+  );
 
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
@@ -33,6 +49,11 @@ export function KeyModal() {
   const [showPrivateKey, setShowPrivateKey] = useState(false);
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [loadingKey, setLoadingKey] = useState(false);
+
+  // Key generation (new keys only)
+  const [generateAlgorithm, setGenerateAlgorithm] = useState<string>("ed25519");
+  const [generating, setGenerating] = useState(false);
+  const [justGenerated, setJustGenerated] = useState(false);
 
   useEffect(() => {
     if (editingKey) {
@@ -72,6 +93,7 @@ export function KeyModal() {
       setShowPrivateKey(true);
       setShowPassphrase(false);
     }
+    setJustGenerated(false);
     setError(null);
   }, [editingKey, isKeyModalOpen]);
 
@@ -176,10 +198,42 @@ export function KeyModal() {
     }
   }
 
+  async function handleGenerate() {
+    setError(null);
+    setGenerating(true);
+    try {
+      const algo = GENERATE_ALGORITHMS.find((a) => a.value === generateAlgorithm) ?? GENERATE_ALGORITHMS[0];
+      const keyName = name.trim() || algo.defaultName;
+      const pair = await api.generateKeyPair(algo.value, keyName);
+      if (!name.trim()) setName(keyName);
+      // Generated keys are unencrypted; a leftover passphrase would be stored
+      // alongside a key that doesn't need it.
+      setPassphrase("");
+      setPrivateKeyPem(pair.private_key_pem);
+      setPublicKey(pair.public_key_openssh);
+      setShowPrivateKey(false);
+      setJustGenerated(true);
+    } catch (err) {
+      setError(t("keychain.keyModal.errorGenerate", { err: String(err) }));
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function handleCopyPrivateKey() {
+    try {
+      await copyText(privateKeyPem);
+      setCopiedPrivateKey(true);
+      setTimeout(() => setCopiedPrivateKey(false), 2000);
+    } catch (err) {
+      setError(t("keychain.keyModal.errorCopy", { err: String(err) }));
+    }
+  }
+
   async function handleCopyPublicKey() {
     if (!publicKey) return;
     try {
-      await navigator.clipboard.writeText(publicKey);
+      await copyText(publicKey);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
@@ -241,6 +295,7 @@ export function KeyModal() {
           </h2>
           <button
             onClick={closeKeyModal}
+            aria-label={t("common.close")}
             className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white cursor-pointer"
           >
             <X size={18} />
@@ -288,7 +343,7 @@ export function KeyModal() {
                 <label className="font-medium text-[var(--text-muted)]">
                   {t("keychain.keyModal.privateKeyField")}
                 </label>
-                {editingKey && privateKeyPem && (
+                {(editingKey || justGenerated) && privateKeyPem && (
                   <button
                     type="button"
                     onClick={() => setShowPrivateKey(!showPrivateKey)}
@@ -304,11 +359,7 @@ export function KeyModal() {
                 {privateKeyPem && (
                   <button
                     type="button"
-                    onClick={async () => {
-                      await navigator.clipboard.writeText(privateKeyPem);
-                      setCopiedPrivateKey(true);
-                      setTimeout(() => setCopiedPrivateKey(false), 2000);
-                    }}
+                    onClick={handleCopyPrivateKey}
                     className={`flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium transition cursor-pointer ${
                       copiedPrivateKey
                         ? "bg-[var(--success)] text-black font-semibold"
@@ -337,6 +388,7 @@ export function KeyModal() {
               onChange={(e) => {
                 setPrivateKeyPem(e.target.value);
                 setShowPrivateKey(true);
+                setJustGenerated(false);
               }}
               onDragOver={(e) => e.preventDefault()}
               onDrop={async (e) => {
@@ -371,11 +423,48 @@ export function KeyModal() {
                   : t("keychain.keyModal.pasteKeyPlaceholder")
               }
               className={`w-full font-mono rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)]/50 focus:border-[var(--primary)] focus:outline-none transition-all ${
-                editingKey && !showPrivateKey && privateKeyPem
+                (editingKey || justGenerated) && !showPrivateKey && privateKeyPem
                   ? "filter blur-xs select-none"
                   : ""
               }`}
             />
+
+            {!editingKey && (
+              <div className="mt-2 flex items-center gap-2">
+                <label htmlFor="keychain-generate-algo" className="text-[11px] text-[var(--text-muted)]">
+                  {t("keychain.keyModal.generateAlgorithm")}
+                </label>
+                <select
+                  id="keychain-generate-algo"
+                  value={generateAlgorithm}
+                  onChange={(e) => setGenerateAlgorithm(e.target.value)}
+                  disabled={generating}
+                  className="rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[11px] text-[var(--text-primary)] focus:border-[var(--primary)] focus:outline-none cursor-pointer"
+                >
+                  {GENERATE_ALGORITHMS.map((a) => (
+                    <option key={a.value} value={a.value}>
+                      {a.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleGenerate}
+                  disabled={generating}
+                  title={t("keychain.keyModal.generateTooltip")}
+                  className="flex items-center gap-1 rounded-md border border-[var(--primary)]/40 px-2.5 py-1 text-[11px] font-medium text-[var(--primary)] transition hover:bg-[var(--primary)]/10 disabled:opacity-50 cursor-pointer"
+                >
+                  <Sparkles size={11} />
+                  {generating ? t("keychain.keyModal.generating") : t("keychain.keyModal.generate")}
+                </button>
+              </div>
+            )}
+
+            {justGenerated && (
+              <p className="mt-2 text-[11px] text-[var(--success)]">
+                {t("keychain.keyModal.generatedHint")}
+              </p>
+            )}
           </div>
 
           <div>

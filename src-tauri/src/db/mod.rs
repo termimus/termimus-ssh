@@ -505,6 +505,7 @@ impl Database {
             "SELECT id, kind, name, key_type, public_key, fingerprint, username, created_at, updated_at
              FROM credentials
              WHERE name != ''
+               AND kind IN ('private_key', 'public_key', 'password')
              ORDER BY name ASC",
         )?;
         let items = stmt

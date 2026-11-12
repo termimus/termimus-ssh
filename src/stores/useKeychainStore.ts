@@ -5,10 +5,13 @@ import {
   KeychainKeyInput,
   KeychainIdentityInput,
 } from "../lib/api";
+import { useHostStore } from "./useHostStore";
 
 interface KeychainState {
   items: KeychainItem[];
   isLoading: boolean;
+  /** Last error from loading the Keychain, shown with a Retry action. */
+  error: string | null;
   searchQuery: string;
 
   isKeyModalOpen: boolean;
@@ -35,6 +38,7 @@ interface KeychainState {
 export const useKeychainStore = create<KeychainState>((set, get) => ({
   items: [],
   isLoading: false,
+  error: null,
   searchQuery: "",
 
   isKeyModalOpen: false,
@@ -50,10 +54,10 @@ export const useKeychainStore = create<KeychainState>((set, get) => ({
     }
     try {
       const items = await api.listKeychain();
-      set({ items, isLoading: false });
+      set({ items, isLoading: false, error: null });
     } catch (e) {
       console.error("Failed to load Keychain:", e);
-      set({ isLoading: false });
+      set({ isLoading: false, error: String(e) });
     }
   },
 
@@ -72,6 +76,9 @@ export const useKeychainStore = create<KeychainState>((set, get) => ({
   deleteItem: async (id) => {
     await api.deleteKeychainItem(id);
     await get().refresh();
+    // Hosts that used this credential had their credential_id nulled by the
+    // DB (ON DELETE SET NULL); reload them so the UI doesn't keep a stale link.
+    await useHostStore.getState().refresh();
   },
 
   setSearchQuery: (query) => set({ searchQuery: query }),

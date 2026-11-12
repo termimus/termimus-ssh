@@ -33,7 +33,7 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
   const { hosts } = useHostStore();
   const { snippets } = useSnippetStore();
   const { activeRuleIds } = useTunnelStore();
-  const { items: keychainItems } = useKeychainStore();
+  const keychainCount = useKeychainStore((s) => s.items.length);
   const presetCount = useWorkspaceStore((s) => s.presets.length);
   const { currentVersion, latestVersion, hasUpdate, releaseUrl } = useUpdateStore();
 
@@ -45,7 +45,7 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
     badgeDot?: boolean;
   }[] = [
     { icon: Server, label: t("nav.hosts"), id: "hosts", badge: hosts.length || undefined },
-    { icon: KeyRound, label: t("nav.keychain"), id: "keychain", badge: keychainItems.length || undefined },
+    { icon: KeyRound, label: t("nav.keychain"), id: "keychain", badge: keychainCount || undefined },
     { icon: Layers, label: t("nav.workspaces"), id: "workspaces", badge: presetCount || undefined },
     { icon: FolderOpen, label: t("nav.sftp"), id: "sftp" },
     { icon: Braces, label: t("nav.snippets"), id: "snippets", badge: snippets.length || undefined },

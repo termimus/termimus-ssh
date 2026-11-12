@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { X, UserCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useShallow } from "zustand/react/shallow";
 import { useKeychainStore } from "../../stores/useKeychainStore";
 import { KeychainIdentityInput } from "../../lib/api";
 
@@ -11,7 +12,14 @@ export function IdentityModal() {
     editingIdentity,
     closeIdentityModal,
     saveIdentity,
-  } = useKeychainStore();
+  } = useKeychainStore(
+    useShallow((s) => ({
+      isIdentityModalOpen: s.isIdentityModalOpen,
+      editingIdentity: s.editingIdentity,
+      closeIdentityModal: s.closeIdentityModal,
+      saveIdentity: s.saveIdentity,
+    }))
+  );
 
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
@@ -77,6 +85,7 @@ export function IdentityModal() {
           </div>
           <button
             onClick={closeIdentityModal}
+            aria-label={t("common.close")}
             className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white cursor-pointer"
           >
             <X size={18} />
