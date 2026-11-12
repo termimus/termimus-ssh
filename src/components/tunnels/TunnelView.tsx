@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback, memo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef, memo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowLeftRight,
+  ArrowRight,
   Plus,
   Play,
   Square,
@@ -9,35 +10,68 @@ import {
   Trash2,
   Server,
   Loader2,
-  AlertCircle,
+  AlertTriangle,
   Copy,
   Check,
   RefreshCw,
   Globe,
+  Search,
+  X,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useTunnelStore } from "../../stores/useTunnelStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
 import { TunnelModal } from "./TunnelModal";
 import { PortForwardRule, Host } from "../../lib/api";
+import { copyText } from "../../lib/clipboard";
+
+type Toast = { kind: "success" | "error"; message: string };
+
+const MENU_ITEM =
+  "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors cursor-pointer";
+
+/** Where the tunnel listens and where it forwards to, per forward type. */
+function describeRule(rule: PortForwardRule) {
+  const local = `${rule.local_address}:${rule.local_port}`;
+  const remote = `${rule.remote_address}:${rule.remote_port}`;
+  // -R rules listen on the server (remote_*) and dial local_* from this machine.
+  if (rule.forward_type === "remote") return { listen: remote, target: local };
+  return { listen: local, target: rule.forward_type === "dynamic" ? null : remote };
+}
 
 export function TunnelView() {
   const { t } = useTranslation();
   const {
     rules,
     activeRuleIds,
+    busyRuleIds,
     isLoading,
     error,
-    startingRuleId,
     refresh,
     toggleTunnel,
     openCreateModal,
     openEditModal,
     deleteRule,
-  } = useTunnelStore();
+    clearError,
+  } = useTunnelStore(
+    useShallow((s) => ({
+      rules: s.rules,
+      activeRuleIds: s.activeRuleIds,
+      busyRuleIds: s.busyRuleIds,
+      isLoading: s.isLoading,
+      error: s.error,
+      refresh: s.refresh,
+      toggleTunnel: s.toggleTunnel,
+      openCreateModal: s.openCreateModal,
+      openEditModal: s.openEditModal,
+      deleteRule: s.deleteRule,
+      clearError: s.clearError,
+    }))
+  );
+  const hosts = useHostStore((s) => s.hosts);
 
-  const { hosts } = useHostStore();
-
+  const [searchQuery, setSearchQuery] = useState("");
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -45,13 +79,17 @@ export function TunnelView() {
     rule?: PortForwardRule;
   } | null>(null);
 
-  const [copyToast, setCopyToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showCopyToast = useCallback((msg: string) => {
-    setCopyToast(msg);
-    setTimeout(() => {
-      setCopyToast((prev) => (prev === msg ? null : prev));
-    }, 1800);
+  const showToast = useCallback((next: Toast) => {
+    setToast(next);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), next.kind === "error" ? 4000 : 1800);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
 
   const handleRuleContextMenu = useCallback((e: React.MouseEvent, rule: PortForwardRule) => {
@@ -90,96 +128,196 @@ export function TunnelView() {
     }
   }, [rules.length, refresh]);
 
+  const hostsById = useMemo(() => new Map(hosts.map((h) => [h.id, h])), [hosts]);
+
+  const query = searchQuery.trim().toLowerCase();
+  const filteredRules = useMemo(() => {
+    if (!query) return rules;
+    return rules.filter((rule) => {
+      const host = hostsById.get(rule.host_id);
+      return [
+        rule.label,
+        host?.label ?? "",
+        `${rule.local_address}:${rule.local_port}`,
+        `${rule.remote_address}:${rule.remote_port}`,
+      ].some((field) => field.toLowerCase().includes(query));
+    });
+  }, [rules, hostsById, query]);
+
+  const activeCount = rules.filter((r) => activeRuleIds.has(r.id)).length;
+
+  const handleCopy = useCallback(
+    async (text: string, successMessage: string) => {
+      try {
+        await copyText(text);
+        showToast({ kind: "success", message: successMessage });
+      } catch (err) {
+        showToast({ kind: "error", message: t("tunnels.copyFailed", { error: String(err) }) });
+      }
+    },
+    [showToast, t]
+  );
+
+  const handleCopyListen = useCallback(
+    (rule: PortForwardRule) => {
+      const message =
+        rule.forward_type === "dynamic"
+          ? t("tunnels.copiedSocks5Address")
+          : rule.forward_type === "remote"
+            ? t("tunnels.copiedRemoteAddress")
+            : t("tunnels.copiedLocalAddress");
+      handleCopy(describeRule(rule).listen, message);
+    },
+    [handleCopy, t]
+  );
+
   const handleDelete = useCallback(
-    (ruleId: string, ruleLabel?: string) => {
+    (rule: PortForwardRule) => {
       useConfirmStore.getState().confirm({
         title: t("tunnels.deleteConfirm.title"),
-        message: t("tunnels.deleteConfirm.message", { label: ruleLabel || "this tunnel rule" }),
+        message: t("tunnels.deleteConfirm.message", { label: rule.label }),
         confirmLabel: t("tunnels.deleteConfirm.confirmLabel"),
         isDanger: true,
         onConfirm: async () => {
-          await deleteRule(ruleId);
+          try {
+            await deleteRule(rule.id);
+          } catch (err) {
+            showToast({
+              kind: "error",
+              message: t("tunnels.deleteFailed", { label: rule.label, error: String(err) }),
+            });
+          }
         },
       });
     },
-    [deleteRule, t]
+    [deleteRule, showToast, t]
   );
 
   return (
     <div
       onContextMenu={handleBackgroundContextMenu}
-      className="flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] p-4 select-none"
+      className="flex h-full w-full flex-col overflow-hidden bg-[var(--canvas)] p-4 text-[var(--text-primary)] select-none"
     >
       <TunnelModal />
 
       {/* Header */}
-      <div className="mb-4 flex items-center justify-between border-b border-[var(--border)] pb-3">
-        <div>
+      <div className="mb-4 flex items-center justify-between gap-3 border-b border-[var(--border)] pb-3">
+        <div className="min-w-0">
           <h2 className="text-base font-semibold text-[var(--text-primary)] flex items-center gap-2">
             <ArrowLeftRight size={18} className="text-[var(--accent)]" />
             {t("tunnels.title")}
+            {rules.length > 0 && (
+              <span className="rounded-md bg-[var(--surface-container)] px-1.5 py-0.5 text-[10px] font-mono font-normal text-[var(--text-muted)]">
+                {rules.length}
+              </span>
+            )}
+            {activeCount > 0 && (
+              <span className="flex items-center gap-1 rounded-md bg-[var(--success)]/15 px-1.5 py-0.5 text-[10px] font-mono font-normal text-[var(--success)]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
+                {t("tunnels.activeCount", { count: activeCount })}
+              </span>
+            )}
           </h2>
-          <p className="text-xs text-[var(--text-muted)] mt-0.5">
+          <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">
             {t("tunnels.subtitle")}
           </p>
         </div>
         <button
           onClick={openCreateModal}
-          className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--accent-hover)]"
+          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[var(--accent-hover)] cursor-pointer"
         >
           <Plus size={14} /> {t("tunnels.newRule")}
         </button>
       </div>
 
-      {error && (
-        <div className="mb-4 flex items-center gap-2 rounded-md border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-xs text-[var(--danger)]">
-          <AlertCircle size={14} className="shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
+      {/* Search Bar */}
+      <div className="relative mb-4">
+        <Search size={14} className="absolute left-3 top-2.5 text-[var(--text-muted)]" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder={t("tunnels.searchPlaceholder")}
+          aria-label={t("tunnels.searchPlaceholder")}
+          className="w-full rounded-md border border-[var(--border)] bg-[var(--card)] pl-9 pr-3 py-2 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:outline-none"
+        />
+      </div>
 
-      {/* Rules List */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex flex-1 flex-col overflow-y-auto">
+        {error && (
+          <div
+            role="alert"
+            className="mb-4 flex items-center gap-2.5 rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3.5 py-2.5 text-xs text-[var(--danger)]"
+          >
+            <AlertTriangle size={14} className="shrink-0" />
+            <span className="flex-1">{error}</span>
+            <button
+              onClick={() => refresh()}
+              className="shrink-0 rounded-lg border border-[var(--danger)]/40 px-2.5 py-1 font-medium hover:bg-[var(--danger)]/15 cursor-pointer"
+            >
+              {t("common.retry")}
+            </button>
+            <button
+              onClick={clearError}
+              aria-label={t("common.close")}
+              className="shrink-0 rounded p-0.5 hover:bg-[var(--danger)]/15 cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         {isLoading && rules.length === 0 ? (
-          <div className="flex h-40 items-center justify-center text-xs text-[var(--text-muted)]">
-            <Loader2 size={16} className="animate-spin mr-2 text-[var(--accent)]" />
-            {t("tunnels.loading")}
+          <div className="flex flex-1 items-center justify-center gap-2 py-16 text-xs text-[var(--text-muted)]">
+            <Loader2 size={14} className="animate-spin" />
+            <span>{t("tunnels.loading")}</span>
           </div>
         ) : rules.length === 0 ? (
-          <div className="flex h-60 flex-col items-center justify-center text-center text-[var(--text-muted)]">
-            <ArrowLeftRight size={38} className="mb-2 opacity-30" />
-            <p className="text-sm font-medium">{t("tunnels.emptyTitle")}</p>
-            <p className="text-xs mt-1 max-w-sm">
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border)] py-16 text-center">
+            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--surface-container)] text-[var(--primary)] shadow-sm">
+              <ArrowLeftRight size={26} />
+            </div>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+              {t("tunnels.emptyTitle")}
+            </h2>
+            <p className="mt-1 max-w-sm text-xs text-[var(--text-muted)]">
               {t("tunnels.emptyDesc")}
             </p>
             <button
               onClick={openCreateModal}
-              className="mt-4 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--border)] cursor-pointer"
+              className="mt-6 flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-4 py-2 text-xs font-semibold text-[var(--on-primary)] shadow-md hover:bg-[var(--primary-hover)] transition-colors cursor-pointer"
             >
+              <Plus size={14} />
               {t("tunnels.addFirstRule")}
             </button>
           </div>
+        ) : filteredRules.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border)] py-16 text-center">
+            <Search size={26} className="mb-3 text-[var(--text-muted)] opacity-60" />
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+              {t("tunnels.emptySearchTitle", { query: searchQuery.trim() })}
+            </h2>
+            <p className="mt-1 max-w-sm text-xs text-[var(--text-muted)]">
+              {t("tunnels.emptySearchDesc")}
+            </p>
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {rules.map((rule) => {
-              const host = hosts.find((h) => h.id === rule.host_id);
-              const isActive = activeRuleIds.has(rule.id);
-              const isBusy = startingRuleId === rule.id;
-
-              return (
-                <TunnelCard
-                  key={rule.id}
-                  rule={rule}
-                  host={host}
-                  isActive={isActive}
-                  isBusy={isBusy}
-                  onToggle={toggleTunnel}
-                  onEdit={openEditModal}
-                  onDelete={handleDelete}
-                  onContextMenu={handleRuleContextMenu}
-                />
-              );
-            })}
+          // auto-fill: wide windows get more columns instead of stretching each card
+          <div className="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))]">
+            {filteredRules.map((rule) => (
+              <TunnelCard
+                key={rule.id}
+                rule={rule}
+                host={hostsById.get(rule.host_id)}
+                isActive={activeRuleIds.has(rule.id)}
+                isBusy={busyRuleIds.has(rule.id)}
+                onToggle={toggleTunnel}
+                onCopy={handleCopyListen}
+                onEdit={openEditModal}
+                onDelete={handleDelete}
+                onContextMenu={handleRuleContextMenu}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -187,130 +325,125 @@ export function TunnelView() {
       {/* Right-Click Context Menu */}
       {contextMenu && (
         <div
+          role="menu"
           className="fixed z-50 min-w-[210px] rounded-xl border border-[var(--border)] bg-[var(--surface-high)]/95 p-1 text-xs text-[var(--text-primary)] shadow-2xl backdrop-blur-md select-none animate-in fade-in zoom-in-95 duration-75"
           style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
           onPointerDown={(e) => e.stopPropagation()}
         >
           {contextMenu.type === "rule" && contextMenu.rule ? (
-            <>
-              {/* Start/Stop Tunnel */}
-              <button
-                onClick={() => {
-                  toggleTunnel(contextMenu.rule!);
-                  setContextMenu(null);
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group cursor-pointer"
-              >
-                {activeRuleIds.has(contextMenu.rule.id) ? (
-                  <>
-                    <Square size={13} />
-                    <span>{t("tunnels.stopTunnel")}</span>
-                  </>
-                ) : (
-                  <>
-                    <Play size={13} />
-                    <span>{t("tunnels.startTunnel")}</span>
-                  </>
-                )}
-              </button>
-
-              <div className="my-1 h-[1px] bg-[var(--border)]" />
-
-              {/* Copy Addresses */}
-              {contextMenu.rule!.forward_type === "dynamic" ? (
-                <button
-                  onClick={async () => {
-                    await navigator.clipboard.writeText(
-                      `${contextMenu.rule!.local_address}:${contextMenu.rule!.local_port}`
-                    );
-                    showCopyToast(t("tunnels.copiedSocks5Address"));
-                    setContextMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
-                >
-                  <Copy size={13} />
-                  <span>{t("tunnels.copySocks5Address")}</span>
-                </button>
-              ) : (
+            (() => {
+              const rule = contextMenu.rule;
+              const isActive = activeRuleIds.has(rule.id);
+              const hostMissing = !hostsById.has(rule.host_id);
+              const close = () => setContextMenu(null);
+              const local = `${rule.local_address}:${rule.local_port}`;
+              const remote = `${rule.remote_address}:${rule.remote_port}`;
+              return (
                 <>
                   <button
-                    onClick={async () => {
-                      await navigator.clipboard.writeText(
-                        `${contextMenu.rule!.local_address}:${contextMenu.rule!.local_port}`
-                      );
-                      showCopyToast(t("tunnels.copiedLocalAddress"));
-                      setContextMenu(null);
+                    role="menuitem"
+                    onClick={() => {
+                      toggleTunnel(rule);
+                      close();
                     }}
-                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
+                    disabled={busyRuleIds.has(rule.id) || (!isActive && hostMissing)}
+                    className={`${MENU_ITEM} hover:bg-[var(--primary)] hover:text-black disabled:opacity-40 disabled:pointer-events-none`}
                   >
-                    <Copy size={13} />
-                    <span>{t("tunnels.copyLocalAddress")}</span>
+                    {isActive ? <Square size={13} /> : <Play size={13} />}
+                    <span>{isActive ? t("tunnels.stopTunnel") : t("tunnels.startTunnel")}</span>
+                  </button>
+
+                  <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+                  {rule.forward_type === "dynamic" ? (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        handleCopy(local, t("tunnels.copiedSocks5Address"));
+                        close();
+                      }}
+                      className={`${MENU_ITEM} hover:bg-[var(--surface-container)]`}
+                    >
+                      <Copy size={13} />
+                      <span>{t("tunnels.copySocks5Address")}</span>
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        role="menuitem"
+                        onClick={() => {
+                          handleCopy(local, t("tunnels.copiedLocalAddress"));
+                          close();
+                        }}
+                        className={`${MENU_ITEM} hover:bg-[var(--surface-container)]`}
+                      >
+                        <Copy size={13} />
+                        <span>{t("tunnels.copyLocalAddress")}</span>
+                      </button>
+                      <button
+                        role="menuitem"
+                        onClick={() => {
+                          handleCopy(remote, t("tunnels.copiedRemoteAddress"));
+                          close();
+                        }}
+                        className={`${MENU_ITEM} hover:bg-[var(--surface-container)]`}
+                      >
+                        <Copy size={13} />
+                        <span>{t("tunnels.copyRemoteAddress")}</span>
+                      </button>
+                    </>
+                  )}
+
+                  <div className="my-1 h-[1px] bg-[var(--border)]" />
+
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      openEditModal(rule);
+                      close();
+                    }}
+                    disabled={isActive}
+                    className={`${MENU_ITEM} hover:bg-[var(--surface-container)] disabled:opacity-40 disabled:pointer-events-none`}
+                  >
+                    <Pencil size={13} />
+                    <span>{t("tunnels.editRule")}</span>
                   </button>
 
                   <button
-                    onClick={async () => {
-                      await navigator.clipboard.writeText(
-                        `${contextMenu.rule!.remote_address}:${contextMenu.rule!.remote_port}`
-                      );
-                      showCopyToast(t("tunnels.copiedRemoteAddress"));
-                      setContextMenu(null);
+                    role="menuitem"
+                    onClick={() => {
+                      handleDelete(rule);
+                      close();
                     }}
-                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
+                    disabled={isActive}
+                    className={`${MENU_ITEM} hover:bg-[var(--danger)] hover:text-white disabled:opacity-40 disabled:pointer-events-none`}
                   >
-                    <Copy size={13} />
-                    <span>{t("tunnels.copyRemoteAddress")}</span>
+                    <Trash2 size={13} />
+                    <span>{t("tunnels.deleteRule")}</span>
                   </button>
                 </>
-              )}
-
-              <div className="my-1 h-[1px] bg-[var(--border)]" />
-
-              {/* Edit */}
-              <button
-                onClick={() => {
-                  openEditModal(contextMenu.rule!);
-                  setContextMenu(null);
-                }}
-                disabled={activeRuleIds.has(contextMenu.rule.id)}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
-              >
-                <Pencil size={13} />
-                <span>{t("tunnels.editRule")}</span>
-              </button>
-
-              {/* Delete */}
-              <button
-                onClick={() => {
-                  handleDelete(contextMenu.rule!.id, contextMenu.rule!.label);
-                  setContextMenu(null);
-                }}
-                disabled={activeRuleIds.has(contextMenu.rule.id)}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--danger)] hover:text-white transition-colors group disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
-              >
-                <Trash2 size={13} />
-                <span>{t("tunnels.deleteRule")}</span>
-              </button>
-            </>
+              );
+            })()
           ) : (
             <>
-              {/* New Rule */}
               <button
+                role="menuitem"
                 onClick={() => {
                   openCreateModal();
                   setContextMenu(null);
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group cursor-pointer"
+                className={`${MENU_ITEM} hover:bg-[var(--primary)] hover:text-black`}
               >
                 <Plus size={13} />
                 <span>{t("tunnels.newPortForwardRule")}</span>
               </button>
-
               <button
+                role="menuitem"
                 onClick={() => {
                   refresh();
                   setContextMenu(null);
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors group cursor-pointer"
+                className={`${MENU_ITEM} hover:bg-[var(--surface-container)]`}
               >
                 <RefreshCw size={13} />
                 <span>{t("tunnels.refreshRules")}</span>
@@ -320,11 +453,22 @@ export function TunnelView() {
         </div>
       )}
 
-      {/* Copy Toast Notification */}
-      {copyToast && (
-        <div className="fixed top-11 right-3.5 z-50 flex items-center gap-2 rounded-lg border border-[var(--primary)]/40 bg-[var(--surface-high)]/95 px-3 py-1.5 text-xs font-mono font-medium text-[var(--primary)] shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150 pointer-events-none">
-          <Check size={13} className="text-[var(--primary)] shrink-0" />
-          <span>{copyToast}</span>
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          role={toast.kind === "error" ? "alert" : "status"}
+          className={`fixed top-11 right-3.5 z-50 flex max-w-sm items-center gap-2 rounded-lg border bg-[var(--surface-high)]/95 px-3 py-1.5 text-xs font-medium shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150 pointer-events-none ${
+            toast.kind === "error"
+              ? "border-[var(--danger)]/40 text-[var(--danger)]"
+              : "border-[var(--primary)]/40 font-mono text-[var(--primary)]"
+          }`}
+        >
+          {toast.kind === "error" ? (
+            <AlertTriangle size={13} className="shrink-0" />
+          ) : (
+            <Check size={13} className="shrink-0" />
+          )}
+          <span>{toast.message}</span>
         </div>
       )}
     </div>
@@ -341,10 +485,21 @@ interface TunnelCardProps {
   isActive: boolean;
   isBusy: boolean;
   onToggle: (rule: PortForwardRule) => void;
+  onCopy: (rule: PortForwardRule) => void;
   onEdit: (rule: PortForwardRule) => void;
-  onDelete: (id: string, label?: string) => void;
+  onDelete: (rule: PortForwardRule) => void;
   onContextMenu?: (e: React.MouseEvent, rule: PortForwardRule) => void;
 }
+
+const ICON_BUTTON =
+  "flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-30";
+
+// Palette tokens per forward type (no hardcoded hex/Tailwind colors).
+const TYPE_BADGE: Record<string, { color: string; key: string }> = {
+  local: { color: "var(--secondary)", key: "tunnels.badgeLocal" },
+  remote: { color: "var(--warning)", key: "tunnels.badgeRemote" },
+  dynamic: { color: "var(--tertiary)", key: "tunnels.badgeDynamic" },
+};
 
 const TunnelCard = memo(function TunnelCard({
   rule,
@@ -352,129 +507,157 @@ const TunnelCard = memo(function TunnelCard({
   isActive,
   isBusy,
   onToggle,
+  onCopy,
   onEdit,
   onDelete,
   onContextMenu,
 }: TunnelCardProps) {
   const { t } = useTranslation();
-  const isDynamic = rule.forward_type === "dynamic";
-  // -R rules listen on the server (remote_*) and dial local_* from this machine.
-  const isRemote = rule.forward_type === "remote";
-  const listen = isRemote
-    ? { label: t("tunnels.serverLabel"), addr: `${rule.remote_address}:${rule.remote_port}` }
-    : { label: t("tunnels.localLabel"), addr: `${rule.local_address}:${rule.local_port}` };
-  const target = isRemote
-    ? `${rule.local_address}:${rule.local_port}`
-    : `${rule.remote_address}:${rule.remote_port}`;
+  const { listen, target } = describeRule(rule);
+  const badge = TYPE_BADGE[rule.forward_type] ?? TYPE_BADGE.local;
+  const hostMissing = !host;
+  const lockedTitle = isActive ? t("tunnels.stopToEdit") : undefined;
 
   return (
     <div
       onContextMenu={(e) => onContextMenu?.(e, rule)}
-      className={`flex flex-col rounded-xl border p-4 transition-colors shadow-xs ${
+      className={`group flex flex-col rounded-xl border bg-[var(--card)] p-3 transition-colors ${
         isActive
-          ? "border-[var(--success)]/40 bg-[var(--success)]/5 shadow-md shadow-[var(--success)]/5"
-          : "border-[var(--border)] bg-[var(--card)] hover:border-[var(--border)]/80"
+          ? "border-[var(--success)]/40"
+          : "border-[var(--border)] hover:border-[var(--primary)]/40"
       }`}
     >
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-              isActive
-                ? "bg-[var(--success)] animate-pulse"
-                : "bg-[var(--text-muted)]/40"
-            }`}
-          />
-          <h3 className="truncate text-sm font-semibold text-[var(--text-primary)]">
-            {rule.label}
-          </h3>
-          {isDynamic ? (
-            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-              SOCKS5
+      {/* Title row */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ${
+                isActive ? "bg-[var(--success)] animate-pulse" : "bg-[var(--text-muted)]/40"
+              }`}
+            />
+            <h3
+              className="truncate text-sm font-semibold text-[var(--text-primary)]"
+              title={rule.label}
+            >
+              {rule.label}
+            </h3>
+            <span
+              className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-mono"
+              style={{
+                color: badge.color,
+                backgroundColor: `color-mix(in srgb, ${badge.color} 15%, transparent)`,
+              }}
+            >
+              {t(badge.key)}
             </span>
-          ) : isRemote ? (
-            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium font-mono bg-amber-500/15 text-amber-400 border border-amber-500/30">
-              Remote
-            </span>
+          </div>
+
+          {/* Subtitle: SSH host the tunnel rides on */}
+          {hostMissing ? (
+            <p
+              className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-[var(--warning)]"
+              title={t("tunnels.hostMissing")}
+            >
+              <AlertTriangle size={11} className="shrink-0" />
+              <span className="truncate">{t("tunnels.unknownHost")}</span>
+            </p>
           ) : (
-            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium font-mono bg-sky-500/15 text-sky-400 border border-sky-500/30">
-              Local
-            </span>
+            <p
+              className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-[var(--text-muted)]"
+              title={`${host.username}@${host.address}:${host.port}`}
+            >
+              <Server size={11} className="shrink-0" />
+              <span className="truncate">{t("tunnels.viaHost", { host: host.label })}</span>
+            </p>
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          <button
+            onClick={() => onCopy(rule)}
+            title={
+              rule.forward_type === "dynamic"
+                ? t("tunnels.copySocks5Address")
+                : rule.forward_type === "remote"
+                  ? t("tunnels.copyRemoteAddress")
+                  : t("tunnels.copyLocalAddress")
+            }
+            className={`${ICON_BUTTON} hover:bg-[var(--surface-high)] hover:text-[var(--text-primary)]`}
+          >
+            <Copy size={13} />
+          </button>
           <button
             onClick={() => onEdit(rule)}
             disabled={isActive}
-            title={t("tunnels.editRule")}
-            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--border)] hover:text-white disabled:opacity-30 cursor-pointer"
+            title={lockedTitle ?? t("tunnels.editRule")}
+            className={`${ICON_BUTTON} enabled:hover:bg-[var(--surface-high)] enabled:hover:text-[var(--text-primary)]`}
           >
             <Pencil size={13} />
           </button>
           <button
-            onClick={() => onDelete(rule.id, rule.label)}
+            onClick={() => onDelete(rule)}
             disabled={isActive}
-            title={t("tunnels.deleteRule")}
-            className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--danger)]/20 hover:text-[var(--danger)] disabled:opacity-30 transition cursor-pointer"
+            title={lockedTitle ?? t("tunnels.deleteRule")}
+            className={`${ICON_BUTTON} enabled:hover:bg-[var(--danger)]/15 enabled:hover:text-[var(--danger)]`}
           >
             <Trash2 size={13} />
           </button>
         </div>
       </div>
 
-      {/* Endpoint Routing Diagram */}
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-2.5 text-xs mb-3 space-y-1 font-mono">
-        <div className="flex items-center justify-between text-[var(--text-muted)]">
-          <span>{listen.label}</span>
-          <span className="text-[var(--accent)] font-semibold">{listen.addr}</span>
-        </div>
-        <div className="flex items-center justify-between text-[var(--text-muted)]">
-          <span>{t("tunnels.targetLabel")}</span>
-          {isDynamic ? (
-            <span className="text-emerald-400 flex items-center gap-1 font-sans text-[11px] font-medium">
-              <Globe size={11} className="shrink-0" />
-              {t("tunnels.dynamicTarget")}
-            </span>
-          ) : (
-            <span className="text-[var(--text-primary)]">{target}</span>
-          )}
-        </div>
-      </div>
-
-      {/* Via Host */}
-      <div className="flex min-w-0 items-center gap-1.5 text-xs text-[var(--text-muted)] mb-4">
-        <Server size={12} className="shrink-0" />
-        <span className="truncate">
-          {t("tunnels.viaHost", { host: host ? host.label : t("tunnels.unknownHost") })}
+      {/* Route: listen → target */}
+      <div className="mt-2 flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--canvas)] px-2.5 py-1.5 font-mono text-[11px]">
+        <span className="min-w-0 truncate text-[var(--primary)]" title={listen}>
+          {listen}
         </span>
+        <ArrowRight size={11} className="shrink-0 text-[var(--text-muted)]" />
+        {target ? (
+          <span className="min-w-0 truncate text-[var(--text-secondary)]" title={target}>
+            {target}
+          </span>
+        ) : (
+          <span className="flex min-w-0 items-center gap-1 truncate font-sans text-[var(--text-secondary)]">
+            <Globe size={11} className="shrink-0" />
+            <span className="truncate">{t("tunnels.dynamicTarget")}</span>
+          </span>
+        )}
       </div>
 
-      {/* Toggle Button */}
-      <div className="mt-auto pt-2 border-t border-[var(--border)]/50">
+      {/* Footer: status + start/stop — mt-auto keeps it aligned across a row */}
+      <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+        <span
+          className={`text-[11px] font-mono ${
+            isActive ? "text-[var(--success)]" : "text-[var(--text-muted)]"
+          }`}
+        >
+          {isActive ? t("tunnels.active") : t("tunnels.stopped")}
+        </span>
+
         <button
           onClick={() => onToggle(rule)}
-          disabled={isBusy}
-          className={`flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition cursor-pointer ${
+          disabled={isBusy || (!isActive && hostMissing)}
+          title={!isActive && hostMissing ? t("tunnels.hostMissing") : undefined}
+          className={`flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 ${
             isActive
-              ? "bg-[var(--danger)]/15 text-[var(--danger)] hover:bg-[var(--danger)]/25"
-              : "bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]"
-          } disabled:opacity-50`}
+              ? "border-[var(--danger)]/40 text-[var(--danger)] enabled:hover:bg-[var(--danger)]/15"
+              : "border-[var(--primary)]/40 text-[var(--primary)] enabled:group-hover:border-[var(--primary)] enabled:group-hover:bg-[var(--primary)] enabled:group-hover:text-black enabled:hover:bg-[var(--primary)]/90"
+          }`}
         >
           {isBusy ? (
             <>
-              <Loader2 size={13} className="animate-spin" />
-              <span>{isActive ? t("tunnels.stopping") : t("tunnels.starting")}</span>
+              <Loader2 size={12} className="animate-spin" />
+              {isActive ? t("tunnels.stopping") : t("tunnels.starting")}
             </>
           ) : isActive ? (
             <>
-              <Square size={13} />
-              <span>{t("tunnels.stopTunnel")}</span>
+              <Square size={11} className="fill-current" />
+              {t("tunnels.stop")}
             </>
           ) : (
             <>
-              <Play size={13} />
-              <span>{t("tunnels.startTunnel")}</span>
+              <Play size={12} className="fill-current" />
+              {t("tunnels.start")}
             </>
           )}
         </button>

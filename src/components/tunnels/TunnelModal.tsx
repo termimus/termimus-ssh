@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useShallow } from "zustand/react/shallow";
 import { useTunnelStore } from "../../stores/useTunnelStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { PortForwardInput } from "../../lib/api";
@@ -40,8 +41,15 @@ const inputClass =
 
 export function TunnelModal() {
   const { t } = useTranslation();
-  const { isModalOpen, editingRule, closeModal, saveRule } = useTunnelStore();
-  const { hosts } = useHostStore();
+  const { isModalOpen, editingRule, closeModal, saveRule } = useTunnelStore(
+    useShallow((s) => ({
+      isModalOpen: s.isModalOpen,
+      editingRule: s.editingRule,
+      closeModal: s.closeModal,
+      saveRule: s.saveRule,
+    }))
+  );
+  const hosts = useHostStore((s) => s.hosts);
 
   const [step, setStep] = useState<"type" | "form">("type");
   const [label, setLabel] = useState("");

@@ -10,7 +10,8 @@ interface TunnelState {
   error: string | null;
   isModalOpen: boolean;
   editingRule: PortForwardRule | null;
-  startingRuleId: string | null;
+  /** Rules with a start/stop in flight (several can run at once). */
+  busyRuleIds: Set<string>;
 
   refresh: () => Promise<void>;
   saveRule: (input: PortForwardInput, ruleId?: string) => Promise<void>;
@@ -19,6 +20,7 @@ interface TunnelState {
   openCreateModal: () => void;
   openEditModal: (rule: PortForwardRule) => void;
   closeModal: () => void;
+  clearError: () => void;
 }
 
 export const useTunnelStore = create<TunnelState>((set, get) => ({
@@ -28,7 +30,7 @@ export const useTunnelStore = create<TunnelState>((set, get) => ({
   error: null,
   isModalOpen: false,
   editingRule: null,
-  startingRuleId: null,
+  busyRuleIds: new Set(),
 
   refresh: async () => {
     if (get().rules.length === 0) {
@@ -60,9 +62,10 @@ export const useTunnelStore = create<TunnelState>((set, get) => ({
   },
 
   toggleTunnel: async (rule: PortForwardRule) => {
-    const { activeRuleIds } = get();
+    const { activeRuleIds, busyRuleIds } = get();
+    if (busyRuleIds.has(rule.id)) return;
     const isActive = activeRuleIds.has(rule.id);
-    set({ startingRuleId: rule.id, error: null });
+    set((s) => ({ busyRuleIds: new Set(s.busyRuleIds).add(rule.id), error: null }));
 
     try {
       if (isActive) {
@@ -72,15 +75,20 @@ export const useTunnelStore = create<TunnelState>((set, get) => ({
       }
       await get().refresh();
     } catch (e) {
-      set({ error: `Tunnel error: ${String(e)}` });
+      set({ error: i18n.t("tunnels.toggleError", { label: rule.label, error: String(e) }) });
     } finally {
-      set({ startingRuleId: null });
+      set((s) => {
+        const next = new Set(s.busyRuleIds);
+        next.delete(rule.id);
+        return { busyRuleIds: next };
+      });
     }
   },
 
   openCreateModal: () => set({ isModalOpen: true, editingRule: null }),
   openEditModal: (rule) => set({ isModalOpen: true, editingRule: rule }),
   closeModal: () => set({ isModalOpen: false, editingRule: null }),
+  clearError: () => set({ error: null }),
 }));
 
 // The backend emits this whenever a tunnel task ends — including on its own
