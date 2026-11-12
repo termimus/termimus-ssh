@@ -1,24 +1,16 @@
 import { useMemo } from "react";
-import {
-  Play,
-  Pencil,
-  Trash2,
-  Copy,
-  Radio,
-  AlertTriangle,
-  Server,
-} from "lucide-react";
+import { Play, Pencil, Trash2, Copy, Radio, AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   WorkspacePreset,
   PresetLayoutType,
   getLayoutMeta,
+  getPaneCountForLayout,
 } from "../../stores/useWorkspaceStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { usePingStore } from "../../stores/usePingStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
-import { DistroBadge } from "../hosts/DistroBadge";
-import { resolvePresetHosts } from "../../lib/workspaceLayout";
+import { isKnownPresetLayout, resolvePresetHosts } from "../../lib/workspaceLayout";
 
 interface WorkspaceCardProps {
   preset: WorkspacePreset;
@@ -29,126 +21,97 @@ interface WorkspaceCardProps {
   onContextMenu?: (e: React.MouseEvent, preset: WorkspacePreset) => void;
 }
 
+export interface BlueprintPane {
+  label?: string;
+  /** Tooltip, e.g. full host label + user@address */
+  title?: string;
+  /** "missing" = no host or a deleted host; undefined = no ping data (no dot) */
+  status?: "online" | "offline" | "missing";
+}
+
 /**
  * Visual Blueprint rendering proportional mini diagrams of split geometry
  */
 export function LayoutBlueprint({
   layout,
-  nodeLabels,
+  panes,
 }: {
   layout: PresetLayoutType;
-  nodeLabels: (string | undefined)[];
+  panes: BlueprintPane[];
 }) {
   const { t } = useTranslation();
-  const paneLabel = (index: number) => t("workspaces.paneDefault", { index });
-  const baseBox =
-    "flex items-center justify-center rounded border border-[var(--primary)]/30 bg-[var(--surface-container)] text-[10px] font-mono text-[var(--text-secondary)] font-medium truncate p-1 transition-colors group-hover:border-[var(--primary)]/60 group-hover:bg-[var(--surface-high)]";
+
+  const cell = (idx: number) => {
+    const pane = panes[idx];
+    const label = pane?.label || t("workspaces.paneDefault", { index: idx + 1 });
+    const status = pane?.status;
+    const isMissing = status === "missing";
+
+    return (
+      <div
+        key={idx}
+        title={pane?.title || label}
+        className={`flex min-w-0 items-center gap-1.5 rounded border px-2 text-[10px] font-mono transition-colors ${
+          isMissing
+            ? "border-dashed border-[var(--warning)]/50 bg-[var(--warning)]/5 italic text-[var(--warning)]"
+            : "border-[var(--border)] bg-[var(--surface-container)] text-[var(--text-secondary)] group-hover:bg-[var(--surface-high)]"
+        }`}
+      >
+        {status === "online" && (
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--success)]" />
+        )}
+        {status === "offline" && (
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--text-muted)]/50" />
+        )}
+        {isMissing && <AlertTriangle size={10} className="shrink-0" />}
+        <span className="truncate">{label}</span>
+      </div>
+    );
+  };
+
+  const frame =
+    "grid h-20 w-full gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5";
 
   switch (layout) {
     case "split-vertical":
-      return (
-        <div className="grid h-24 w-full grid-cols-2 gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5">
-          <div className={baseBox}>
-            <span className="truncate">{nodeLabels[0] || paneLabel(1)}</span>
-          </div>
-          <div className={baseBox}>
-            <span className="truncate">{nodeLabels[1] || paneLabel(2)}</span>
-          </div>
-        </div>
-      );
+      return <div className={`${frame} grid-cols-2`}>{[0, 1].map(cell)}</div>;
 
     case "split-horizontal":
-      return (
-        <div className="grid h-24 w-full grid-rows-2 gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5">
-          <div className={baseBox}>
-            <span className="truncate">{nodeLabels[0] || paneLabel(1)}</span>
-          </div>
-          <div className={baseBox}>
-            <span className="truncate">{nodeLabels[1] || paneLabel(2)}</span>
-          </div>
-        </div>
-      );
+      return <div className={`${frame} grid-rows-2`}>{[0, 1].map(cell)}</div>;
 
     case "grid-4":
       return (
-        <div className="grid h-24 w-full grid-cols-2 grid-rows-2 gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5">
-          <div className={baseBox}>
-            <span className="truncate">{nodeLabels[0] || paneLabel(1)}</span>
-          </div>
-          <div className={baseBox}>
-            <span className="truncate">{nodeLabels[1] || paneLabel(2)}</span>
-          </div>
-          <div className={baseBox}>
-            <span className="truncate">{nodeLabels[2] || paneLabel(3)}</span>
-          </div>
-          <div className={baseBox}>
-            <span className="truncate">{nodeLabels[3] || paneLabel(4)}</span>
-          </div>
-        </div>
+        <div className={`${frame} grid-cols-2 grid-rows-2`}>{[0, 1, 2, 3].map(cell)}</div>
       );
 
     case "split-1-2":
       return (
-        <div className="grid h-24 w-full grid-cols-2 gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5">
-          <div className={baseBox}>
-            <span className="truncate">{nodeLabels[0] || paneLabel(1)}</span>
-          </div>
-          <div className="grid grid-rows-2 gap-1.5">
-            <div className={baseBox}>
-              <span className="truncate">{nodeLabels[1] || paneLabel(2)}</span>
-            </div>
-            <div className={baseBox}>
-              <span className="truncate">{nodeLabels[2] || paneLabel(3)}</span>
-            </div>
-          </div>
+        <div className={`${frame} grid-cols-2`}>
+          {cell(0)}
+          <div className="grid min-w-0 grid-rows-2 gap-1.5">{[1, 2].map(cell)}</div>
         </div>
       );
 
     case "split-2-1":
       return (
-        <div className="grid h-24 w-full grid-rows-2 gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5">
-          <div className="grid grid-cols-2 gap-1.5">
-            <div className={baseBox}>
-              <span className="truncate">{nodeLabels[0] || paneLabel(1)}</span>
-            </div>
-            <div className={baseBox}>
-              <span className="truncate">{nodeLabels[1] || paneLabel(2)}</span>
-            </div>
-          </div>
-          <div className={baseBox}>
-            <span className="truncate">{nodeLabels[2] || paneLabel(3)}</span>
-          </div>
+        <div className={`${frame} grid-rows-2`}>
+          <div className="grid min-w-0 grid-cols-2 gap-1.5">{[0, 1].map(cell)}</div>
+          {cell(2)}
         </div>
       );
 
     case "triple-column":
-      return (
-        <div className="grid h-24 w-full grid-cols-3 gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5">
-          <div className={baseBox}>
-            <span className="truncate">{nodeLabels[0] || paneLabel(1)}</span>
-          </div>
-          <div className={baseBox}>
-            <span className="truncate">{nodeLabels[1] || paneLabel(2)}</span>
-          </div>
-          <div className={baseBox}>
-            <span className="truncate">{nodeLabels[2] || paneLabel(3)}</span>
-          </div>
-        </div>
-      );
+      return <div className={`${frame} grid-cols-3`}>{[0, 1, 2].map(cell)}</div>;
 
     default: {
       // Unknown layout (synced/imported from another version): equal columns.
-      const labels = nodeLabels.length > 0 ? nodeLabels : [undefined];
+      const count = Math.max(panes.length, 1);
       return (
         <div
-          className="grid h-24 w-full gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5"
-          style={{ gridTemplateColumns: `repeat(${labels.length}, minmax(0, 1fr))` }}
+          className={frame}
+          style={{ gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` }}
         >
-          {labels.map((label, idx) => (
-            <div key={idx} className={baseBox}>
-              <span className="truncate">{label || paneLabel(idx + 1)}</span>
-            </div>
-          ))}
+          {Array.from({ length: count }, (_, idx) => cell(idx))}
         </div>
       );
     }
@@ -169,25 +132,40 @@ export function WorkspaceCard({
   const confirm = useConfirmStore((s) => s.confirm);
 
   const layoutMeta = getLayoutMeta(preset.layout);
+  const isKnownLayout = isKnownPresetLayout(preset.layout);
   // Pane slots with no host or a host deleted since the preset was saved.
   const missingCount = useMemo(
     () => resolvePresetHosts(preset, hosts).missing,
     [preset, hosts]
   );
 
-  // Map nodes to hosts
-  const assignedNodes = preset.nodes.map((node) => {
-    const host = hosts.find((h) => h.id === node.hostId);
+  // One entry per layout slot (same slot rules as resolvePresetHosts).
+  const paneCount = isKnownLayout
+    ? getPaneCountForLayout(preset.layout)
+    : preset.nodes.length;
+
+  const panes: BlueprintPane[] = Array.from({ length: paneCount }, (_, idx) => {
+    const node = preset.nodes.find((n) => n.paneIndex === idx);
+    const host = node ? hosts.find((h) => h.id === node.hostId) : undefined;
+    if (!host) {
+      return {
+        label: node?.label || t("workspaces.paneDefault", { index: idx + 1 }),
+        title: t("workspaces.missingHostsBadgeTitle", { count: 1 }),
+        status: "missing",
+      };
+    }
+    const ping = statusByHostId[host.id];
     return {
-      paneIndex: node.paneIndex,
-      host,
-      // Live host label wins; a label saved by older versions is only a
-      // fallback so renamed hosts don't show a stale name.
-      label: host?.label || node.label || t("workspaces.paneDefault", { index: node.paneIndex + 1 }),
+      // Live host label wins over a label saved by older versions.
+      label: host.label,
+      title: `${host.label}\n${host.username}@${host.address}:${host.port}`,
+      status: ping ? (ping.online ? "online" : "offline") : undefined,
     };
   });
 
-  const nodeLabels = assignedNodes.map((n) => n.label);
+  const resolvedCount = panes.filter((p) => p.status !== "missing").length;
+  const onlineCount = panes.filter((p) => p.status === "online").length;
+  const hasPingData = panes.some((p) => p.status === "online" || p.status === "offline");
 
   const handleDeleteClick = () => {
     confirm({
@@ -199,140 +177,110 @@ export function WorkspaceCard({
     });
   };
 
+  const iconButton =
+    "flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-muted)] transition-colors cursor-pointer";
+
   return (
     <div
       onContextMenu={(e) => onContextMenu?.(e, preset)}
-      className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface-container)] p-4 shadow-sm transition-all hover:border-[var(--primary)]/50 hover:bg-[var(--surface-high)] hover:shadow-md"
+      className="group flex flex-col rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 transition-colors hover:border-[var(--primary)]/40"
     >
-      <div>
-        {/* Top Header: Title, Layout Badge, Actions */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h3 className="truncate text-sm font-semibold text-[var(--text-primary)] group-hover:text-[var(--primary)] transition-colors">
-                {preset.name}
-              </h3>
-              {preset.broadcastOnLaunch && (
-                <span
-                  title={t("workspaces.broadcastBadgeTitle")}
-                  className="flex items-center gap-1 rounded bg-[var(--primary)]/15 px-1.5 py-0.5 text-[10px] font-mono text-[var(--primary)] shrink-0"
-                >
-                  <Radio size={10} className="animate-pulse" />
-                  <span>{t("workspaces.broadcastBadge")}</span>
-                </span>
-              )}
-              {missingCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => onEdit(preset)}
-                  title={t("workspaces.missingHostsBadgeTitle", { count: missingCount })}
-                  className="flex items-center gap-1 rounded bg-[var(--warning)]/15 px-1.5 py-0.5 text-[10px] font-mono text-[var(--warning)] shrink-0 hover:bg-[var(--warning)]/25 transition-colors cursor-pointer"
-                >
-                  <AlertTriangle size={10} />
-                  <span>{t("workspaces.missingHostsBadge", { count: missingCount })}</span>
-                </button>
-              )}
-            </div>
-            {preset.description ? (
-              <p className="mt-0.5 line-clamp-1 text-xs text-[var(--text-muted)]">
-                {preset.description}
-              </p>
-            ) : (
-              <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-                {t(layoutMeta.labelKey)}
-              </p>
+      {/* Title row */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <h3 className="truncate text-sm font-semibold text-[var(--text-primary)]">
+              {preset.name}
+            </h3>
+            {missingCount > 0 && (
+              <button
+                type="button"
+                onClick={() => onEdit(preset)}
+                title={t("workspaces.missingHostsBadgeTitle", { count: missingCount })}
+                className="flex shrink-0 items-center gap-1 rounded bg-[var(--warning)]/15 px-1.5 py-0.5 text-[10px] font-mono text-[var(--warning)] hover:bg-[var(--warning)]/25 transition-colors cursor-pointer"
+              >
+                <AlertTriangle size={10} />
+                <span>{t("workspaces.missingHostsBadge", { count: missingCount })}</span>
+              </button>
             )}
           </div>
 
-          {/* Quick Menu Icons */}
-          <div className="flex items-center gap-1 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={() => onDuplicate(preset.id)}
-              title={t("workspaces.duplicatePresetTooltip")}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-            >
-              <Copy size={13} />
-            </button>
-            <button
-              onClick={() => onEdit(preset)}
-              title={t("workspaces.editPresetTooltip")}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-            >
-              <Pencil size={13} />
-            </button>
-            <button
-              onClick={handleDeleteClick}
-              title={t("workspaces.deletePresetTooltip")}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--text-muted)] hover:bg-[var(--danger)]/15 hover:text-[var(--danger)] transition-colors cursor-pointer"
-            >
-              <Trash2 size={13} />
-            </button>
-          </div>
+          {/* Subtitle: description, otherwise pane count — the layout itself is visible below */}
+          <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-[var(--text-muted)]">
+            <span className="truncate">
+              {preset.description ||
+                (isKnownLayout
+                  ? t("workspaces.modal.panesCount", { count: paneCount })
+                  : t(layoutMeta.labelKey))}
+            </span>
+            {preset.broadcastOnLaunch && (
+              <span
+                title={t("workspaces.broadcastBadgeTitle")}
+                className="flex shrink-0 items-center gap-1 text-[var(--primary)]"
+              >
+                <span className="text-[var(--text-muted)]">·</span>
+                <Radio size={11} />
+                {t("workspaces.broadcastBadge")}
+              </span>
+            )}
+          </p>
         </div>
 
-        {/* Blueprint Visual Diagram */}
-        <div className="mt-3.5">
-          <LayoutBlueprint layout={preset.layout} nodeLabels={nodeLabels} />
-        </div>
-
-        {/* Nodes Breakdown List */}
-        <div className="mt-3.5 flex flex-col gap-1.5 border-t border-[var(--border)]/60 pt-3">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            {t("workspaces.clusterNodes", { assigned: assignedNodes.filter((n) => n.host).length, total: layoutMeta.panes })}
-          </div>
-
-          <div className="flex flex-col gap-1">
-            {assignedNodes.map((node, idx) => {
-              const ping = node.host ? statusByHostId[node.host.id] : null;
-
-              return (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between rounded-lg bg-[var(--canvas)]/40 px-2.5 py-1 text-xs"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-[var(--surface-high)] font-mono text-[9px] text-[var(--text-muted)] font-medium">
-                      {idx + 1}
-                    </span>
-                    {node.host ? (
-                      <>
-                        <DistroBadge host={node.host} size="sm" />
-                        <span className="truncate font-medium text-[var(--text-primary)]">
-                          {node.label}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="flex items-center gap-1.5 text-[var(--text-muted)] italic">
-                        <Server size={12} />
-                        <span>{t("workspaces.unassignedNode")}</span>
-                      </span>
-                    )}
-                  </div>
-
-                  {ping && (
-                    <span
-                      className={`font-mono text-[10px] shrink-0 ${
-                        ping.online ? "text-[var(--success)]" : "text-[var(--text-muted)]"
-                      }`}
-                    >
-                      {ping.online ? `${ping.latencyMs ?? 0}ms` : t("workspaces.pingOffline")}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+        <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          <button
+            onClick={() => onDuplicate(preset.id)}
+            title={t("workspaces.duplicatePresetTooltip")}
+            className={`${iconButton} hover:bg-[var(--surface-high)] hover:text-[var(--text-primary)]`}
+          >
+            <Copy size={13} />
+          </button>
+          <button
+            onClick={() => onEdit(preset)}
+            title={t("workspaces.editPresetTooltip")}
+            className={`${iconButton} hover:bg-[var(--surface-high)] hover:text-[var(--text-primary)]`}
+          >
+            <Pencil size={13} />
+          </button>
+          <button
+            onClick={handleDeleteClick}
+            title={t("workspaces.deletePresetTooltip")}
+            className={`${iconButton} hover:bg-[var(--danger)]/15 hover:text-[var(--danger)]`}
+          >
+            <Trash2 size={13} />
+          </button>
         </div>
       </div>
 
-      {/* Launch Action Button */}
-      <div className="mt-4 pt-2 border-t border-[var(--border)]">
+      {/* Layout preview with per-pane host status */}
+      <div className="mt-3">
+        <LayoutBlueprint layout={preset.layout} panes={panes} />
+      </div>
+
+      {/* Footer: host status + launch */}
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-1.5 truncate text-[11px] font-mono text-[var(--text-muted)]">
+          {hasPingData ? (
+            <>
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                  onlineCount > 0 ? "bg-[var(--success)]" : "bg-[var(--text-muted)]/50"
+                }`}
+              />
+              {t("workspaces.onlineCount", { online: onlineCount, total: resolvedCount })}
+            </>
+          ) : (
+            t("workspaces.hostsCount", { count: resolvedCount })
+          )}
+        </span>
+
+        {/* Outline by default so a grid of cards isn't a wall of bright buttons;
+            fills in when the card is hovered. */}
         <button
           onClick={() => onLaunch(preset)}
-          className="flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-3 text-xs font-semibold text-black shadow-sm transition-all hover:bg-[var(--primary)]/90 hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--primary)]/40 px-3 py-1.5 text-xs font-semibold text-[var(--primary)] transition-colors group-hover:border-[var(--primary)] group-hover:bg-[var(--primary)] group-hover:text-black hover:bg-[var(--primary)]/90 cursor-pointer"
         >
-          <Play size={13} className="fill-current" />
-          <span>{t("workspaces.launchCluster")}</span>
+          <Play size={12} className="fill-current" />
+          {t("workspaces.launchShort")}
         </button>
       </div>
     </div>

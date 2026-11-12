@@ -159,9 +159,11 @@ export function WorkspaceModal() {
 
   const isEditing = Boolean(editingPreset && editingPreset.id);
   const layoutMeta = getLayoutMeta(layout);
-  const nodeLabels = selectedHostIds.map((hid, idx) => {
+  const blueprintPanes = selectedHostIds.map((hid) => {
     const h = hosts.find((item) => item.id === hid);
-    return h ? h.label : t("workspaces.paneDefault", { index: idx + 1 });
+    return h
+      ? { label: h.label, title: `${h.label}\n${h.username}@${h.address}:${h.port}` }
+      : {};
   });
 
   return (
@@ -283,7 +285,7 @@ export function WorkspaceModal() {
                 {t("workspaces.modal.blueprintLabel")}
               </label>
               <div className="flex flex-1 flex-col justify-center rounded-xl border border-[var(--border)] bg-[var(--canvas)]/70 p-3">
-                <LayoutBlueprint layout={layout} nodeLabels={nodeLabels} />
+                <LayoutBlueprint layout={layout} panes={blueprintPanes} />
                 <p className="mt-2 text-center text-[10px] text-[var(--text-muted)] font-mono">
                   {t(layoutMeta.descriptionKey)}
                 </p>
@@ -302,6 +304,7 @@ export function WorkspaceModal() {
                       <span>{t("workspaces.modal.paneTarget", { index: idx + 1 })}</span>
                     </label>
                     <CustomSelect
+                      searchable
                       value={selectedHostIds[idx] || ""}
                       onChange={(val) => handleSelectHostForPane(idx, val)}
                       placeholder={hosts.length === 0 ? t("workspaces.modal.noHostsAvailable") : t("workspaces.modal.selectTargetHost")}
