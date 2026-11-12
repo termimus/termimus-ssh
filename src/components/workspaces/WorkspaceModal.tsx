@@ -9,6 +9,7 @@ import {
   LayoutGrid,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useShallow } from "zustand/react/shallow";
 import {
   useWorkspaceStore,
   PresetLayoutType,
@@ -21,9 +22,15 @@ import { CustomSelect } from "../ui/CustomSelect";
 
 export function WorkspaceModal() {
   const { t } = useTranslation();
-  const { isModalOpen, editingPreset, closeModal, savePreset } =
-    useWorkspaceStore();
-  const { hosts } = useHostStore();
+  const { isModalOpen, editingPreset, closeModal, savePreset } = useWorkspaceStore(
+    useShallow((s) => ({
+      isModalOpen: s.isModalOpen,
+      editingPreset: s.editingPreset,
+      closeModal: s.closeModal,
+      savePreset: s.savePreset,
+    }))
+  );
+  const hosts = useHostStore((s) => s.hosts);
 
   const layoutOptions: {
     id: PresetLayoutType;
@@ -45,10 +52,14 @@ export function WorkspaceModal() {
   const [selectedHostIds, setSelectedHostIds] = useState<string[]>([]);
   const [broadcastOnLaunch, setBroadcastOnLaunch] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Sync state when modal opens
+  // Initialize the form when the modal opens. Deliberately keyed on
+  // `editingPreset` only: a host-list refresh (e.g. from sync) while the modal
+  // is open must not wipe what the user has already typed.
   useEffect(() => {
     if (editingPreset) {
+      const hosts = useHostStore.getState().hosts;
       setName(editingPreset.name || "");
       setDescription(editingPreset.description || "");
       const activeLayout = editingPreset.layout || "split-vertical";
@@ -59,12 +70,28 @@ export function WorkspaceModal() {
       const hostIds: string[] = [];
       for (let i = 0; i < requiredPanes; i++) {
         const found = editingPreset.nodes.find((n) => n.paneIndex === i);
-        hostIds.push(found ? found.hostId : hosts[i % hosts.length]?.id || "");
+        if (found) {
+          // A host deleted since the preset was saved must be re-picked, not
+          // silently saved again as a dangling reference.
+          hostIds.push(hosts.some((h) => h.id === found.hostId) ? found.hostId : "");
+        } else {
+          hostIds.push(hosts.length > 0 ? hosts[i % hosts.length].id : "");
+        }
       }
       setSelectedHostIds(hostIds);
       setError(null);
+      setIsSaving(false);
     }
-  }, [editingPreset, hosts]);
+  }, [editingPreset]);
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeModal();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isModalOpen, closeModal]);
 
   // Adjust host slots when layout changes
   const handleLayoutChange = (newLayout: PresetLayoutType) => {
@@ -89,8 +116,9 @@ export function WorkspaceModal() {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
     if (!name.trim()) {
       setError(t("workspaces.modal.errorNameRequired"));
       return;
@@ -107,16 +135,24 @@ export function WorkspaceModal() {
       return;
     }
 
-    savePreset(
-      {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        layout,
-        nodes,
-        broadcastOnLaunch,
-      },
-      editingPreset?.id ? editingPreset.id : undefined
-    );
+    setIsSaving(true);
+    setError(null);
+    try {
+      await savePreset(
+        {
+          name: name.trim(),
+          description: description.trim() || undefined,
+          layout,
+          nodes,
+          broadcastOnLaunch,
+        },
+        editingPreset?.id ? editingPreset.id : undefined
+      );
+    } catch (err) {
+      setError(t("workspaces.modal.errorSaveFailed", { error: String(err) }));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!isModalOpen) return null;
@@ -125,7 +161,7 @@ export function WorkspaceModal() {
   const layoutMeta = getLayoutMeta(layout);
   const nodeLabels = selectedHostIds.map((hid, idx) => {
     const h = hosts.find((item) => item.id === hid);
-    return h ? h.label : `Pane ${idx + 1}`;
+    return h ? h.label : t("workspaces.paneDefault", { index: idx + 1 });
   });
 
   return (
@@ -249,7 +285,7 @@ export function WorkspaceModal() {
               <div className="flex flex-1 flex-col justify-center rounded-xl border border-[var(--border)] bg-[var(--canvas)]/70 p-3">
                 <LayoutBlueprint layout={layout} nodeLabels={nodeLabels} />
                 <p className="mt-2 text-center text-[10px] text-[var(--text-muted)] font-mono">
-                  {layoutMeta.description}
+                  {t(layoutMeta.descriptionKey)}
                 </p>
               </div>
             </div>
@@ -270,7 +306,6 @@ export function WorkspaceModal() {
                       onChange={(val) => handleSelectHostForPane(idx, val)}
                       placeholder={hosts.length === 0 ? t("workspaces.modal.noHostsAvailable") : t("workspaces.modal.selectTargetHost")}
                       options={[
-                        { value: "", label: t("workspaces.modal.emptyPaneOption") },
                         ...hosts.map((h) => ({
                           value: h.id,
                           label: h.label,
@@ -319,7 +354,7 @@ export function WorkspaceModal() {
             </button>
             <button
               type="submit"
-              disabled={hosts.length === 0}
+              disabled={hosts.length === 0 || isSaving}
               className="rounded-xl bg-[var(--primary)] px-5 py-2 text-xs font-semibold text-black shadow-md hover:bg-[var(--primary)]/90 transition-all disabled:opacity-50 cursor-pointer"
             >
               {isEditing ? t("workspaces.modal.updateButton") : t("workspaces.modal.saveButton")}
