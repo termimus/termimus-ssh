@@ -32,7 +32,7 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
   const isUnlocked = useVaultStore((s) => s.isUnlocked);
   const { hosts } = useHostStore();
   const { snippets } = useSnippetStore();
-  const { activeRuleIds } = useTunnelStore();
+  const hasActiveTunnels = useTunnelStore((s) => s.activeRuleIds.size > 0);
   const keychainCount = useKeychainStore((s) => s.items.length);
   const presetCount = useWorkspaceStore((s) => s.presets.length);
   const { currentVersion, latestVersion, hasUpdate, releaseUrl } = useUpdateStore();
@@ -49,7 +49,7 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
     { icon: Layers, label: t("nav.workspaces"), id: "workspaces", badge: presetCount || undefined },
     { icon: FolderOpen, label: t("nav.sftp"), id: "sftp" },
     { icon: Braces, label: t("nav.snippets"), id: "snippets", badge: snippets.length || undefined },
-    { icon: Waypoints, label: t("nav.tunnels"), id: "tunnels", badgeDot: activeRuleIds.size > 0 },
+    { icon: Waypoints, label: t("nav.tunnels"), id: "tunnels", badgeDot: hasActiveTunnels },
   ];
 
   return (
