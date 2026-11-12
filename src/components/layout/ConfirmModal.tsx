@@ -82,7 +82,7 @@ export function ConfirmModal() {
         </div>
 
         {/* Message */}
-        <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-5 pl-0.5">
+        <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-5 pl-0.5 whitespace-pre-line">
           {message}
         </p>
 

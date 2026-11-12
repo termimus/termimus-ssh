@@ -124,4 +124,5 @@ export const hostsId: typeof hostsEn = {
     usernameRequired: "Nama pengguna wajib diisi",
     keyRequired: "Silakan pilih kunci SSH dari Gantungan Kunci",
   },
+  deleteUsedByPresets: "Host ini dipakai oleh {{count}} preset ruang kerja: {{names}}. Panel tersebut perlu host baru sebelum bisa dibuka.",
 };

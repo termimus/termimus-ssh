@@ -27,6 +27,7 @@ import { useSessionStore } from "../../stores/useSessionStore";
 import { useSftpStore } from "../../stores/useSftpStore";
 import { usePingStore } from "../../stores/usePingStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
+import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { useVaultStore } from "../../stores/useVaultStore";
 import { FolderModal } from "./FolderModal";
 import { Host, Folder } from "../../lib/api";
@@ -292,9 +293,21 @@ export function HostList({ onOpenTerminal, onOpenSftp, onOpenTunnels }: HostList
   const handleDelete = useCallback(
     (e: React.MouseEvent, host: Host) => {
       e.stopPropagation();
+      // Warn when workspace presets reference this host: their panes become
+      // unassigned (flagged on the preset card) after the delete.
+      const usedBy = useWorkspaceStore
+        .getState()
+        .presets.filter((p) => p.nodes.some((n) => n.hostId === host.id));
+      let message = t("hosts.deleteConfirmMsg", { label: host.label, address: `${host.username}@${host.address}` });
+      if (usedBy.length > 0) {
+        message += "\n\n" + t("hosts.deleteUsedByPresets", {
+          count: usedBy.length,
+          names: usedBy.map((p) => `"${p.name}"`).join(", "),
+        });
+      }
       useConfirmStore.getState().confirm({
         title: t("hosts.deleteConfirmTitle"),
-        message: t("hosts.deleteConfirmMsg", { label: host.label, address: `${host.username}@${host.address}` }),
+        message,
         confirmLabel: t("hosts.deleteHost"),
         isDanger: true,
         onConfirm: async () => {

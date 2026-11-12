@@ -31,4 +31,11 @@ export const commonId: typeof commonEn = {
   selectOption: "Pilih salah satu...",
   noOptionsAvailable: "Tidak ada pilihan tersedia",
   noMatchesFor: "Tidak ada yang cocok untuk \"{{query}}\"",
+  errorBoundary: {
+    title: "Terjadi kesalahan pada tampilan ini",
+    description: "Bagian lain aplikasi tetap berjalan dan sesi SSH yang terbuka tidak terpengaruh. Coba lagi, atau muat ulang aplikasi (memuat ulang akan menutup tab terminal yang terbuka).",
+    details: "Detail error",
+    retry: "Coba lagi",
+    reload: "Muat ulang aplikasi",
+  },
 };

@@ -29,4 +29,11 @@ export const commonEn = {
   selectOption: "Select an option...",
   noOptionsAvailable: "No options available",
   noMatchesFor: "No matches for \"{{query}}\"",
+  errorBoundary: {
+    title: "Something went wrong in this view",
+    description: "The rest of the app is still running and open SSH sessions are unaffected. Try again, or reload the app (reloading closes open terminal tabs).",
+    details: "Error details",
+    retry: "Try again",
+    reload: "Reload app",
+  },
 };

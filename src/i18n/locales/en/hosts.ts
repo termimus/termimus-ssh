@@ -122,4 +122,5 @@ export const hostsEn = {
     usernameRequired: "Username is required",
     keyRequired: "Please select an SSH key from Keychain",
   },
+  deleteUsedByPresets: "It is used by {{count}} workspace preset(s): {{names}}. Those panes will need a new host before they can launch.",
 };

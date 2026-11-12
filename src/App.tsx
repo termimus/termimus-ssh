@@ -15,6 +15,7 @@ import { HostModal } from "./components/hosts/HostModal";
 import { VaultModal } from "./components/vault/VaultModal";
 import { AppLockScreen } from "./components/vault/AppLockScreen";
 import { TerminalWorkspace } from "./components/terminal/TerminalWorkspace";
+import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import { WorkspaceView } from "./components/workspaces/WorkspaceView";
 import { SftpView } from "./components/sftp/SftpView";
 import { TunnelView } from "./components/tunnels/TunnelView";
@@ -32,7 +33,17 @@ import { useLiveSync } from "./hooks/useLiveSync";
 // Helper component for native-feel stacked views:
 // Keeps views mounted in the DOM once visited, switching visibility in 0ms
 // with zero unmount cost, zero redundant IPC fetches, and perfect scroll/input preservation.
-function PageView({ active, children }: { active: boolean; children: React.ReactNode }) {
+/** Keep-alive page container; each page gets its own error boundary so one
+ *  broken view can't blank the whole window (or tear down the terminals). */
+function PageView({
+  active,
+  scope,
+  children,
+}: {
+  active: boolean;
+  scope: string;
+  children: React.ReactNode;
+}) {
   return (
     <div
       className="absolute inset-0 flex flex-col overflow-hidden"
@@ -42,7 +53,7 @@ function PageView({ active, children }: { active: boolean; children: React.React
         zIndex: active ? 5 : 0,
       }}
     >
-      {children}
+      <ErrorBoundary scope={scope}>{children}</ErrorBoundary>
     </div>
   );
 }
@@ -164,23 +175,25 @@ function App() {
         <main className="relative flex flex-1 overflow-hidden bg-[var(--canvas)]">
           {/* Terminal sessions stay mounted and retain their layout geometry (never collapse to 0x0),
               preventing bogus SIGWINCH resize events (which breaks htop/curses TUIs). */}
-          <TerminalWorkspace
-            visible={showTerminal}
-            onOpenWorkspaces={openWorkspaces}
-          />
+          <ErrorBoundary scope="terminal">
+            <TerminalWorkspace
+              visible={showTerminal}
+              onOpenWorkspaces={openWorkspaces}
+            />
+          </ErrorBoundary>
 
           {/* Lazy-mounted Native-Grade Keep-Alive Views:
               Each view is mounted on first visit and preserved across tab switches.
               Switches happen in 0ms (1 frame), scroll positions are remembered,
               and inputs/folder drill-downs stay intact. */}
           {visitedTabs.has("workspaces") && (
-            <PageView active={activeNav === "workspaces"}>
+            <PageView active={activeNav === "workspaces"} scope="workspaces">
               <WorkspaceView onOpenTerminal={openTerminal} />
             </PageView>
           )}
 
           {visitedTabs.has("hosts") && (
-            <PageView active={activeNav === "hosts"}>
+            <PageView active={activeNav === "hosts"} scope="hosts">
               <HostList
                 onOpenTerminal={openTerminal}
                 onOpenSftp={openSftp}
@@ -190,31 +203,31 @@ function App() {
           )}
 
           {visitedTabs.has("sftp") && (
-            <PageView active={activeNav === "sftp"}>
+            <PageView active={activeNav === "sftp"} scope="sftp">
               <SftpView />
             </PageView>
           )}
 
           {visitedTabs.has("keychain") && (
-            <PageView active={activeNav === "keychain"}>
+            <PageView active={activeNav === "keychain"} scope="keychain">
               <KeychainView />
             </PageView>
           )}
 
           {visitedTabs.has("tunnels") && (
-            <PageView active={activeNav === "tunnels"}>
+            <PageView active={activeNav === "tunnels"} scope="tunnels">
               <TunnelView />
             </PageView>
           )}
 
           {visitedTabs.has("snippets") && (
-            <PageView active={activeNav === "snippets"}>
+            <PageView active={activeNav === "snippets"} scope="snippets">
               <SnippetView />
             </PageView>
           )}
 
           {visitedTabs.has("settings") && (
-            <PageView active={activeNav === "settings"}>
+            <PageView active={activeNav === "settings"} scope="settings">
               <SettingsView />
             </PageView>
           )}

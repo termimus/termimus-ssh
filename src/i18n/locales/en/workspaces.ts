@@ -47,6 +47,8 @@ export const workspacesEn = {
     triple: "Web + DB + Worker (3)",
     quad: "Quad Microservices (4)",
   },
+  missingHostsBadge: "{{count}} missing",
+  missingHostsBadgeTitle: "{{count}} pane(s) have no host or point to a deleted host. Click to reassign.",
   deleteConfirm: {
     title: "Delete Workspace Preset",
     message: "Are you sure you want to delete \"{{name}}\"? This action cannot be undone.",
