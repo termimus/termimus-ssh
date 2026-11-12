@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Play,
   Pencil,
@@ -6,7 +6,6 @@ import {
   Copy,
   Radio,
   AlertTriangle,
-  Loader2,
   Server,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -23,7 +22,7 @@ import { resolvePresetHosts } from "../../lib/workspaceLayout";
 
 interface WorkspaceCardProps {
   preset: WorkspacePreset;
-  onLaunch: (preset: WorkspacePreset) => Promise<void>;
+  onLaunch: (preset: WorkspacePreset) => void;
   onEdit: (preset: WorkspacePreset) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
@@ -168,7 +167,6 @@ export function WorkspaceCard({
   const hosts = useHostStore((s) => s.hosts);
   const statusByHostId = usePingStore((s) => s.statusByHostId);
   const confirm = useConfirmStore((s) => s.confirm);
-  const [isLaunching, setIsLaunching] = useState(false);
 
   const layoutMeta = getLayoutMeta(preset.layout);
   // Pane slots with no host or a host deleted since the preset was saved.
@@ -190,16 +188,6 @@ export function WorkspaceCard({
   });
 
   const nodeLabels = assignedNodes.map((n) => n.label);
-
-  const handleLaunchClick = async () => {
-    if (isLaunching) return;
-    setIsLaunching(true);
-    try {
-      await onLaunch(preset);
-    } finally {
-      setIsLaunching(false);
-    }
-  };
 
   const handleDeleteClick = () => {
     confirm({
@@ -340,21 +328,11 @@ export function WorkspaceCard({
       {/* Launch Action Button */}
       <div className="mt-4 pt-2 border-t border-[var(--border)]">
         <button
-          onClick={handleLaunchClick}
-          disabled={isLaunching}
-          className="flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-3 text-xs font-semibold text-black shadow-sm transition-all hover:bg-[var(--primary)]/90 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 cursor-pointer"
+          onClick={() => onLaunch(preset)}
+          className="flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-3 text-xs font-semibold text-black shadow-sm transition-all hover:bg-[var(--primary)]/90 hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
         >
-          {isLaunching ? (
-            <>
-              <Loader2 size={13} className="animate-spin" />
-              <span>{t("workspaces.launching")}</span>
-            </>
-          ) : (
-            <>
-              <Play size={13} className="fill-current" />
-              <span>{t("workspaces.launchCluster")}</span>
-            </>
-          )}
+          <Play size={13} className="fill-current" />
+          <span>{t("workspaces.launchCluster")}</span>
         </button>
       </div>
     </div>

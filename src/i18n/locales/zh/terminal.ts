@@ -87,4 +87,8 @@ export const terminalZh: typeof terminalEn = {
     savePresetTitle: "将此分屏保存为工作区预设",
     disconnect: "断开",
   },
+  maximizedBanner: {
+    hint: "分栏已最大化 — 按 ESC 或点击“恢复”退出",
+    restore: "恢复分屏",
+  },
 };

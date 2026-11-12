@@ -6,7 +6,6 @@ export const workspacesId: typeof workspacesEn = {
   newWorkspace: "Preset Baru",
   launch: "Buka Ruang Kerja",
   launchCluster: "Jalankan Klaster",
-  launching: "Menghubungkan & Membagi Layar...",
   edit: "Ubah Ruang Kerja",
   delete: "Hapus Ruang Kerja",
   duplicate: "Duplikasi Preset",

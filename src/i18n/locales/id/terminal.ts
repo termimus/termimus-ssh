@@ -87,4 +87,8 @@ export const terminalId: typeof terminalEn = {
     savePresetTitle: "Simpan layar terbagi ini sebagai Preset Ruang Kerja",
     disconnect: "Putuskan",
   },
+  maximizedBanner: {
+    hint: "Panel Dimaksimalkan — Tekan ESC atau klik Pulihkan untuk keluar",
+    restore: "Pulihkan Split",
+  },
 };

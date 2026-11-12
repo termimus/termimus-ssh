@@ -255,6 +255,23 @@ pub struct WorkspacePreset {
     pub updated_at: String,
 }
 
+/// Layouts the frontend can render and launch (`PRESET_LAYOUTS` in
+/// `src/lib/workspaceLayout.ts`). Keep both lists in sync.
+pub const WORKSPACE_PRESET_LAYOUTS: &[&str] = &[
+    "split-vertical",
+    "split-horizontal",
+    "grid-4",
+    "split-1-2",
+    "split-2-1",
+    "triple-column",
+];
+
+impl WorkspacePreset {
+    pub fn is_known_layout(layout: &str) -> bool {
+        WORKSPACE_PRESET_LAYOUTS.contains(&layout)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspacePresetInput {
@@ -361,4 +378,23 @@ pub struct EncryptedBackupEnvelope {
     pub salt: Vec<u8>,
     pub nonce: Vec<u8>,
     pub ciphertext: Vec<u8>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn known_workspace_layouts_are_accepted() {
+        for layout in WORKSPACE_PRESET_LAYOUTS {
+            assert!(WorkspacePreset::is_known_layout(layout));
+        }
+    }
+
+    #[test]
+    fn unknown_workspace_layouts_are_rejected() {
+        for layout in ["", "grid-6", "Split-Vertical", "split-vertical ", "custom"] {
+            assert!(!WorkspacePreset::is_known_layout(layout), "{layout:?} should be rejected");
+        }
+    }
 }

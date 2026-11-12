@@ -137,7 +137,7 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
 
   // Launch a preset. Missing hosts are confirmed first (the layout collapses
   // to the remaining ones); failures are surfaced instead of being swallowed.
-  const handleLaunchPreset = async (preset: WorkspacePreset) => {
+  const handleLaunchPreset = (preset: WorkspacePreset) => {
     setLaunchError(null);
     const resolved = resolvePresetHosts(preset, hosts);
 
