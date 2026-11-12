@@ -359,7 +359,8 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          // auto-fill: wide windows get more columns instead of stretching each card
+          <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(min(100%,300px),1fr))]">
             {filteredPresets.map((preset) => (
               <WorkspaceCard
                 key={preset.id}
