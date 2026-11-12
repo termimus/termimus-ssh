@@ -59,9 +59,9 @@ Prebuilt installers for every release are published automatically to the **[GitH
 - **Quick Connect**: Instant fuzzy-search launcher accessible anywhere with `Ctrl+K`.
 
 ### 🗂️ Workspaces & Multi-Server Cluster Launcher
-- **Multi-Server Layout Presets**: Design and save complex multi-terminal split layouts (Single, Vertical 2-way, Horizontal 2-way, 3-way, 4-way Grid, 6-way Matrix) with assigned hosts for each pane.
+- **Multi-Server Layout Presets**: Design and save complex multi-terminal split layouts (Side by Side, Top & Bottom, 1 Left + 2 Right, 2 Top + 1 Bottom, Triple Column, 2×2 Grid) with assigned hosts for each pane.
 - **1-Click Cluster Launcher**: Atomic multi-session launcher connects to all target machines simultaneously and arranges them into their pre-configured split panes with zero layout jitter.
-- **Interactive Blueprint Designer**: Visual layout designer to preview blueprints, assign hosts to panes, and customize workspace tags and colors.
+- **Interactive Blueprint Designer**: Visual layout designer to preview blueprints, assign hosts to panes, and toggle input broadcast on launch.
 - **Save Active Split as Preset**: Snapshot your current live split layout and open SSH sessions into a reusable workspace preset with a single click.
 
 ### 📂 Dual-Pane SFTP & In-App Code Editor

@@ -10,6 +10,9 @@ import {
   Copy,
   Pencil,
   Trash2,
+  AlertTriangle,
+  Loader2,
+  X,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useWorkspaceStore, WorkspacePreset } from "../../stores/useWorkspaceStore";
@@ -18,6 +21,11 @@ import { useHostStore } from "../../stores/useHostStore";
 import { useConfirmStore } from "../../stores/useConfirmStore";
 import { getAllLeafPanes } from "../../lib/layoutTree";
 import { launchWorkspacePreset } from "../../lib/workspaceLauncher";
+import {
+  captureGroupAsPreset,
+  getPaneCountForLayout,
+  resolvePresetHosts,
+} from "../../lib/workspaceLayout";
 import { WorkspaceCard } from "./WorkspaceCard";
 import { WorkspaceModal } from "./WorkspaceModal";
 
@@ -29,12 +37,25 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
   const { t } = useTranslation();
   const {
     presets,
+    isLoading,
+    loadError,
     refresh,
     openCreateModal,
     openEditModal,
     duplicatePreset,
     deletePreset,
-  } = useWorkspaceStore();
+  } = useWorkspaceStore(
+    useShallow((s) => ({
+      presets: s.presets,
+      isLoading: s.isLoading,
+      loadError: s.error,
+      refresh: s.refresh,
+      openCreateModal: s.openCreateModal,
+      openEditModal: s.openEditModal,
+      duplicatePreset: s.duplicatePreset,
+      deletePreset: s.deletePreset,
+    }))
+  );
 
   useEffect(() => {
     refresh();
@@ -43,9 +64,10 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
   const { groups, activeGroupId, tabs } = useSessionStore(
     useShallow((s) => ({ groups: s.groups, activeGroupId: s.activeGroupId, tabs: s.tabs }))
   );
-  const { hosts } = useHostStore();
+  const hosts = useHostStore((s) => s.hosts);
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [launchError, setLaunchError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -83,10 +105,14 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
     };
   }, [contextMenu]);
 
-  // Check if current active group in terminal has multiple panes
+  // Check if the active terminal group is a split that maps to a preset layout
   const activeGroup = groups.find((g) => g.id === activeGroupId);
   const activeLeafPanes = activeGroup ? getAllLeafPanes(activeGroup.rootPane) : [];
-  const canSaveActiveSplit = activeLeafPanes.length >= 2;
+  const activeCapture = useMemo(
+    () => (activeGroup ? captureGroupAsPreset(activeGroup.rootPane, tabs, hosts) : null),
+    [activeGroup, tabs, hosts]
+  );
+  const canSaveActiveSplit = activeCapture !== null;
 
   // Filter presets based on search query
   const filteredPresets = useMemo(() => {
@@ -109,46 +135,52 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
     });
   }, [presets, searchQuery, hosts]);
 
-  // Handle launching a preset
+  // Launch a preset. Missing hosts are confirmed first (the layout collapses
+  // to the remaining ones); failures are surfaced instead of being swallowed.
   const handleLaunchPreset = async (preset: WorkspacePreset) => {
-    const success = await launchWorkspacePreset(preset);
-    if (success) {
-      onOpenTerminal();
+    setLaunchError(null);
+    const resolved = resolvePresetHosts(preset, hosts);
+
+    const launch = () => {
+      try {
+        launchWorkspacePreset(preset, resolved.hosts);
+        onOpenTerminal();
+      } catch (e) {
+        setLaunchError(t("workspaces.launchFailed", { name: preset.name, error: String(e) }));
+      }
+    };
+
+    if (resolved.hosts.length === 0) {
+      setLaunchError(t("workspaces.launchNoHosts", { name: preset.name }));
+      return;
     }
+
+    if (resolved.missing > 0) {
+      useConfirmStore.getState().confirm({
+        title: t("workspaces.missingHostsConfirm.title"),
+        message: t("workspaces.missingHostsConfirm.message", {
+          name: preset.name,
+          missing: resolved.missing,
+          total: resolved.missing + resolved.hosts.length,
+          count: resolved.hosts.length,
+        }),
+        confirmLabel: t("workspaces.missingHostsConfirm.confirmLabel"),
+        onConfirm: launch,
+      });
+      return;
+    }
+
+    launch();
   };
 
   // 1-Click capture of active split screen
   const handleSaveActiveSplit = () => {
-    if (!activeGroup || activeLeafPanes.length < 2) return;
-
-    // Detect layout type by pane count
-    let layoutType: WorkspacePreset["layout"] = "split-vertical";
-    if (activeLeafPanes.length === 2) {
-      // Check if root split is row or column
-      layoutType =
-        activeGroup.rootPane.type === "split" && activeGroup.rootPane.direction === "column"
-          ? "split-horizontal"
-          : "split-vertical";
-    } else if (activeLeafPanes.length === 4) {
-      layoutType = "grid-4";
-    } else if (activeLeafPanes.length === 3) {
-      layoutType = "split-1-2";
-    }
-
-    const capturedNodes = activeLeafPanes.map((pane, idx) => {
-      const tab = tabs.find((t) => t.id === pane.activeTabId);
-      return {
-        paneIndex: idx,
-        hostId: tab ? tab.hostId : hosts[0]?.id || "",
-        label: tab ? tab.hostLabel : undefined,
-      };
-    });
-
+    if (!activeCapture || !activeGroup) return;
     openCreateModal({
-      name: `Active Cluster (${activeLeafPanes.length} Nodes)`,
-      description: "Saved from active split screen terminal layout",
-      layout: layoutType,
-      nodes: capturedNodes,
+      name: t("workspaces.capturedName", { count: activeLeafPanes.length }),
+      description: t("workspaces.capturedDescription"),
+      layout: activeCapture.layout,
+      nodes: activeCapture.nodes,
       broadcastOnLaunch: useSessionStore.getState().isGroupBroadcastActive(activeGroup.id),
     });
   };
@@ -159,7 +191,7 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
     title: string
   ) => {
     if (hosts.length === 0) return;
-    const required = layout === "grid-4" ? 4 : layout === "split-1-2" ? 3 : 2;
+    const required = getPaneCountForLayout(layout);
     const nodes = Array.from({ length: required }).map((_, idx) => ({
       paneIndex: idx,
       hostId: hosts[idx % hosts.length]?.id || hosts[0].id,
@@ -245,7 +277,44 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
 
       {/* Main Content Area */}
       <div className="flex-1 p-6">
-        {filteredPresets.length === 0 ? (
+        {launchError && (
+          <div
+            role="alert"
+            className="mb-4 flex items-start gap-2.5 rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3.5 py-2.5 text-xs text-[var(--danger)]"
+          >
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <span className="flex-1">{launchError}</span>
+            <button
+              onClick={() => setLaunchError(null)}
+              className="shrink-0 rounded p-0.5 hover:bg-[var(--danger)]/15 cursor-pointer"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
+
+        {loadError && (
+          <div
+            role="alert"
+            className="mb-4 flex items-center gap-2.5 rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3.5 py-2.5 text-xs text-[var(--danger)]"
+          >
+            <AlertTriangle size={14} className="shrink-0" />
+            <span className="flex-1">{t("workspaces.loadError", { error: loadError })}</span>
+            <button
+              onClick={() => refresh()}
+              className="shrink-0 rounded-lg border border-[var(--danger)]/40 px-2.5 py-1 font-medium hover:bg-[var(--danger)]/15 cursor-pointer"
+            >
+              {t("common.retry")}
+            </button>
+          </div>
+        )}
+
+        {isLoading && presets.length === 0 ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-xs text-[var(--text-muted)]">
+            <Loader2 size={14} className="animate-spin" />
+            <span>{t("common.loading")}</span>
+          </div>
+        ) : filteredPresets.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border)] py-16 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--surface-container)] text-[var(--primary)] shadow-sm mb-3">
               <Layers size={26} />
@@ -277,7 +346,7 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
                     <div className="flex flex-wrap items-center justify-center gap-2">
                       <button
                         onClick={() =>
-                          handleCreateStarterPreset("split-vertical", "Dual Server Cluster")
+                          handleCreateStarterPreset("split-vertical", t("workspaces.starterNames.dual"))
                         }
                         className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
                       >
@@ -287,7 +356,7 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
 
                       <button
                         onClick={() =>
-                          handleCreateStarterPreset("split-1-2", "Web + DB + Worker (3)")
+                          handleCreateStarterPreset("split-1-2", t("workspaces.starterNames.triple"))
                         }
                         className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
                       >
@@ -297,7 +366,7 @@ export function WorkspaceView({ onOpenTerminal }: WorkspaceViewProps) {
 
                       <button
                         onClick={() =>
-                          handleCreateStarterPreset("grid-4", "Quad Microservices (4)")
+                          handleCreateStarterPreset("grid-4", t("workspaces.starterNames.quad"))
                         }
                         className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-container)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:border-[var(--primary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
                       >

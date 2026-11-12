@@ -4,8 +4,10 @@ import { Terminal as TerminalIcon, Minimize2, Radio, Unlink, Layers, BookmarkPlu
 import { useShallow } from "zustand/react/shallow";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useSnippetStore } from "../../stores/useSnippetStore";
-import { useWorkspaceStore, WorkspacePreset } from "../../stores/useWorkspaceStore";
+import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
+import { useHostStore } from "../../stores/useHostStore";
 import { findPaneById, getAllLeafPanes } from "../../lib/layoutTree";
+import { captureGroupAsPreset, detectPresetLayout } from "../../lib/workspaceLayout";
 import { PaneContainer } from "./PaneContainer";
 import { PaneView } from "./PaneView";
 import { RightPanel } from "./RightPanel";
@@ -109,33 +111,13 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
   const draggedTab = draggedTabId ? tabs.find((t) => t.id === draggedTabId) : null;
 
   const handleSaveGroupSplit = (group: (typeof groups)[0]) => {
-    const leaves = getAllLeafPanes(group.rootPane);
-    if (leaves.length < 2) return;
-    let layoutType: WorkspacePreset["layout"] = "split-vertical";
-    if (leaves.length === 2) {
-      layoutType =
-        group.rootPane.type === "split" && group.rootPane.direction === "column"
-          ? "split-horizontal"
-          : "split-vertical";
-    } else if (leaves.length === 4) {
-      layoutType = "grid-4";
-    } else if (leaves.length === 3) {
-      layoutType = "split-1-2";
-    }
-
-    const capturedNodes = leaves.map((pane, idx) => {
-      const tab = tabs.find((t) => t.id === pane.activeTabId);
-      return {
-        paneIndex: idx,
-        hostId: tab ? tab.hostId : "",
-        label: tab ? tab.hostLabel : undefined,
-      };
-    });
-
+    const capture = captureGroupAsPreset(group.rootPane, tabs, useHostStore.getState().hosts);
+    if (!capture) return;
     useWorkspaceStore.getState().openCreateModal({
-      name: `Active Cluster (${leaves.length} Nodes)`,
-      layout: layoutType,
-      nodes: capturedNodes,
+      name: t("workspaces.capturedName", { count: capture.nodes.length }),
+      description: t("workspaces.capturedDescription"),
+      layout: capture.layout,
+      nodes: capture.nodes,
       broadcastOnLaunch: broadcastGroupIds.includes(group.id),
     });
   };
@@ -222,20 +204,22 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
                       <div className="flex shrink-0 items-center justify-between bg-[var(--primary)]/10 px-3 py-1 text-xs text-[var(--primary)] border-b border-[var(--primary)]/30 backdrop-blur-sm z-20">
                         <div className="flex items-center gap-2 font-mono text-[11px]">
                           <Radio size={12} className="animate-pulse text-[var(--primary)] shrink-0" />
-                          <span className="font-semibold uppercase tracking-wider">Interconnection Active:</span>
+                          <span className="font-semibold uppercase tracking-wider">{t("terminal.broadcastBanner.active")}</span>
                           <span className="text-[var(--text-secondary)]">
-                            Keystrokes are mirrored to {connectedLeafCount || groupLeaves.length} split terminals
+                            {t("terminal.broadcastBanner.mirrored", { count: connectedLeafCount || groupLeaves.length })}
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleSaveGroupSplit(group)}
-                            className="flex items-center gap-1 rounded bg-[var(--surface-container)] px-2 py-0.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition-colors"
-                            title="Save this split screen as a Workspace Preset"
-                          >
-                            <BookmarkPlus size={11} />
-                            <span>Save Preset</span>
-                          </button>
+                          {detectPresetLayout(group.rootPane) && (
+                            <button
+                              onClick={() => handleSaveGroupSplit(group)}
+                              className="flex items-center gap-1 rounded bg-[var(--surface-container)] px-2 py-0.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-high)] transition-colors"
+                              title={t("terminal.broadcastBanner.savePresetTitle")}
+                            >
+                              <BookmarkPlus size={11} />
+                              <span>{t("terminal.broadcastBanner.savePreset")}</span>
+                            </button>
+                          )}
                           <span className="text-[10px] text-[var(--text-muted)] font-mono hidden md:inline">
                             Alt+B
                           </span>
@@ -244,7 +228,7 @@ export function TerminalWorkspace({ visible, onOpenWorkspaces }: TerminalWorkspa
                             className="flex items-center gap-1 rounded bg-[var(--primary)]/20 px-2 py-0.5 text-xs text-[var(--primary)] hover:bg-[var(--primary)] hover:text-black font-medium transition-colors"
                           >
                             <Unlink size={11} />
-                            <span>Disconnect</span>
+                            <span>{t("terminal.broadcastBanner.disconnect")}</span>
                           </button>
                         </div>
                       </div>

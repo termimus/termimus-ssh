@@ -6,68 +6,42 @@ import {
   WorkspacePreset,
   WorkspacePresetInput,
 } from "../lib/api";
+import { getPaneCountForLayout, isKnownPresetLayout } from "../lib/workspaceLayout";
 
 export type { PresetLayoutType, PresetNode, WorkspacePreset, WorkspacePresetInput };
 
-export function getPaneCountForLayout(layout: PresetLayoutType): number {
-  switch (layout) {
-    case "split-vertical":
-    case "split-horizontal":
-      return 2;
-    case "grid-4":
-      return 4;
-    case "split-1-2":
-    case "split-2-1":
-    case "triple-column":
-      return 3;
-    default:
-      return 2;
-  }
-}
+export { getPaneCountForLayout };
 
-export function getLayoutMeta(layout: PresetLayoutType): {
-  label: string;
+const LAYOUT_I18N_KEY: Record<PresetLayoutType, string> = {
+  "split-vertical": "splitVertical",
+  "split-horizontal": "splitHorizontal",
+  "grid-4": "grid4",
+  "split-1-2": "split12",
+  "split-2-1": "split21",
+  "triple-column": "tripleColumn",
+};
+
+/** Translation keys + pane count for a layout; safe for unknown layout strings. */
+export function getLayoutMeta(layout: PresetLayoutType | string): {
+  labelKey: string;
+  descriptionKey: string;
   panes: number;
-  description: string;
 } {
-  switch (layout) {
-    case "split-vertical":
-      return {
-        label: "Side by Side (1×2)",
-        panes: 2,
-        description: "Two terminals split vertically left and right",
-      };
-    case "split-horizontal":
-      return {
-        label: "Top & Bottom (2×1)",
-        panes: 2,
-        description: "Two terminals split horizontally top and bottom",
-      };
-    case "grid-4":
-      return {
-        label: "2×2 Quad Grid (4)",
-        panes: 4,
-        description: "Four balanced terminal panes in a 2x2 grid",
-      };
-    case "split-1-2":
-      return {
-        label: "1 Large + 2 Stacked",
-        panes: 3,
-        description: "One primary terminal on left, two stacked on right",
-      };
-    case "split-2-1":
-      return {
-        label: "2 Stacked + 1 Wide",
-        panes: 3,
-        description: "Two terminals side-by-side on top, one wide on bottom",
-      };
-    case "triple-column":
-      return {
-        label: "Triple Column (1×3)",
-        panes: 3,
-        description: "Three parallel vertical columns side-by-side",
-      };
+  if (!isKnownPresetLayout(layout)) {
+    // Unknown layout (e.g. synced/imported from another app version):
+    // render something sane instead of crashing the Workspaces page.
+    return {
+      labelKey: "workspaces.layoutUnknown",
+      descriptionKey: "workspaces.layoutUnknown",
+      panes: 2,
+    };
   }
+  const key = LAYOUT_I18N_KEY[layout];
+  return {
+    labelKey: `workspaces.modal.layouts.${key}`,
+    descriptionKey: `workspaces.modal.layoutDescriptions.${key}`,
+    panes: getPaneCountForLayout(layout),
+  };
 }
 
 interface WorkspaceState {
@@ -91,7 +65,9 @@ interface WorkspaceState {
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   presets: [],
-  isLoading: false,
+  // True until the first refresh settles, so the page shows a spinner rather
+  // than flashing the "no presets" empty state.
+  isLoading: true,
   error: null,
   isModalOpen: false,
   editingPreset: null,
@@ -132,7 +108,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         }
       }
 
-      set({ presets, isLoading: false });
+      set({ presets, isLoading: false, error: null });
     } catch (e) {
       set({ isLoading: false, error: String(e) });
     }

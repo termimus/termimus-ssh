@@ -78,4 +78,11 @@ export const terminalEn = {
     codeHint: "Open your authenticator app and enter the current code.",
     answerPlaceholder: "Type your answer",
   },
+  broadcastBanner: {
+    active: "Interconnection Active:",
+    mirrored: "Keystrokes are mirrored to {{count}} split terminals",
+    savePreset: "Save Preset",
+    savePresetTitle: "Save this split screen as a Workspace Preset",
+    disconnect: "Disconnect",
+  },
 };

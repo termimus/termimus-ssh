@@ -34,7 +34,7 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
   const { snippets } = useSnippetStore();
   const { activeRuleIds } = useTunnelStore();
   const { items: keychainItems } = useKeychainStore();
-  const { presets } = useWorkspaceStore();
+  const presetCount = useWorkspaceStore((s) => s.presets.length);
   const { currentVersion, latestVersion, hasUpdate, releaseUrl } = useUpdateStore();
 
   const navItems: {
@@ -46,7 +46,7 @@ export function Sidebar({ activeNav, onNavChange }: SidebarProps) {
   }[] = [
     { icon: Server, label: t("nav.hosts"), id: "hosts", badge: hosts.length || undefined },
     { icon: KeyRound, label: t("nav.keychain"), id: "keychain", badge: keychainItems.length || undefined },
-    { icon: Layers, label: t("nav.workspaces"), id: "workspaces", badge: presets.length || undefined },
+    { icon: Layers, label: t("nav.workspaces"), id: "workspaces", badge: presetCount || undefined },
     { icon: FolderOpen, label: t("nav.sftp"), id: "sftp" },
     { icon: Braces, label: t("nav.snippets"), id: "snippets", badge: snippets.length || undefined },
     { icon: Waypoints, label: t("nav.tunnels"), id: "tunnels", badgeDot: activeRuleIds.size > 0 },

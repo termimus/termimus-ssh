@@ -1,11 +1,10 @@
 import { create } from "zustand";
-import { api, Host } from "../lib/api";
+import { api, Host, PresetLayoutType } from "../lib/api";
+import { buildPresetLayoutTree } from "../lib/workspaceLayout";
 import {
   PaneNode,
   SplitDirection,
   createInitialLayout,
-  createLeafPane,
-  createSplitPane,
   findPaneContainingTab,
   findPaneById,
   getAllLeafPanes,
@@ -96,15 +95,10 @@ interface SessionState {
     direction: SplitDirection,
     side?: "first" | "second"
   ) => string;
+  /** Opens one session per host (in pane order) as a new group laid out as `layout`. */
   openClusterGroup: (
-    nodes: { host: Host; paneIndex: number }[],
-    layout:
-      | "split-vertical"
-      | "split-horizontal"
-      | "grid-4"
-      | "split-1-2"
-      | "split-2-1"
-      | "triple-column",
+    hosts: Host[],
+    layout: PresetLayoutType,
     broadcast?: boolean,
     label?: string
   ) => string[];
@@ -473,16 +467,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     return sessionId;
   },
 
-  openClusterGroup: (nodes, layout, broadcast = false, label) => {
-    if (nodes.length === 0) return [];
+  openClusterGroup: (hosts, layout, broadcast = false, label) => {
+    if (hosts.length === 0) return [];
 
-    const sessionEntries = nodes.map((n, idx) => {
+    const sessionEntries = hosts.map((host, idx) => {
       const sessionId = `session-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
       const tab: SshTab = {
         id: sessionId,
-        hostId: n.host.id,
-        hostLabel: n.host.label,
-        hostAddress: `${n.host.username}@${n.host.address}`,
+        hostId: host.id,
+        hostLabel: host.label,
+        hostAddress: `${host.username}@${host.address}`,
         connected: false,
         connecting: true,
       };
@@ -492,51 +486,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const sessionIds = sessionEntries.map((e) => e.sessionId);
     const newTabs = sessionEntries.map((e) => e.tab);
 
-    // Build the layout tree atomically in one go
-    let rootPane: PaneNode;
-    if (sessionIds.length <= 1) {
-      rootPane = createLeafPane(sessionIds[0]);
-    } else if (layout === "split-vertical") {
-      rootPane = createSplitPane(
-        "row",
-        createLeafPane(sessionIds[0]),
-        createLeafPane(sessionIds[1] || sessionIds[0])
-      );
-    } else if (layout === "split-horizontal") {
-      rootPane = createSplitPane(
-        "column",
-        createLeafPane(sessionIds[0]),
-        createLeafPane(sessionIds[1] || sessionIds[0])
-      );
-    } else if (layout === "grid-4") {
-      const s0 = sessionIds[0];
-      const s1 = sessionIds[1] || s0;
-      const s2 = sessionIds[2] || s0;
-      const s3 = sessionIds[3] || s1;
-      const top = createSplitPane("row", createLeafPane(s0), createLeafPane(s1));
-      const bottom = createSplitPane("row", createLeafPane(s2), createLeafPane(s3));
-      rootPane = createSplitPane("column", top, bottom);
-    } else if (layout === "split-1-2") {
-      const s0 = sessionIds[0];
-      const s1 = sessionIds[1] || s0;
-      const s2 = sessionIds[2] || s0;
-      const right = createSplitPane("column", createLeafPane(s1), createLeafPane(s2));
-      rootPane = createSplitPane("row", createLeafPane(s0), right);
-    } else if (layout === "split-2-1") {
-      const s0 = sessionIds[0];
-      const s1 = sessionIds[1] || s0;
-      const s2 = sessionIds[2] || s0;
-      const top = createSplitPane("row", createLeafPane(s0), createLeafPane(s1));
-      rootPane = createSplitPane("column", top, createLeafPane(s2));
-    } else if (layout === "triple-column") {
-      const s0 = sessionIds[0];
-      const s1 = sessionIds[1] || s0;
-      const s2 = sessionIds[2] || s0;
-      const rightTwo = createSplitPane("row", createLeafPane(s1), createLeafPane(s2), 50);
-      rootPane = createSplitPane("row", createLeafPane(s0), rightTwo, 33.3);
-    } else {
-      rootPane = createLeafPane(sessionIds[0]);
-    }
+    // Build the layout tree atomically in one go. Each session gets exactly one
+    // leaf; the layout collapses to fit when fewer hosts than panes are given.
+    const rootPane = buildPresetLayoutTree(sessionIds, layout);
 
     const newGroup: TerminalGroup = {
       id: generateGroupId(),

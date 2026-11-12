@@ -38,6 +38,8 @@ export function LayoutBlueprint({
   layout: PresetLayoutType;
   nodeLabels: (string | undefined)[];
 }) {
+  const { t } = useTranslation();
+  const paneLabel = (index: number) => t("workspaces.paneDefault", { index });
   const baseBox =
     "flex items-center justify-center rounded border border-[var(--primary)]/30 bg-[var(--surface-container)] text-[10px] font-mono text-[var(--text-secondary)] font-medium truncate p-1 transition-colors group-hover:border-[var(--primary)]/60 group-hover:bg-[var(--surface-high)]";
 
@@ -46,10 +48,10 @@ export function LayoutBlueprint({
       return (
         <div className="grid h-24 w-full grid-cols-2 gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5">
           <div className={baseBox}>
-            <span className="truncate">{nodeLabels[0] || "Pane 1"}</span>
+            <span className="truncate">{nodeLabels[0] || paneLabel(1)}</span>
           </div>
           <div className={baseBox}>
-            <span className="truncate">{nodeLabels[1] || "Pane 2"}</span>
+            <span className="truncate">{nodeLabels[1] || paneLabel(2)}</span>
           </div>
         </div>
       );
@@ -58,10 +60,10 @@ export function LayoutBlueprint({
       return (
         <div className="grid h-24 w-full grid-rows-2 gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5">
           <div className={baseBox}>
-            <span className="truncate">{nodeLabels[0] || "Pane 1"}</span>
+            <span className="truncate">{nodeLabels[0] || paneLabel(1)}</span>
           </div>
           <div className={baseBox}>
-            <span className="truncate">{nodeLabels[1] || "Pane 2"}</span>
+            <span className="truncate">{nodeLabels[1] || paneLabel(2)}</span>
           </div>
         </div>
       );
@@ -70,16 +72,16 @@ export function LayoutBlueprint({
       return (
         <div className="grid h-24 w-full grid-cols-2 grid-rows-2 gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5">
           <div className={baseBox}>
-            <span className="truncate">{nodeLabels[0] || "Pane 1"}</span>
+            <span className="truncate">{nodeLabels[0] || paneLabel(1)}</span>
           </div>
           <div className={baseBox}>
-            <span className="truncate">{nodeLabels[1] || "Pane 2"}</span>
+            <span className="truncate">{nodeLabels[1] || paneLabel(2)}</span>
           </div>
           <div className={baseBox}>
-            <span className="truncate">{nodeLabels[2] || "Pane 3"}</span>
+            <span className="truncate">{nodeLabels[2] || paneLabel(3)}</span>
           </div>
           <div className={baseBox}>
-            <span className="truncate">{nodeLabels[3] || "Pane 4"}</span>
+            <span className="truncate">{nodeLabels[3] || paneLabel(4)}</span>
           </div>
         </div>
       );
@@ -88,14 +90,14 @@ export function LayoutBlueprint({
       return (
         <div className="grid h-24 w-full grid-cols-2 gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5">
           <div className={baseBox}>
-            <span className="truncate">{nodeLabels[0] || "Pane 1"}</span>
+            <span className="truncate">{nodeLabels[0] || paneLabel(1)}</span>
           </div>
           <div className="grid grid-rows-2 gap-1.5">
             <div className={baseBox}>
-              <span className="truncate">{nodeLabels[1] || "Pane 2"}</span>
+              <span className="truncate">{nodeLabels[1] || paneLabel(2)}</span>
             </div>
             <div className={baseBox}>
-              <span className="truncate">{nodeLabels[2] || "Pane 3"}</span>
+              <span className="truncate">{nodeLabels[2] || paneLabel(3)}</span>
             </div>
           </div>
         </div>
@@ -106,14 +108,14 @@ export function LayoutBlueprint({
         <div className="grid h-24 w-full grid-rows-2 gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5">
           <div className="grid grid-cols-2 gap-1.5">
             <div className={baseBox}>
-              <span className="truncate">{nodeLabels[0] || "Pane 1"}</span>
+              <span className="truncate">{nodeLabels[0] || paneLabel(1)}</span>
             </div>
             <div className={baseBox}>
-              <span className="truncate">{nodeLabels[1] || "Pane 2"}</span>
+              <span className="truncate">{nodeLabels[1] || paneLabel(2)}</span>
             </div>
           </div>
           <div className={baseBox}>
-            <span className="truncate">{nodeLabels[2] || "Pane 3"}</span>
+            <span className="truncate">{nodeLabels[2] || paneLabel(3)}</span>
           </div>
         </div>
       );
@@ -122,16 +124,33 @@ export function LayoutBlueprint({
       return (
         <div className="grid h-24 w-full grid-cols-3 gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5">
           <div className={baseBox}>
-            <span className="truncate">{nodeLabels[0] || "Pane 1"}</span>
+            <span className="truncate">{nodeLabels[0] || paneLabel(1)}</span>
           </div>
           <div className={baseBox}>
-            <span className="truncate">{nodeLabels[1] || "Pane 2"}</span>
+            <span className="truncate">{nodeLabels[1] || paneLabel(2)}</span>
           </div>
           <div className={baseBox}>
-            <span className="truncate">{nodeLabels[2] || "Pane 3"}</span>
+            <span className="truncate">{nodeLabels[2] || paneLabel(3)}</span>
           </div>
         </div>
       );
+
+    default: {
+      // Unknown layout (synced/imported from another version): equal columns.
+      const labels = nodeLabels.length > 0 ? nodeLabels : [undefined];
+      return (
+        <div
+          className="grid h-24 w-full gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--canvas)] p-1.5"
+          style={{ gridTemplateColumns: `repeat(${labels.length}, minmax(0, 1fr))` }}
+        >
+          {labels.map((label, idx) => (
+            <div key={idx} className={baseBox}>
+              <span className="truncate">{label || paneLabel(idx + 1)}</span>
+            </div>
+          ))}
+        </div>
+      );
+    }
   }
 }
 
@@ -157,7 +176,9 @@ export function WorkspaceCard({
     return {
       paneIndex: node.paneIndex,
       host,
-      label: node.label || host?.label || `Pane ${node.paneIndex + 1}`,
+      // Live host label wins; a label saved by older versions is only a
+      // fallback so renamed hosts don't show a stale name.
+      label: host?.label || node.label || t("workspaces.paneDefault", { index: node.paneIndex + 1 }),
     };
   });
 
@@ -212,7 +233,7 @@ export function WorkspaceCard({
               </p>
             ) : (
               <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-                {layoutMeta.label}
+                {t(layoutMeta.labelKey)}
               </p>
             )}
           </div>
@@ -285,10 +306,10 @@ export function WorkspaceCard({
                   {ping && (
                     <span
                       className={`font-mono text-[10px] shrink-0 ${
-                        ping.online ? "text-emerald-400" : "text-zinc-500"
+                        ping.online ? "text-[var(--success)]" : "text-[var(--text-muted)]"
                       }`}
                     >
-                      {ping.online ? `${ping.latencyMs ?? 0}ms` : "offline"}
+                      {ping.online ? `${ping.latencyMs ?? 0}ms` : t("workspaces.pingOffline")}
                     </span>
                   )}
                 </div>

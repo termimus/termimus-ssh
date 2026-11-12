@@ -80,4 +80,11 @@ export const terminalZh: typeof terminalEn = {
     codeHint: "打开身份验证器应用并输入当前验证码。",
     answerPlaceholder: "输入您的回答",
   },
+  broadcastBanner: {
+    active: "互联已启用：",
+    mirrored: "按键将同步到 {{count}} 个分屏终端",
+    savePreset: "保存预设",
+    savePresetTitle: "将此分屏保存为工作区预设",
+    disconnect: "断开",
+  },
 };

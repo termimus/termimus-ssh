@@ -80,4 +80,11 @@ export const terminalId: typeof terminalEn = {
     codeHint: "Buka aplikasi authenticator Anda dan masukkan kode yang sedang berlaku.",
     answerPlaceholder: "Ketik jawaban Anda",
   },
+  broadcastBanner: {
+    active: "Interkoneksi Aktif:",
+    mirrored: "Ketikan dicerminkan ke {{count}} terminal terbagi",
+    savePreset: "Simpan Preset",
+    savePresetTitle: "Simpan layar terbagi ini sebagai Preset Ruang Kerja",
+    disconnect: "Putuskan",
+  },
 };
