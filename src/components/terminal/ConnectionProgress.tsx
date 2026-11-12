@@ -16,8 +16,6 @@ import {
 import { useTranslation } from "react-i18next";
 import { Host } from "../../lib/api";
 import { useHostStore } from "../../stores/useHostStore";
-import { useSessionStore } from "../../stores/useSessionStore";
-import { useShallow } from "zustand/react/shallow";
 
 export interface ConnectionLog {
   timestamp: string;
@@ -45,14 +43,20 @@ export function ConnectionProgress({
   onClose,
 }: ConnectionProgressProps) {
   const { t } = useTranslation();
-  const [showLogs, setShowLogs] = useState(false);
   const [copied, setCopied] = useState(false);
-  const { openEditModal } = useHostStore();
-  const { closeSession, activeTabId } = useSessionStore(
-    useShallow((s) => ({ closeSession: s.closeSession, activeTabId: s.activeTabId }))
-  );
+  const openEditModal = useHostStore((s) => s.openEditModal);
 
   const isFailed = Boolean(error);
+
+  // Logs auto-open on failure, but the toggle must still work then: null means
+  // "follow the default" (open iff failed), a boolean is the user's choice.
+  const [logsOverride, setLogsOverride] = useState<boolean | null>(null);
+  const logsVisible = logsOverride ?? isFailed;
+
+  const handleRetry = () => {
+    setLogsOverride(null);
+    onRetry();
+  };
 
   // Pick OS / distro badge or stylish server badge based on label or address
   const osType = useMemo(() => {
@@ -113,12 +117,19 @@ export function ConnectionProgress({
   ];
 
   return (
-    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#0d1117] p-6 text-[var(--text-primary)] select-none">
+    // Scrolls instead of clipping when the pane is shorter than the card (e.g.
+    // a 2x2 grid). `my-auto` on the card centers it while it fits, but unlike
+    // `justify-center` lets it start at the top and scroll once it overflows.
+    // `container-type: size` lets the log box size itself from the pane height.
+    <div
+      className="absolute inset-0 z-20 flex flex-col items-center overflow-y-auto bg-[#0d1117] px-4 py-4 text-[var(--text-primary)] select-none"
+      style={{ containerType: "size" }}
+    >
       {/* Centered Termius-style Card Container */}
-      <div className="w-full max-w-md space-y-6 animate-in fade-in zoom-in-95 duration-200">
+      <div className="my-auto w-full max-w-md space-y-4 animate-in fade-in zoom-in-95 duration-200">
         {/* Top Header: Badge, Host details, Show Logs Button */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-3.5">
             {/* OS / Server Badge */}
             <div
               className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-lg transition-transform duration-300 ${
@@ -155,10 +166,10 @@ export function ConnectionProgress({
           {/* Show Logs Toggle Button */}
           <button
             type="button"
-            onClick={() => setShowLogs((prev) => !prev)}
-            className="rounded-xl border border-[var(--border)] bg-[#21262d] px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-[#30363d] shadow-sm cursor-pointer"
+            onClick={() => setLogsOverride(!logsVisible)}
+            className="shrink-0 rounded-xl border border-[var(--border)] bg-[#21262d] px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-[#30363d] shadow-sm cursor-pointer"
           >
-            {showLogs || isFailed ? t("terminal.progress.hideLogs") : t("terminal.progress.showLogs")}
+            {logsVisible ? t("terminal.progress.hideLogs") : t("terminal.progress.showLogs")}
           </button>
         </div>
 
@@ -250,8 +261,8 @@ export function ConnectionProgress({
         </div>
 
         {/* Logs Console in the Center (Auto-shown on failure or when user toggles 'Show logs') */}
-        {(showLogs || isFailed) && (
-          <div className="space-y-3 pt-1">
+        {logsVisible && (
+          <div className="space-y-2">
             <div className="flex items-center justify-between px-1">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                 {t("terminal.progress.connectionLog")}
@@ -272,7 +283,7 @@ export function ConnectionProgress({
               </button>
             </div>
 
-            <div className="max-h-48 overflow-y-auto rounded-xl border border-[var(--border)] bg-[#05070a] p-3 font-mono text-[11px] leading-relaxed shadow-inner">
+            <div className="max-h-[max(4.5rem,min(12rem,25cqh))] overflow-y-auto rounded-xl border border-[var(--border)] bg-[#05070a] p-3 font-mono text-[11px] leading-relaxed shadow-inner">
               {logs.length === 0 ? (
                 <p className="text-[var(--text-muted)]">{t("terminal.progress.noLogs")}</p>
               ) : (
@@ -306,9 +317,9 @@ export function ConnectionProgress({
 
         {/* Action Buttons on Failure */}
         {isFailed && (
-          <div className="flex items-center justify-center gap-2 pt-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
             <button
-              onClick={onRetry}
+              onClick={handleRetry}
               className="flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-4 py-2 text-xs font-semibold text-[var(--on-primary)] transition hover:bg-[var(--primary-hover)] shadow-md cursor-pointer"
             >
               <RotateCw size={13} /> {t("terminal.progress.retry")}
@@ -324,10 +335,7 @@ export function ConnectionProgress({
             )}
 
             <button
-              onClick={() => {
-                if (activeTabId) closeSession(activeTabId);
-                onClose();
-              }}
+              onClick={onClose}
               className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[#21262d] px-3.5 py-2 text-xs font-medium text-[var(--text-muted)] transition hover:text-white cursor-pointer"
             >
               <X size={13} /> {t("terminal.progress.close")}
