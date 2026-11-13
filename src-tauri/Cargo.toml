@@ -50,6 +50,15 @@ objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString"] }
 block2 = "0.6"
 
+[target.'cfg(target_os = "windows")'.dependencies]
+# Windows Hello (UserConsentVerifier) via WinRT. Only the Security_Credentials_UI
+# API surface plus the WinRT apartment initialiser are enabled.
+windows = { version = "0.62", features = [
+    "Security_Credentials_UI",
+    "Foundation",
+    "Win32_System_WinRT",
+] }
+
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

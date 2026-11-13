@@ -32,7 +32,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
   const [address, setAddress] = useState("");
   const [port, setPort] = useState(22);
   const [username, setUsername] = useState("root");
-  const [authMethod, setAuthMethod] = useState<"password" | "private_key">("password");
+  const [authMethod, setAuthMethod] = useState<"password" | "private_key" | "agent">("password");
   const [secret, setSecret] = useState("");
   const [tagInput, setTagInput] = useState("");
   const [folderId, setFolderId] = useState<string>("");
@@ -72,7 +72,8 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
       setPort(editingHost.port);
       setUsername(editingHost.username);
       const isPrivateKey = editingHost.auth_method === "private_key";
-      setAuthMethod(isPrivateKey ? "private_key" : "password");
+      const isAgent = editingHost.auth_method === "agent";
+      setAuthMethod(isPrivateKey ? "private_key" : isAgent ? "agent" : "password");
       setTagInput(editingHost.tags.join(", "));
       setFolderId(editingHost.folder_id ?? "");
       setOsIcon(editingHost.os_icon ?? "");
@@ -85,8 +86,9 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
 
       setSecret("");
 
-      // Eagerly load saved password for existing hosts
-      if (!isPrivateKey) {
+      // Eagerly load saved password for existing hosts (password auth only;
+      // agent auth has no stored secret to load).
+      if (editingHost.auth_method === "password") {
         setPasswordLoading(true);
         api
           .getHostPassword(editingHost.id)
@@ -107,7 +109,8 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
       setPort(templateHost.port);
       setUsername(templateHost.username);
       const isPrivateKey = templateHost.auth_method === "private_key";
-      setAuthMethod(isPrivateKey ? "private_key" : "password");
+      const isAgent = templateHost.auth_method === "agent";
+      setAuthMethod(isPrivateKey ? "private_key" : isAgent ? "agent" : "password");
       setTagInput(templateHost.tags.join(", "));
       setFolderId(templateHost.folder_id ?? defaultFolderId ?? "");
       setOsIcon(templateHost.os_icon ?? "");
@@ -230,7 +233,9 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
     const credentialIdToSave =
       authMethod === "private_key"
         ? selectedCredentialId
-        : selectedCredentialId || null;
+        : authMethod === "agent"
+          ? null
+          : selectedCredentialId || null;
 
     setSubmitting(true);
     try {
@@ -451,6 +456,20 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
                   >
                     <Key size={13} /> {t("hosts.modal.authKey")}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMethod("agent");
+                      setSelectedCredentialId("");
+                    }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-semibold transition cursor-pointer ${
+                      authMethod === "agent"
+                        ? "bg-[var(--primary)] text-[var(--on-primary)] shadow-sm"
+                        : "bg-[var(--surface-container)] text-[var(--text-secondary)] border border-[var(--border)] hover:text-white hover:bg-[var(--surface-high)]"
+                    }`}
+                  >
+                    <KeyRound size={13} /> {t("hosts.modal.authAgent")}
+                  </button>
                 </div>
               </div>
 
@@ -513,7 +532,7 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
                     </div>
                   )}
                 </div>
-              ) : (
+              ) : authMethod === "private_key" ? (
                 <div className="space-y-3 pt-1">
                   {/* Keychain Key Dropdown */}
                   <div>
@@ -623,6 +642,22 @@ export function HostModal({ onOpenKeychain }: HostModalProps = {}) {
                       )}
                     </div>
                   )}
+                </div>
+              ) : (
+                <div className="space-y-3 pt-1">
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-container)]/40 p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--primary)]/15 text-[var(--primary)]">
+                        <KeyRound size={14} />
+                      </div>
+                      <p className="text-xs font-semibold text-[var(--text-primary)]">
+                        {t("hosts.modal.authAgent")}
+                      </p>
+                    </div>
+                    <p className="mt-2 text-[11px] text-[var(--text-muted)] leading-relaxed">
+                      {t("hosts.modal.agentNote")}
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
