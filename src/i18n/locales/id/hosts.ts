@@ -96,6 +96,9 @@ export const hostsId: typeof hostsEn = {
     authMethod: "Metode Autentikasi",
     authPassword: "Kata Sandi",
     authKey: "Kunci PEM",
+    authAgent: "Agen SSH",
+    agentNote:
+      "Menggunakan kunci yang disimpan oleh agen SSH lokal (Bitwarden, 1Password, atau agen OpenSSH sistem). Tidak perlu mengimpor kunci — agen menandatangani tantangan login.",
     keychainIdentity: "Identitas Gantungan Kunci",
     reusableCredentials: "Kredensial tersimpan",
     customPassword: "-- Kata sandi manual --",

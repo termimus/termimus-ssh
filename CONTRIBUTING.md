@@ -70,3 +70,12 @@ cargo test --all-targets
 ```
 
 All commands above must succeed with zero errors. Every PR is automatically tested by GitHub Actions CI.
+
+### Platform-gated code
+
+Some backend modules only compile on one OS and are skipped elsewhere by
+`#[cfg(...)]` — notably `src-tauri/src/biometric/windows.rs` (Windows Hello,
+Windows-only) and `src-tauri/src/biometric/macos.rs` (Touch ID, macOS-only).
+`cargo check` on Linux/macOS cannot verify the Windows-gated code, so a
+change touching it must also be built on Windows (`bun run tauri dev` or
+`cargo check` on a Windows machine) before the PR is considered verified.

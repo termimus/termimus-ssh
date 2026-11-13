@@ -550,6 +550,10 @@ fn resolve_host_auth(state: &AppState, host: &Host) -> Result<SshAuth, String> {
             };
             Ok(SshAuth::PrivateKey { pem, passphrase })
         }
+        // No credential is needed: the local SSH agent (e.g. Bitwarden,
+        // 1Password, or the system OpenSSH agent) holds the key and signs
+        // the login challenge. No private key material is read or stored.
+        "agent" => Ok(SshAuth::Agent),
         _ => Err(format!("Unsupported auth method: {}", host.auth_method)),
     }
 }

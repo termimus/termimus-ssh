@@ -1,4 +1,6 @@
 use russh::client::{self, AuthResult, Handle, Handler, KeyboardInteractiveAuthResponse};
+use russh::keys::agent::client::{AgentClient, AgentStream};
+use russh::keys::agent::AgentIdentity;
 use russh::keys::ssh_key::HashAlg;
 use russh::keys::{decode_secret_key, PrivateKeyWithHashAlg};
 use russh::{Disconnect, MethodKind};
@@ -152,6 +154,10 @@ impl Handler for SshClientHandler {
 pub enum SshAuth {
     Password(String),
     PrivateKey { pem: String, passphrase: Option<String> },
+    /// Authenticate with a key held by the local SSH agent (e.g. Bitwarden,
+    /// 1Password, or the system OpenSSH agent). No key material is read or
+    /// stored by Termimus; the agent only signs the login challenge.
+    Agent,
 }
 
 #[derive(Clone)]
@@ -267,6 +273,112 @@ pub async fn authenticate_publickey_smart<H: russh::client::Handler>(
     Ok(res)
 }
 
+/// Connect to the local SSH agent at the platform endpoint: the socket named
+/// by `SSH_AUTH_SOCK` on Unix (OpenSSH, Bitwarden, 1Password, ...). The
+/// stream is boxed so every platform yields the same client type.
+#[cfg(unix)]
+async fn connect_ssh_agent() -> Result<AgentClient<Box<dyn AgentStream + Send + Unpin>>, String> {
+    AgentClient::connect_env()
+        .await
+        .map(|client| client.dynamic())
+        .map_err(|e| format!("Could not connect to the SSH agent (SSH_AUTH_SOCK): {e}"))
+}
+
+/// Connect to the local SSH agent at the platform endpoint: the OpenSSH
+/// agent named pipe on Windows, which is what Bitwarden Desktop exposes.
+/// The stream is boxed so every platform yields the same client type.
+#[cfg(windows)]
+async fn connect_ssh_agent() -> Result<AgentClient<Box<dyn AgentStream + Send + Unpin>>, String> {
+    AgentClient::connect_named_pipe(r"\\.\pipe\openssh-ssh-agent")
+        .await
+        .map(|client| client.dynamic())
+        .map_err(|e| {
+            format!("Could not connect to the SSH agent (\\\\.\\pipe\\openssh-ssh-agent): {e}")
+        })
+}
+
+#[cfg(not(any(unix, windows)))]
+async fn connect_ssh_agent() -> Result<AgentClient<Box<dyn AgentStream + Send + Unpin>>, String> {
+    Err("SSH agent authentication is not supported on this platform".to_string())
+}
+
+/// Authenticate with a key held by the local SSH agent. Tries each identity
+/// the agent offers, in order, until the server accepts one — mirroring the
+/// publickey rejection behaviour of `authenticate_publickey_smart` (a
+/// rejected key with publickey still offered moves on to the next identity;
+/// a partial success, or publickey no longer offered, stops immediately so
+/// the keyboard-interactive fallback can proceed). The private key never
+/// leaves the agent; it only signs the login challenge.
+async fn authenticate_agent<H: russh::client::Handler>(
+    handle: &mut russh::client::Handle<H>,
+    username: &str,
+) -> Result<russh::client::AuthResult, String> {
+    let mut agent = connect_ssh_agent().await?;
+    let identities = agent
+        .request_identities()
+        .await
+        .map_err(|e| format!("SSH agent error: {e}"))?;
+    if identities.is_empty() {
+        return Err("SSH agent has no identities (is the key unlocked in the agent?)".to_string());
+    }
+
+    // Rejected outright = no partial success and the server still offers
+    // publickey. Anything else means the key was accepted or publickey is
+    // off the table, so stop trying further identities.
+    let key_rejected = |r: &AuthResult| {
+        matches!(r, AuthResult::Failure { remaining_methods, partial_success: false } if remaining_methods.contains(&MethodKind::PublicKey))
+    };
+
+    let mut last_failure: Option<AuthResult> = None;
+    for identity in &identities {
+        // Same RSA hash negotiation as `authenticate_publickey_smart`.
+        let is_rsa = identity.public_key().algorithm().is_rsa();
+        let best_hash = if is_rsa {
+            match handle.best_supported_rsa_hash().await {
+                Ok(Some(hash)) => hash,
+                _ => Some(HashAlg::Sha512),
+            }
+        } else {
+            None
+        };
+
+        let res = match identity {
+            AgentIdentity::PublicKey { key, .. } => {
+                handle
+                    .authenticate_publickey_with(username, key.clone(), best_hash, &mut agent)
+                    .await
+            }
+            AgentIdentity::Certificate { certificate, .. } => {
+                handle
+                    .authenticate_certificate_with(username, certificate.clone(), best_hash, &mut agent)
+                    .await
+            }
+        };
+
+        match res {
+            Ok(AuthResult::Success) => return Ok(AuthResult::Success),
+            Ok(r) => {
+                if !key_rejected(&r) {
+                    return Ok(r);
+                }
+                last_failure = Some(r);
+            }
+            Err(_) => {
+                // The agent declined to sign with this identity: try the
+                // next one. A broken agent connection surfaces here too;
+                // trying the next identity is harmless and keeps the
+                // behaviour uniform.
+                continue;
+            }
+        }
+    }
+
+    match last_failure {
+        Some(r) => Ok(r),
+        None => Err("SSH agent declined to sign with every identity it holds".to_string()),
+    }
+}
+
 /// Keyboard-interactive prompts waiting for the user's answers, keyed by request id.
 /// Process-wide because terminal, SFTP and tunnel connections all share one dialog.
 static PENDING_AUTH_PROMPTS: LazyLock<
@@ -350,6 +462,7 @@ pub async fn authenticate<H: Handler>(
                 .map_err(|e| format!("Invalid private key: {e}"))?;
             authenticate_publickey_smart(handle, username, key_pair).await?
         }
+        SshAuth::Agent => authenticate_agent(handle, username).await?,
     };
 
     let (remaining, partial_success) = match first {
@@ -367,6 +480,13 @@ pub async fn authenticate<H: Handler>(
         SshAuth::PrivateKey { .. } => {
             "SSH key rejected by server (is its public key in authorized_keys?)".to_string()
         }
+        SshAuth::Agent if partial_success => {
+            "SSH agent key accepted, but the server requires another authentication method"
+                .to_string()
+        }
+        SshAuth::Agent => {
+            "SSH agent key rejected by server (is its public key in authorized_keys?)".to_string()
+        }
     };
     let Some(app) = app else { return Err(primary_rejected) };
     if !remaining.contains(&MethodKind::KeyboardInteractive) {
@@ -376,6 +496,7 @@ pub async fn authenticate<H: Handler>(
     let mut stored_password = match auth {
         SshAuth::Password(p) => Some(p.clone()),
         SshAuth::PrivateKey { .. } => None,
+        SshAuth::Agent => None,
     };
     let kbd_err = |e: russh::Error| format!("Keyboard-interactive auth error: {e}");
     let mut reply = handle
