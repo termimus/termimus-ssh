@@ -22,6 +22,7 @@ import {
 import { api } from "../../lib/api";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useHostStore } from "../../stores/useHostStore";
+import { useSettingsStore } from "../../stores/useSettingsStore";
 import { useTerminalThemeStore } from "../../stores/useTerminalThemeStore";
 import {
   applyTerminalAppearance,
@@ -689,6 +690,15 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // When select-to-copy / right-click-to-paste is on, right-click pastes
+    // directly instead of opening the menu. Uses the same debounced paste
+    // path as Ctrl+Shift+V / the menu's Paste action.
+    if (useSettingsStore.getState().selectToCopyPaste) {
+      if (termRef.current) {
+        void safePasteToTerminal(termRef.current);
+      }
+      return;
+    }
     const hasSel = Boolean(termRef.current?.hasSelection());
     const x = Math.min(e.clientX, window.innerWidth - 220);
     const y = Math.min(e.clientY, window.innerHeight - 380);
@@ -918,6 +928,26 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
         },
         true
       );
+
+      // Select-to-copy: when enabled in Settings, selecting text copies it
+      // to the clipboard once the selection settles (debounced, so a drag
+      // writes once instead of once per intermediate selection). The setting
+      // is read live so toggling it applies immediately to open terminals.
+      // Silent copy (no toast) — the manual Copy action already toasts.
+      let selectCopyTimer: ReturnType<typeof setTimeout> | null = null;
+      term.onSelectionChange(() => {
+        if (selectCopyTimer) {
+          clearTimeout(selectCopyTimer);
+          selectCopyTimer = null;
+        }
+        if (!useSettingsStore.getState().selectToCopyPaste) return;
+        if (!term.getSelection()) return;
+        selectCopyTimer = setTimeout(() => {
+          selectCopyTimer = null;
+          if (!term.getSelection()) return;
+          void handleCopyFromTerminal(term);
+        }, 200);
+      });
 
       let initialCols = 80;
       let initialRows = 24;

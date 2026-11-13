@@ -107,6 +107,9 @@ export const settingsId: typeof settingsEn = {
     recommendedFont: "Rekomendasi pasangan font",
     applyPairing: "Terapkan pasangan font",
     resetDefaults: "Reset ke bawaan",
+    clipboardTitle: "Pilih untuk Menyalin, Klik Kanan untuk Menempel",
+    clipboardDesc:
+      "Saat aktif, teks yang dipilih otomatis disalin ke clipboard dan klik kanan menempelkannya. Saat nonaktif, klik kanan membuka menu konteks.",
   },
   sync: {
     title: "Relay Sinkronisasi Mandiri",
