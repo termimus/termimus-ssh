@@ -71,6 +71,7 @@ Prebuilt installers for every release are published automatically to the **[GitH
 
 ### 🔑 Keychain & Identity Management
 - **Private Key Vault & Import**: Securely store and organize SSH private keys (OpenSSH, PEM, PuTTY). Import directly from local key files or paste PEM text.
+- **SSH Agent Authentication**: Authenticate with a key held by your local SSH agent (Bitwarden, 1Password, KeePassXC, or the system OpenSSH agent) — no private key is imported into Termimus. See the [SSH agent setup guide](docs/ssh-agent-setup.md).
 - **Instant Public Key Derivation**: Automatically derive OpenSSH public key lines (`ssh-ed25519`, `ssh-rsa`, `ecdsa`) and SHA256 fingerprints from imported private keys to paste into remote `authorized_keys`.
 - **Private Key Reveal & Copy**: Securely inspect or copy decrypted private keys on demand when the vault is unlocked, protected with privacy blur.
 - **Password Identities**: Store reusable username & password combinations to assign across multiple hosts without re-typing.
