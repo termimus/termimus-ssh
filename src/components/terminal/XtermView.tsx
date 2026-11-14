@@ -436,6 +436,38 @@ function adjustTerminalFontSize(
   }
 }
 
+// Select-to-copy: when enabled in Settings, selecting text copies it to the
+// clipboard once the selection settles (debounced, so a drag writes once
+// instead of once per intermediate selection) and shows the same toast as a
+// manual copy. The setting is read live so toggling it applies immediately.
+// Terminals are pooled and outlive the component, so this is re-bound on every
+// mount (like the shortcuts) to keep the toast callback pointing at the
+// mounted view.
+const selectToCopyBindings = new WeakMap<Terminal, { dispose: () => void }>();
+
+function bindSelectToCopy(term: Terminal, onCopyNotify?: (msg: string) => void) {
+  selectToCopyBindings.get(term)?.dispose();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const listener = term.onSelectionChange(() => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (!useSettingsStore.getState().selectToCopyPaste) return;
+    if (!term.getSelection()) return;
+    timer = setTimeout(() => {
+      timer = null;
+      void handleCopyFromTerminal(term, onCopyNotify);
+    }, 200);
+  });
+  selectToCopyBindings.set(term, {
+    dispose: () => {
+      if (timer) clearTimeout(timer);
+      listener.dispose();
+    },
+  });
+}
+
 function bindTerminalShortcuts(
   term: Terminal,
   fitAddon: FitAddon,
@@ -853,6 +885,7 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
         () => setIsSearchOpen(true),
         () => handleCopilotShortcut(sessionId)
       );
+      bindSelectToCopy(entry.term, showCopyToast);
 
       if (entry.element.parentElement !== containerRef.current) {
         containerRef.current.appendChild(entry.element);
@@ -929,26 +962,6 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
         true
       );
 
-      // Select-to-copy: when enabled in Settings, selecting text copies it
-      // to the clipboard once the selection settles (debounced, so a drag
-      // writes once instead of once per intermediate selection). The setting
-      // is read live so toggling it applies immediately to open terminals.
-      // Silent copy (no toast) — the manual Copy action already toasts.
-      let selectCopyTimer: ReturnType<typeof setTimeout> | null = null;
-      term.onSelectionChange(() => {
-        if (selectCopyTimer) {
-          clearTimeout(selectCopyTimer);
-          selectCopyTimer = null;
-        }
-        if (!useSettingsStore.getState().selectToCopyPaste) return;
-        if (!term.getSelection()) return;
-        selectCopyTimer = setTimeout(() => {
-          selectCopyTimer = null;
-          if (!term.getSelection()) return;
-          void handleCopyFromTerminal(term);
-        }, 200);
-      });
-
       let initialCols = 80;
       let initialRows = 24;
       try {
@@ -972,6 +985,7 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
         () => setIsSearchOpen(true),
         () => handleCopilotShortcut(sessionId)
       );
+      bindSelectToCopy(term, showCopyToast);
 
       // Keystroke forwarding (supports broadcast to interconnected split panes)
       const dataDisposable = term.onData((data) => {
