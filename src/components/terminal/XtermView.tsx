@@ -22,6 +22,7 @@ import {
 import { api } from "../../lib/api";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useHostStore } from "../../stores/useHostStore";
+import { useSettingsStore } from "../../stores/useSettingsStore";
 import { useTerminalThemeStore } from "../../stores/useTerminalThemeStore";
 import {
   applyTerminalAppearance,
@@ -435,6 +436,38 @@ function adjustTerminalFontSize(
   }
 }
 
+// Select-to-copy: when enabled in Settings, selecting text copies it to the
+// clipboard once the selection settles (debounced, so a drag writes once
+// instead of once per intermediate selection) and shows the same toast as a
+// manual copy. The setting is read live so toggling it applies immediately.
+// Terminals are pooled and outlive the component, so this is re-bound on every
+// mount (like the shortcuts) to keep the toast callback pointing at the
+// mounted view.
+const selectToCopyBindings = new WeakMap<Terminal, { dispose: () => void }>();
+
+function bindSelectToCopy(term: Terminal, onCopyNotify?: (msg: string) => void) {
+  selectToCopyBindings.get(term)?.dispose();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const listener = term.onSelectionChange(() => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (!useSettingsStore.getState().selectToCopyPaste) return;
+    if (!term.getSelection()) return;
+    timer = setTimeout(() => {
+      timer = null;
+      void handleCopyFromTerminal(term, onCopyNotify);
+    }, 200);
+  });
+  selectToCopyBindings.set(term, {
+    dispose: () => {
+      if (timer) clearTimeout(timer);
+      listener.dispose();
+    },
+  });
+}
+
 function bindTerminalShortcuts(
   term: Terminal,
   fitAddon: FitAddon,
@@ -689,6 +722,15 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // When select-to-copy / right-click-to-paste is on, right-click pastes
+    // directly instead of opening the menu. Uses the same debounced paste
+    // path as Ctrl+Shift+V / the menu's Paste action.
+    if (useSettingsStore.getState().selectToCopyPaste) {
+      if (termRef.current) {
+        void safePasteToTerminal(termRef.current);
+      }
+      return;
+    }
     const hasSel = Boolean(termRef.current?.hasSelection());
     const x = Math.min(e.clientX, window.innerWidth - 220);
     const y = Math.min(e.clientY, window.innerHeight - 380);
@@ -843,6 +885,7 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
         () => setIsSearchOpen(true),
         () => handleCopilotShortcut(sessionId)
       );
+      bindSelectToCopy(entry.term, showCopyToast);
 
       if (entry.element.parentElement !== containerRef.current) {
         containerRef.current.appendChild(entry.element);
@@ -942,6 +985,7 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
         () => setIsSearchOpen(true),
         () => handleCopilotShortcut(sessionId)
       );
+      bindSelectToCopy(term, showCopyToast);
 
       // Keystroke forwarding (supports broadcast to interconnected split panes)
       const dataDisposable = term.onData((data) => {
