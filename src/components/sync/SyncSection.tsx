@@ -16,7 +16,8 @@ import {
   Radio,
   Laptop,
 } from "lucide-react";
-import { useSyncStore, ConnectedDevice } from "../../stores/useSyncStore";
+import { useSyncStore, ConnectedDevice, isVaultMismatchError } from "../../stores/useSyncStore";
+import { useVaultStore } from "../../stores/useVaultStore";
 import { ImportSummary } from "../../lib/api";
 
 export function SyncSection() {
@@ -51,6 +52,9 @@ export function SyncSection() {
 
   const [pulling, setPulling] = useState(false);
   const [pullSummary, setPullSummary] = useState<ImportSummary | null>(null);
+
+  const [replacingFromServer, setReplacingFromServer] = useState(false);
+  const vaultMismatch = isVaultMismatchError(lastError);
 
   const [devices, setDevices] = useState<ConnectedDevice[]>([]);
   const [loadingDevices, setLoadingDevices] = useState(false);
@@ -134,6 +138,30 @@ export function SyncSection() {
       // error is tracked in store
     } finally {
       setPulling(false);
+    }
+  }
+
+  // Recovery for a vault-key mismatch: adopt the server's data and vault.
+  // The backend snapshots local data first and locks the vault afterwards,
+  // so prompt for the (other device's) master password once it's done.
+  async function handleReplaceFromServer() {
+    if (!window.confirm(t("settings.sync.vaultMismatchConfirm"))) return;
+    setReplacingFromServer(true);
+    setPullSummary(null);
+    try {
+      const summary = await pull(true);
+      setPullSummary(summary);
+      loadDevices();
+      setTimeout(() => setPullSummary(null), 5000);
+      if (summary.vault_meta_restored) {
+        const vault = useVaultStore.getState();
+        await vault.refresh();
+        vault.openUnlockPrompt();
+      }
+    } catch {
+      // error is tracked in store
+    } finally {
+      setReplacingFromServer(false);
     }
   }
 
@@ -226,7 +254,33 @@ export function SyncSection() {
       </div>
 
       {/* ── Error or Success Feedbacks ────────────────────────────────────── */}
-      {lastError && (
+      {vaultMismatch && (
+        <div className="rounded-xl border border-[var(--warning)]/30 bg-[var(--warning)]/10 px-4 py-3 text-xs text-[var(--warning)] space-y-2">
+          <div className="flex items-center gap-2 font-semibold">
+            <AlertTriangle size={15} className="shrink-0" />
+            <span>{t("settings.sync.vaultMismatchTitle")}</span>
+          </div>
+          <p className="text-[11px] text-[var(--text-secondary)]">
+            {t("settings.sync.vaultMismatchDesc")}
+          </p>
+          <button
+            onClick={handleReplaceFromServer}
+            disabled={replacingFromServer}
+            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--warning)]/40 px-3 py-1.5 text-[11px] font-medium text-[var(--warning)] hover:bg-[var(--warning)]/15 disabled:opacity-60 cursor-pointer"
+          >
+            {replacingFromServer ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <CloudDownload size={13} />
+            )}
+            {replacingFromServer
+              ? t("settings.sync.vaultMismatchReplacing")
+              : t("settings.sync.vaultMismatchAction")}
+          </button>
+        </div>
+      )}
+
+      {lastError && !vaultMismatch && (
         <div className="rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-4 py-3 text-xs text-[var(--danger)] flex items-center gap-2">
           <AlertTriangle size={15} className="shrink-0" />
           <span>{lastError}</span>

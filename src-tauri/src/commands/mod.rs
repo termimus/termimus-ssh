@@ -1569,8 +1569,14 @@ pub fn backup_import(
     replace_all: bool,
     passphrase: Option<String>,
 ) -> Result<ImportSummary, String> {
+    let bundle = decode_backup_bundle(&backup_json, passphrase.as_deref())?;
+    apply_backup_bundle(&state, &bundle, replace_all)
+}
+
+/// Parse a backup file (plain v1 bundle or passphrase-encrypted v2 envelope).
+fn decode_backup_bundle(backup_json: &str, passphrase: Option<&str>) -> Result<BackupBundle, String> {
     // First, probe whether this is an encrypted envelope or a plain bundle.
-    let probe: serde_json::Value = serde_json::from_str(&backup_json)
+    let probe: serde_json::Value = serde_json::from_str(backup_json)
         .map_err(|e| format!("Invalid backup file: {e}"))?;
 
     let bundle: BackupBundle = if probe.get("encrypted").and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -1582,7 +1588,7 @@ pub fn backup_import(
             return Err(format!("Unsupported encrypted backup version: {}", envelope.format_version));
         }
 
-        let pw = passphrase.as_deref().unwrap_or("").trim().to_string();
+        let pw = passphrase.unwrap_or("").trim().to_string();
         if pw.is_empty() {
             return Err("This backup is encrypted. Please enter the backup passphrase to restore it.".to_string());
         }
@@ -1605,7 +1611,12 @@ pub fn backup_import(
         }
         b
     };
+    Ok(bundle)
+}
 
+/// Import an already-decoded bundle: safety snapshot (Replace All), atomic
+/// import, then lock the vault if its metadata was replaced.
+fn apply_backup_bundle(state: &AppState, bundle: &BackupBundle, replace_all: bool) -> Result<ImportSummary, String> {
     // Replace All wipes the current data, so persist a safety snapshot to disk
     // *before* touching anything. If it can't be written, refuse to import
     // rather than proceed without a way back.
@@ -1618,7 +1629,7 @@ pub fn backup_import(
     // Atomic: on error the database is rolled back to its pre-import state.
     let mut summary = state
         .db
-        .import_backup_bundle(&bundle, replace_all)
+        .import_backup_bundle(bundle, replace_all)
         .map_err(|e| format!("Import failed, no changes were made: {e}"))?;
     summary.safety_snapshot_path = safety_snapshot_path;
 
@@ -1852,6 +1863,13 @@ pub async fn sync_push(
         return Err("Sync Passphrase is required. Termimus enforces zero-knowledge E2EE encryption before uploading to the relay.".to_string());
     }
 
+    // See sync_pull: never push a bundle encrypted under a vault key that
+    // differs from the server's, or other devices would merge it and lose
+    // working credentials.
+    if state.db.sync_vault_mismatch().map_err(|e| e.to_string())? {
+        return Err(format!("{SYNC_VAULT_MISMATCH_ERROR} {SYNC_VAULT_MISMATCH_HELP}"));
+    }
+
     let encrypted_blob = backup_export(state, Some(password.to_string()))?;
 
     let base = server_url.trim_end_matches('/');
@@ -1930,13 +1948,40 @@ pub async fn sync_pull(
         return Err("Sync Passphrase is required to decrypt the incoming sync bundle.".to_string());
     }
 
-    backup_import(
-        state,
-        encrypted_blob,
-        replace_all.unwrap_or(false),
-        Some(password.to_string()),
-    )
+    let replace_all = replace_all.unwrap_or(false);
+    let bundle = decode_backup_bundle(&encrypted_blob, Some(password))?;
+
+    // A merge only makes sense between devices sharing one vault key. If the
+    // server's bundle was encrypted under a different vault (e.g. the master
+    // password was changed on another device, which re-salts and re-encrypts
+    // every credential), merging would overwrite working local credentials
+    // with ones this device can't decrypt. Refuse, and block pushes until the
+    // user resolves it, so this device can't push its stale vault either.
+    // A bundle with no vault metadata and no credentials (pushed by a device
+    // that never set up its vault) carries nothing key-dependent: merge it.
+    let bundle_has_vault_data = bundle.vault_salt.is_some() || !bundle.credentials.is_empty();
+    if !replace_all
+        && bundle_has_vault_data
+        && state.db.vault_initialized().map_err(|e| e.to_string())?
+        && !state.db.bundle_vault_matches(&bundle).map_err(|e| e.to_string())?
+    {
+        state.db.set_sync_vault_mismatch(true).map_err(|e| e.to_string())?;
+        return Err(format!("{SYNC_VAULT_MISMATCH_ERROR} {SYNC_VAULT_MISMATCH_HELP}"));
+    }
+
+    let summary = apply_backup_bundle(&state, &bundle, replace_all)?;
+    // Either the vaults match (merge) or we just adopted the server's vault
+    // (Replace All): this device is consistent with the server again.
+    state.db.set_sync_vault_mismatch(false).map_err(|e| e.to_string())?;
+    Ok(summary)
 }
+
+/// Prefix the frontend matches on to offer the "replace local data with the
+/// server copy" recovery action.
+const SYNC_VAULT_MISMATCH_ERROR: &str = "VAULT_MISMATCH:";
+const SYNC_VAULT_MISMATCH_HELP: &str = "The sync server's data is encrypted with a different vault key \
+(the master password was likely changed on another device). Sync is paused to protect your credentials. \
+Replace this device's data with the server copy and unlock with that vault's master password to resume.";
 
 // ── Sync secrets ────────────────────────────────────────────────────────────
 // The relay auth token and the E2EE sync passphrase live in the OS keyring,

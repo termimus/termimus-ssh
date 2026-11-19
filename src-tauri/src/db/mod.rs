@@ -6,6 +6,8 @@ use std::fs;
 use std::path::PathBuf;
 use models::{Folder, Host, Credential, KeychainItem, PortForwardRule, Snippet, KnownHost, BackupBundle, ImportSummary, Tombstone, WorkspacePreset, PresetNode, AiProvider};
 
+const SYNC_VAULT_MISMATCH_KEY: &str = "sync_vault_mismatch";
+
 pub struct Database {
     /// Reentrant so a multi-step operation (e.g. `import_backup_bundle`) can
     /// hold the lock for its whole duration, wrap it in one SQLite transaction,
@@ -1095,6 +1097,40 @@ impl Database {
         Ok(())
     }
 
+    /// True when `bundle` carries vault metadata identical to this database's,
+    /// i.e. its credential ciphertext was produced with the same vault key.
+    /// A bundle without vault metadata can't be verified and never matches.
+    pub fn bundle_vault_matches(&self, bundle: &BackupBundle) -> Result<bool> {
+        let (Some(salt), Some(ct)) = (&bundle.vault_salt, &bundle.vault_verifier_ciphertext) else {
+            return Ok(false);
+        };
+        Ok(self.get_vault_meta("salt")?.as_ref() == Some(salt)
+            && self.get_vault_meta("verifier_ciphertext")?.as_ref() == Some(ct))
+    }
+
+    /// Whether the local vault has been set up (has a salt).
+    pub fn vault_initialized(&self) -> Result<bool> {
+        Ok(self.get_vault_meta("salt")?.is_some())
+    }
+
+    /// Persisted "the sync server's vault differs from ours" flag. While set,
+    /// sync pushes are refused so this device can't overwrite the server with
+    /// a bundle encrypted under a stale vault key. Stored in `vault_meta` so it
+    /// survives restarts and is cleared by "Reset Vault".
+    pub fn sync_vault_mismatch(&self) -> Result<bool> {
+        Ok(self.get_vault_meta(SYNC_VAULT_MISMATCH_KEY)?.is_some())
+    }
+
+    pub fn set_sync_vault_mismatch(&self, mismatch: bool) -> Result<()> {
+        if mismatch {
+            self.set_vault_meta(SYNC_VAULT_MISMATCH_KEY, b"1")
+        } else {
+            let conn = self.conn.lock();
+            conn.execute("DELETE FROM vault_meta WHERE key = ?1", params![SYNC_VAULT_MISMATCH_KEY])?;
+            Ok(())
+        }
+    }
+
     /// Hard-wipe all credentials and vault metadata (used for "Reset Vault").
     pub fn reset_vault(&self) -> Result<()> {
         let conn = self.conn.lock();
@@ -1195,6 +1231,15 @@ impl Database {
             // credentials already in the vault remain readable.
         }
 
+        // Credential ciphertext is only usable if it was encrypted under the
+        // same vault key as this database. The key is Argon2id(password, salt)
+        // and the salt is random per vault (and regenerated on every master
+        // password change), so a differing salt/verifier means a different
+        // key even when the master password is the same. Importing such
+        // ciphertext would yield credentials that can never be decrypted and,
+        // during a merge, could overwrite working local copies via LWW.
+        let credentials_compatible = self.bundle_vault_matches(bundle)?;
+
         // Process incoming tombstones during merge or replace
         for ts in &bundle.tombstones {
             self.save_tombstone(ts)?;
@@ -1280,7 +1325,12 @@ impl Database {
             }
             self.save_folder(folder)?;
         }
+        let mut credentials_imported: usize = 0;
+        let credentials_skipped_incompatible = if credentials_compatible { 0 } else { bundle.credentials.len() };
         for cred in &bundle.credentials {
+            if !credentials_compatible {
+                break;
+            }
             if !replace_all {
                 let cred_time = if !cred.updated_at.is_empty() { &cred.updated_at } else { &cred.created_at };
                 if let Ok(Some(del_at)) = self.is_tombstoned("credential", &cred.id) {
@@ -1298,6 +1348,7 @@ impl Database {
                 }
             }
             self.save_credential(cred)?;
+            credentials_imported += 1;
         }
         for host in &bundle.hosts {
             if !replace_all {
@@ -1485,7 +1536,8 @@ impl Database {
 
         Ok(ImportSummary {
             folders: bundle.folders.len(),
-            credentials: bundle.credentials.len(),
+            credentials: credentials_imported,
+            credentials_skipped_incompatible,
             hosts: bundle.hosts.len(),
             port_forwards: bundle.port_forwards.len(),
             snippets: bundle.snippets.len(),
@@ -1600,6 +1652,13 @@ mod tests {
         }
     }
 
+    fn with_vault(mut b: BackupBundle, salt: &[u8], ct: &[u8]) -> BackupBundle {
+        b.vault_salt = Some(salt.to_vec());
+        b.vault_verifier_ciphertext = Some(ct.to_vec());
+        b.vault_verifier_nonce = Some(b"nonce".to_vec());
+        b
+    }
+
     /// DB with one folder, credential, host and vault salt "old-salt".
     fn seeded_db() -> Database {
         let db = test_db();
@@ -1667,7 +1726,9 @@ mod tests {
     #[test]
     fn merge_with_tombstoned_credential_still_imports_host() {
         let db = test_db();
-        let mut b = bundle();
+        db.set_vault_meta("salt", b"s").unwrap();
+        db.set_vault_meta("verifier_ciphertext", b"v").unwrap();
+        let mut b = with_vault(bundle(), b"s", b"v");
         // The credential was deleted after its last update, so the merge
         // skips it — but a host in the same bundle still references it.
         b.tombstones = vec![Tombstone { entity_type: "credential".into(), entity_id: "c1".into(), deleted_at: T1.into() }];
@@ -1684,7 +1745,7 @@ mod tests {
     #[test]
     fn successful_replace_all_commits() {
         let db = seeded_db();
-        let mut b = bundle();
+        let mut b = with_vault(bundle(), b"new-salt", b"new-ct");
         b.folders = vec![folder("f-new")];
         b.credentials = vec![credential("c-new")];
         b.hosts = vec![host("h-new", Some("f-new"), Some("c-new"))];
@@ -1697,5 +1758,81 @@ mod tests {
         assert_eq!(hosts[0].folder_id.as_deref(), Some("f-new"));
         assert_eq!(hosts[0].credential_id.as_deref(), Some("c-new"));
         assert_eq!(db.list_snippets().unwrap().len(), 1);
+    }
+    // ── Issue #62: credentials from a different vault ──────────────────────
+
+    #[test]
+    fn merge_from_different_vault_skips_credentials_and_keeps_local_ones() {
+        let db = seeded_db();
+        // Same credential id, newer timestamp (as after a master password
+        // change on another device), but encrypted under another vault key.
+        let mut foreign = credential("c-old");
+        foreign.ciphertext = vec![9, 9, 9];
+        foreign.updated_at = T1.into();
+        let mut b = with_vault(bundle(), b"other-salt", b"other-ct");
+        b.credentials = vec![foreign, credential("c-foreign")];
+        b.snippets = vec![snippet("s-new")];
+
+        let summary = db.import_backup_bundle(&b, false).unwrap();
+
+        assert_eq!(summary.credentials, 0);
+        assert_eq!(summary.credentials_skipped_incompatible, 2);
+        // The working local credential was NOT overwritten by LWW.
+        assert_eq!(db.get_credential("c-old").unwrap().unwrap().ciphertext, vec![1, 2, 3]);
+        assert!(db.get_credential("c-foreign").unwrap().is_none());
+        // Non-secret data still merges, and local vault meta is untouched.
+        assert_eq!(db.list_snippets().unwrap().len(), 1);
+        assert_eq!(db.get_vault_meta("salt").unwrap().as_deref(), Some(&b"old-salt"[..]));
+    }
+
+    #[test]
+    fn merge_from_same_vault_imports_credentials() {
+        let db = seeded_db();
+        let mut b = with_vault(bundle(), b"old-salt", b"old-ct");
+        b.credentials = vec![credential("c-new")];
+
+        let summary = db.import_backup_bundle(&b, false).unwrap();
+
+        assert_eq!(summary.credentials, 1);
+        assert_eq!(summary.credentials_skipped_incompatible, 0);
+        assert!(db.get_credential("c-new").unwrap().is_some());
+    }
+
+    #[test]
+    fn bundle_without_vault_meta_never_imports_credentials() {
+        let db = seeded_db();
+        let mut b = bundle();
+        b.credentials = vec![credential("c-new")];
+        b.hosts = vec![host("h-new", None, Some("c-new"))];
+
+        let summary = db.import_backup_bundle(&b, true).unwrap();
+
+        assert_eq!(summary.credentials_skipped_incompatible, 1);
+        assert!(db.get_credential("c-new").unwrap().is_none());
+        assert_eq!(db.get_host("h-new").unwrap().unwrap().credential_id, None);
+    }
+
+    #[test]
+    fn merge_into_uninitialized_vault_adopts_bundle_vault() {
+        let db = test_db();
+        let mut b = with_vault(bundle(), b"s", b"v");
+        b.credentials = vec![credential("c1")];
+
+        let summary = db.import_backup_bundle(&b, false).unwrap();
+
+        assert!(summary.vault_meta_restored);
+        assert_eq!(summary.credentials, 1);
+    }
+
+    #[test]
+    fn sync_vault_mismatch_flag_round_trips() {
+        let db = seeded_db();
+        assert!(!db.sync_vault_mismatch().unwrap());
+        db.set_sync_vault_mismatch(true).unwrap();
+        assert!(db.sync_vault_mismatch().unwrap());
+        db.set_sync_vault_mismatch(false).unwrap();
+        assert!(!db.sync_vault_mismatch().unwrap());
+        // Clearing an unset flag is a no-op, not an error.
+        db.set_sync_vault_mismatch(false).unwrap();
     }
 }

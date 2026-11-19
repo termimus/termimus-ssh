@@ -154,6 +154,11 @@ export const settingsEn = {
     dockerDeployTitle: "Run Your Own Sync Server with Docker",
     copyDockerCmd: "Copy Docker Run Command",
     copiedDockerCmd: "Copied Docker run command",
+    vaultMismatchTitle: "Sync paused: vault key mismatch",
+    vaultMismatchDesc: "The data on the sync server is encrypted with a different vault key, most likely because the master password was changed on another device. Merging it would break your saved credentials, so pull and push are paused on this device.",
+    vaultMismatchAction: "Replace local data with server copy",
+    vaultMismatchConfirm: "Replace ALL local data on this device with the sync server copy?\n\nA safety snapshot of your current data is saved first. Afterwards, unlock the vault with the master password used on the other device.",
+    vaultMismatchReplacing: "Replacing...",
   },
   knownHosts: {
     title: "Trusted Host Keys (TOFU)",
@@ -191,5 +196,6 @@ export const settingsEn = {
     mergeDesc: "Adds new items and updates existing ones by ID. Trusted host keys with changed fingerprints are kept untouched (MITM protection).",
     replaceAllTitle: "Replace All (Overwrite)",
     replaceAllDesc: "Completely replaces your current database with the backup. All current data not present in the backup will be removed.",
+    credentialsSkippedIncompatible: "{{count}} credential(s) were not imported because this backup belongs to a different vault (different master password or vault key), so this device could not decrypt them. Your existing credentials are unchanged. Use Replace All to adopt the backup's vault instead.",
   },
 };
