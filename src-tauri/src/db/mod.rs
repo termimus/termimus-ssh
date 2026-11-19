@@ -33,6 +33,16 @@ impl Database {
         Ok(db)
     }
 
+    /// Fresh in-memory database with the full schema, for unit tests.
+    #[cfg(test)]
+    pub fn open_in_memory() -> Result<Self> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        let db = Database { conn: ReentrantMutex::new(conn) };
+        db.init_tables()?;
+        Ok(db)
+    }
+
     fn init_tables(&self) -> Result<()> {
         let conn = self.conn.lock();
 
@@ -1563,11 +1573,7 @@ mod tests {
     use super::*;
 
     fn test_db() -> Database {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
-        let db = Database { conn: ReentrantMutex::new(conn) };
-        db.init_tables().unwrap();
-        db
+        Database::open_in_memory().unwrap()
     }
 
     const T0: &str = "2026-01-01T00:00:00+00:00";
