@@ -1606,10 +1606,21 @@ pub fn backup_import(
         b
     };
 
-    let (mut summary, safety_snapshot_json) = state
+    // Replace All wipes the current data, so persist a safety snapshot to disk
+    // *before* touching anything. If it can't be written, refuse to import
+    // rather than proceed without a way back.
+    let safety_snapshot_path = if replace_all {
+        Some(write_pre_restore_snapshot(&state.db)?)
+    } else {
+        None
+    };
+
+    // Atomic: on error the database is rolled back to its pre-import state.
+    let mut summary = state
         .db
         .import_backup_bundle(&bundle, replace_all)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("Import failed, no changes were made: {e}"))?;
+    summary.safety_snapshot_path = safety_snapshot_path;
 
     // If vault metadata was replaced, the in-memory key is now stale — lock the vault
     // so the user must re-authenticate with the restored master password.
@@ -1617,22 +1628,58 @@ pub fn backup_import(
         state.vault.lock();
     }
 
-    // Write the safety snapshot to disk so the user can roll back if needed.
-    if let Some(snapshot_json) = safety_snapshot_json {
-        let mut snap_path = dirs::config_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("termimus");
-        let _ = std::fs::create_dir_all(&snap_path);
-        snap_path.push("auto-backup-pre-restore.json");
-        let path_str = snap_path.to_string_lossy().to_string();
-        if let Err(e) = std::fs::write(&snap_path, &snapshot_json) {
-            eprintln!("Warning: could not write safety snapshot to {path_str}: {e}");
-        } else {
-            summary.safety_snapshot_path = Some(path_str);
+    Ok(summary)
+}
+
+/// How many `pre-restore-*.json` snapshots to keep; older ones are pruned.
+const PRE_RESTORE_SNAPSHOTS_KEPT: usize = 5;
+
+/// Export the current database to a timestamped, verified file under the app
+/// config dir and return its path. Timestamped names mean a retried or second
+/// Replace All never overwrites the snapshot of the original data.
+fn write_pre_restore_snapshot(db: &Database) -> Result<String, String> {
+    let snapshot = db
+        .export_backup_bundle(env!("CARGO_PKG_VERSION"))
+        .map_err(|e| format!("Could not snapshot current data before import: {e}"))?;
+    let json = serde_json::to_string_pretty(&snapshot)
+        .map_err(|e| format!("Could not serialize safety snapshot: {e}"))?;
+
+    let dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("termimus")
+        .join("restore-snapshots");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Could not create snapshot directory {}: {e}", dir.display()))?;
+
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S%.3f");
+    let path = dir.join(format!("pre-restore-{stamp}.json"));
+    std::fs::write(&path, &json)
+        .map_err(|e| format!("Could not write safety snapshot to {}: {e}", path.display()))?;
+
+    // Verify the snapshot reads back as a valid bundle before we rely on it.
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<BackupBundle>(&s).ok())
+        .ok_or_else(|| format!("Safety snapshot at {} failed verification", path.display()))?;
+
+    // Prune old snapshots (names sort chronologically).
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        let mut snaps: Vec<_> = entries
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("pre-restore-") && n.ends_with(".json"))
+            })
+            .collect();
+        snaps.sort();
+        let excess = snaps.len().saturating_sub(PRE_RESTORE_SNAPSHOTS_KEPT);
+        for old in &snaps[..excess] {
+            let _ = std::fs::remove_file(old);
         }
     }
 
-    Ok(summary)
+    Ok(path.to_string_lossy().to_string())
 }
 
 // ── Self-Hosted Sync Relay (native HTTP client, bypasses WebView CORS/mixed-content) ─────

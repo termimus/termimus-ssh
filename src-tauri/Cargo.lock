@@ -5954,6 +5954,7 @@ dependencies = [
  "keyring",
  "objc2",
  "objc2-foundation",
+ "parking_lot",
  "portable-pty",
  "rand 0.10.3",
  "rand 0.8.8",
