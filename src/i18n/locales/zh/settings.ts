@@ -107,6 +107,9 @@ export const settingsZh: typeof settingsEn = {
     recommendedFont: "推荐字体搭配",
     applyPairing: "应用推荐搭配",
     resetDefaults: "恢复默认设置",
+    clipboardTitle: "选中复制，右键粘贴",
+    clipboardDesc:
+      "开启后，选中文本会自动复制到剪贴板，右键点击直接粘贴。关闭时，右键打开上下文菜单。",
   },
   sync: {
     title: "自建同步中继",
