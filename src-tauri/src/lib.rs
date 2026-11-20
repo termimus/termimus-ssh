@@ -2,6 +2,8 @@ pub mod ai;
 pub mod biometric;
 pub mod commands;
 pub mod db;
+#[cfg(target_os = "linux")]
+mod fido;
 pub mod pty;
 pub mod sftp;
 pub mod ssh;

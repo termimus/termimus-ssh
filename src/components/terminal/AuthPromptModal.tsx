@@ -20,9 +20,12 @@ function promptKind(prompt: string): "password" | "code" | "answer" {
 export function AuthPromptModal() {
   const { t } = useTranslation();
   const [queue, setQueue] = useState<AuthPromptRequest[]>([]);
-  const [answers, setAnswers] = useState<string[]>([]);
+  const [entry, setEntry] = useState<{ id?: string; answers: string[] }>({ answers: [] });
   const [submitting, setSubmitting] = useState(false);
   const current = queue[0];
+  const touch = current?.security_key === "touch";
+  const pin = current?.security_key === "pin";
+  const answers = entry.id === current?.request_id ? entry.answers : (current?.prompts ?? []).map(() => "");
 
   useEffect(() => {
     const unlistenPrompt = listen<AuthPromptRequest>("ssh-auth-prompt", (e) =>
@@ -39,12 +42,13 @@ export function AuthPromptModal() {
   }, []);
 
   useEffect(() => {
-    setAnswers(current ? current.prompts.map(() => "") : []);
-  }, [current]);
+    setEntry((previous) => previous.id === current?.request_id ? previous : { answers: [] });
+  }, [current?.request_id]);
 
   async function finish(responses: string[] | null) {
     if (!current) return;
     setSubmitting(true);
+    setEntry({ answers: [] });
     try {
       await api.respondAuthPrompt(current.request_id, responses);
     } catch (e) {
@@ -71,7 +75,7 @@ export function AuthPromptModal() {
         className="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] p-5 shadow-2xl animate-in zoom-in-95 duration-150"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!submitting) finish(answers);
+          if (!submitting && !touch) finish(answers);
         }}
       >
         <div className="flex items-start justify-between mb-3">
@@ -81,10 +85,10 @@ export function AuthPromptModal() {
             </div>
             <div className="min-w-0">
               <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-                {current.name || t("terminal.authPrompt.title")}
+                {pin || touch ? t("terminal.authPrompt.securityKeyTitle") : current.name || t("terminal.authPrompt.title")}
               </h3>
               <p className="text-xs text-[var(--text-muted)] truncate">
-                {t("terminal.authPrompt.subtitle", { target: current.target })}
+                {t(pin || touch ? "terminal.authPrompt.securityKeySubtitle" : "terminal.authPrompt.subtitle", { target: current.target })}
               </p>
             </div>
           </div>
@@ -99,9 +103,9 @@ export function AuthPromptModal() {
           </button>
         </div>
 
-        {current.instructions && (
-          <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-3 whitespace-pre-wrap">
-            {current.instructions}
+        {(touch || pin || current.instructions) && (
+          <p className="text-xs text-[var(--text-secondary)] leading-relaxed mb-3 whitespace-pre-wrap" role={touch ? "status" : undefined}>
+            {touch ? t("terminal.authPrompt.securityKeyTouch") : pin ? t("terminal.authPrompt.securityKeyPinHint") : current.instructions}
           </p>
         )}
 
@@ -111,18 +115,21 @@ export function AuthPromptModal() {
             return (
               <label key={`${current.request_id}-${i}`} className="block">
                 <span className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">
-                  {p.prompt.trim().replace(/:$/, "")}
+                  {pin ? t("terminal.authPrompt.securityKeyPin") : p.prompt.trim().replace(/:$/, "")}
                 </span>
                 <input
                   type={p.echo ? "text" : "password"}
                   autoFocus={i === 0}
                   autoComplete={kind === "code" ? "one-time-code" : "off"}
                   inputMode={kind === "code" ? "numeric" : undefined}
-                  placeholder={t(`terminal.authPrompt.${kind}Placeholder`)}
+                  placeholder={t(pin ? "terminal.authPrompt.securityKeyPin" : `terminal.authPrompt.${kind}Placeholder`)}
                   value={answers[i] ?? ""}
-                  onChange={(e) =>
-                    setAnswers((a) => a.map((v, j) => (j === i ? e.target.value : v)))
-                  }
+                  required={pin}
+                  disabled={submitting}
+                  onChange={(e) => setEntry({
+                    id: current.request_id,
+                    answers: answers.map((v, j) => (j === i ? e.target.value : v)),
+                  })}
                   className="w-full rounded-xl border border-[var(--border)] bg-[var(--surface-container)] px-3 py-2 text-sm text-[var(--text-primary)] font-mono outline-none placeholder:font-sans placeholder:text-[var(--text-muted)] focus:border-[var(--primary)]"
                 />
                 {kind !== "answer" && (
@@ -144,14 +151,14 @@ export function AuthPromptModal() {
           >
             {t("common.cancel")}
           </button>
-          <button
+          {!touch && <button
             type="submit"
             disabled={submitting}
             className="flex items-center gap-1.5 rounded-xl px-4 py-1.5 text-xs font-semibold transition shadow-sm disabled:opacity-50 bg-[var(--primary)] text-[var(--on-primary)] hover:bg-[var(--primary-hover)]"
           >
             {submitting && <Loader2 size={12} className="animate-spin" />}
             <span>{t("terminal.authPrompt.submit")}</span>
-          </button>
+          </button>}
         </div>
       </form>
     </div>
