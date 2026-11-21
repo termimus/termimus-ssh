@@ -79,6 +79,11 @@ export const terminalId: typeof terminalEn = {
     codePlaceholder: "Kode 6 digit",
     codeHint: "Buka aplikasi authenticator Anda dan masukkan kode yang sedang berlaku.",
     answerPlaceholder: "Ketik jawaban Anda",
+    securityKeyTitle: "Kunci keamanan",
+    securityKeySubtitle: "Masuk ke {{target}}",
+    securityKeyTouch: "Sentuh kunci keamanan saat lampunya berkedip.",
+    securityKeyPin: "PIN kunci keamanan",
+    securityKeyPinHint: "Masukkan PIN kunci keamanan fisik Anda, bukan kata sandi server. PIN tetap di perangkat ini dan tidak disimpan.",
   },
   broadcastBanner: {
     active: "Interkoneksi Aktif:",

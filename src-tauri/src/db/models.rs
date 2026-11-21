@@ -150,6 +150,8 @@ pub struct KeychainKeyInput {
     pub public_key: String,
     pub fingerprint: String,
     pub passphrase: Option<String>,
+    /// None preserves the current certificate; an empty value removes it.
+    pub user_certificate: Option<String>,
     pub username: Option<String>,
 }
 

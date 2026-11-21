@@ -1,3 +1,18 @@
+const certificateTranslations = {
+  certificateField: "SSH user certificate (optional)",
+  certificateHint: "Paste the OpenSSH certificate signed by your CA for this security key, or import its .pub file. Clear the field to remove the certificate.",
+  certificateRequiresPrivateKey: "Load the matching private key to change or remove its certificate.",
+  importCertificate: "Import certificate",
+  selectCertificateDialogTitle: "Select SSH User Certificate (.pub)",
+  certificateFileType: "SSH user certificate",
+  errorReadCertificate: "Could not read the certificate file. Choose a readable .pub file.",
+  errorInvalidCertificateFile: "Choose the CA-signed certificate for your security key, not the public key itself.",
+  errorCertificateNeedsSecurityKey: "This private key is not a security key. Clear the certificate or supply its matching security key.",
+};
+
+// Other locales can omit these keys and use the English fallback.
+const optionalCertificateTranslations: Partial<typeof certificateTranslations> = certificateTranslations;
+
 export const keychainEn = {
   title: "Keychain",
   subtitle: "Manage SSH private keys, passwords, and reusable server identities.",
@@ -63,6 +78,7 @@ export const keychainEn = {
     passphrasePlaceholder: "Key passphrase...",
     hidePassphrase: "Hide passphrase",
     showPassphrase: "Show passphrase",
+    ...optionalCertificateTranslations,
     publicKeySection: "Public Key (OpenSSH)",
     publicKeyHint: "Place this public key in the server's ~/.ssh/authorized_keys to allow authentication.",
     saveButton: "Save Key to Keychain",
