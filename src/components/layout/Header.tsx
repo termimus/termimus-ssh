@@ -494,7 +494,7 @@ export function Header({
                 title={
                   count > 1
                     ? `${displayLabel} — ${count} terminals in split screen. Middle-click or ✕ to close.`
-                    : "Drag to reorder/split. Middle-click or ✕ to close."
+                    : `${displayLabel} — Drag to reorder/split. Middle-click or ✕ to close.`
                 }
                 className={`group relative flex h-7.5 items-center gap-2 rounded-lg px-2.5 text-xs font-mono min-w-[130px] max-w-[220px] cursor-grab active:cursor-grabbing transition-all select-none ${
                   isActive
