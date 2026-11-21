@@ -94,6 +94,9 @@ export const hostsEn = {
     authMethod: "Auth Method",
     authPassword: "Password",
     authKey: "Key PEM",
+    authAgent: "SSH Agent",
+    agentNote:
+      "Uses a key held by your local SSH agent (Bitwarden, 1Password, or the system OpenSSH agent). No key needs to be imported — the agent signs the login challenge.",
     keychainIdentity: "Keychain Identity",
     reusableCredentials: "Reusable credentials",
     customPassword: "-- Custom one-off password --",
