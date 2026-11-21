@@ -226,7 +226,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                       }
                       handlePointerDownTab(e, tab.id);
                     }}
-                    title="Drag to split screen or dock. Middle-click or ✕ to close."
+                    title={tab.oscTitle ? `${tab.oscTitle} — Drag to split screen or dock. Middle-click or ✕ to close.` : "Drag to split screen or dock. Middle-click or ✕ to close."}
                     className={`group relative flex h-5.5 max-w-[160px] cursor-grab active:cursor-grabbing items-center gap-1.5 rounded-md px-2 text-[11px] font-mono transition-all select-none ${
                       isActiveInPane
                         ? isFocused
@@ -250,7 +250,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                         }`}
                       />
                     )}
-                    <span className="truncate flex-1 min-w-0 text-center leading-none translate-y-[0.5px]">{tab.hostLabel}</span>
+                    <span className="truncate flex-1 min-w-0 text-center leading-none translate-y-[0.5px]">{tab.oscTitle || tab.hostLabel}</span>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -272,7 +272,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
             ) : (
               <div
                 onPointerDown={(e) => activeTab && handlePointerDownTab(e, activeTab.id)}
-                title="Drag to move or split pane"
+                title={activeTab?.oscTitle ? `${activeTab.oscTitle} — Drag to move or split pane` : "Drag to move or split pane"}
                 className="flex items-center gap-2 cursor-grab active:cursor-grabbing font-mono text-[11px] truncate select-none"
               >
                 {activeTab?.connecting ? (
@@ -285,7 +285,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                   />
                 )}
                 <span className="font-medium text-[var(--text-primary)] truncate">
-                  {activeTab?.hostLabel || "Terminal"}
+                  {activeTab?.oscTitle || activeTab?.hostLabel || "Terminal"}
                 </span>
                 <span className="text-[10px] text-[var(--text-muted)] truncate hidden sm:inline">
                   {activeTab?.hostAddress}

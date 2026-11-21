@@ -434,9 +434,27 @@ export function Header({
             const isConnecting = groupTabs.some((t) => t.connecting);
             const isConnected = groupTabs.every((t) => t.connected);
 
+            // The tab shows the focused terminal's OSC title when one is set:
+            // for the active group that is the terminal in the focused pane,
+            // for other groups the primary tab. Falls back to the workspace
+            // label / host name when no title is set.
+            const focusedTabId =
+              isActive && activePaneId
+                ? findPaneById(group.rootPane, activePaneId)?.activeTabId ??
+                  primaryTab.id
+                : primaryTab.id;
+            const focusedTab =
+              tabs.find((t) => t.id === focusedTabId) ?? primaryTab;
+            const oscTitle = focusedTab.oscTitle;
+
             // If the group has a workspace label, use it; otherwise fall back to
             // the primary host name, with a count suffix when split into multiple panes.
-            const displayLabel = group.label
+            // A terminal-set (OSC) title wins over both when present.
+            const displayLabel = oscTitle
+              ? count > 1
+                ? `${oscTitle} (${count})`
+                : oscTitle
+              : group.label
               ? count > 1 && !group.label.includes(`(${count})`)
                 ? `${group.label} (${count})`
                 : group.label
@@ -476,7 +494,7 @@ export function Header({
                 title={
                   count > 1
                     ? `${displayLabel} — ${count} terminals in split screen. Middle-click or ✕ to close.`
-                    : "Drag to reorder/split. Middle-click or ✕ to close."
+                    : `${displayLabel} — Drag to reorder/split. Middle-click or ✕ to close.`
                 }
                 className={`group relative flex h-7.5 items-center gap-2 rounded-lg px-2.5 text-xs font-mono min-w-[130px] max-w-[220px] cursor-grab active:cursor-grabbing transition-all select-none ${
                   isActive
