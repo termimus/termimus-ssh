@@ -434,9 +434,27 @@ export function Header({
             const isConnecting = groupTabs.some((t) => t.connecting);
             const isConnected = groupTabs.every((t) => t.connected);
 
+            // The tab shows the focused terminal's OSC title when one is set:
+            // for the active group that is the terminal in the focused pane,
+            // for other groups the primary tab. Falls back to the workspace
+            // label / host name when no title is set.
+            const focusedTabId =
+              isActive && activePaneId
+                ? findPaneById(group.rootPane, activePaneId)?.activeTabId ??
+                  primaryTab.id
+                : primaryTab.id;
+            const focusedTab =
+              tabs.find((t) => t.id === focusedTabId) ?? primaryTab;
+            const oscTitle = focusedTab.oscTitle;
+
             // If the group has a workspace label, use it; otherwise fall back to
             // the primary host name, with a count suffix when split into multiple panes.
-            const displayLabel = group.label
+            // A terminal-set (OSC) title wins over both when present.
+            const displayLabel = oscTitle
+              ? count > 1
+                ? `${oscTitle} (${count})`
+                : oscTitle
+              : group.label
               ? count > 1 && !group.label.includes(`(${count})`)
                 ? `${group.label} (${count})`
                 : group.label

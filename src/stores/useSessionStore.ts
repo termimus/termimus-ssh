@@ -26,6 +26,8 @@ export interface SshTab {
   id: string; // session_id
   hostId: string;
   hostLabel: string;
+  /** Title set by the program running in the terminal (OSC 0/2). Absent when no title is set. */
+  oscTitle?: string;
   hostAddress: string;
   connected: boolean;
   connecting: boolean;
@@ -108,6 +110,8 @@ interface SessionState {
   setActiveGroup: (groupId: string) => void;
   setSessionConnected: (sessionId: string, connected: boolean) => void;
   setSessionError: (sessionId: string, error: string) => void;
+  /** Records the title a program set via OSC 0/2 for a tab; an empty title clears it. */
+  setSessionTitle: (sessionId: string, title: string) => void;
   sendTextToActiveSession: (text: string) => Promise<boolean>;
   /**
    * Writes an AI-generated command to ONE session (never broadcast). The
@@ -840,6 +844,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         t.id === sessionId ? { ...t, error, connecting: false } : t
       ),
     }));
+  },
+
+  setSessionTitle: (sessionId: string, title: string) => {
+    const next = title.trim() ? title.trim() : undefined;
+    set((state) => {
+      const tab = state.tabs.find((t) => t.id === sessionId);
+      // Skip the update when the title is unchanged so a program that
+      // re-emits its title (e.g. on redraw) doesn't re-render the header.
+      if (!tab || tab.oscTitle === next) return {};
+      return {
+        tabs: state.tabs.map((t) =>
+          t.id === sessionId ? { ...t, oscTitle: next } : t
+        ),
+      };
+    });
   },
 
   toggleGroupBroadcast: (groupId?: string) => {
