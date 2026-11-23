@@ -22,11 +22,13 @@ interface SettingsState {
   useBiometrics: boolean;
   autoLockPolicy: AutoLockPolicy;
   language: SupportedLanguage;
+  selectToCopyPaste: boolean;
   useOscTitleAsTabName: boolean;
   setUseOsKeyring: (v: boolean) => void;
   setUseBiometrics: (v: boolean) => void;
   setAutoLockPolicy: (v: AutoLockPolicy) => void;
   setLanguage: (lang: SupportedLanguage) => void;
+  setSelectToCopyPaste: (v: boolean) => void;
   setUseOscTitleAsTabName: (v: boolean) => void;
 }
 
@@ -37,10 +39,12 @@ export const useSettingsStore = create<SettingsState>()(
       useBiometrics: false,
       autoLockPolicy: "on_close",
       language: "en",
+      selectToCopyPaste: false,
       useOscTitleAsTabName: false,
       setUseOsKeyring: (v) => set({ useOsKeyring: v }),
       setUseBiometrics: (v) => set({ useBiometrics: v }),
       setAutoLockPolicy: (v) => set({ autoLockPolicy: v }),
+      setSelectToCopyPaste: (v) => set({ selectToCopyPaste: v }),
       setUseOscTitleAsTabName: (v) => set({ useOscTitleAsTabName: v }),
       setLanguage: (lang) => {
         set({ language: lang });

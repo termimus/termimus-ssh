@@ -107,6 +107,9 @@ export const settingsId: typeof settingsEn = {
     recommendedFont: "Rekomendasi pasangan font",
     applyPairing: "Terapkan pasangan font",
     resetDefaults: "Reset ke bawaan",
+    clipboardTitle: "Pilih untuk Menyalin, Klik Kanan untuk Menempel",
+    clipboardDesc:
+      "Saat aktif, teks yang dipilih otomatis disalin ke clipboard dan klik kanan menempelkannya. Saat nonaktif, klik kanan membuka menu konteks.",
     oscTitleAsTabNameTitle: "Gunakan Judul dari Terminal sebagai Nama Tab",
     oscTitleAsTabNameDesc:
       "Saat aktif, judul yang diatur program (OSC 0/2) menggantikan label tab. Saat nonaktif, tab tetap menampilkan nama host dan judul program muncul di header panel dan tooltip tab.",
@@ -159,6 +162,11 @@ export const settingsId: typeof settingsEn = {
     dockerDeployTitle: "Jalankan Server Sinkronisasi Sendiri dengan Docker",
     copyDockerCmd: "Salin Perintah Docker Run",
     copiedDockerCmd: "Perintah Docker run tersalin",
+    vaultMismatchTitle: "Sinkronisasi dijeda: kunci vault berbeda",
+    vaultMismatchDesc: "Data di server sinkronisasi dienkripsi dengan kunci vault yang berbeda, kemungkinan karena master password diganti di perangkat lain. Menggabungkannya akan merusak kredensial tersimpan, jadi pull dan push dijeda di perangkat ini.",
+    vaultMismatchAction: "Ganti data lokal dengan salinan server",
+    vaultMismatchConfirm: "Ganti SEMUA data lokal di perangkat ini dengan salinan dari server sinkronisasi?\n\nSnapshot pengaman data Anda saat ini disimpan terlebih dahulu. Setelah itu, buka vault dengan master password yang dipakai di perangkat lain.",
+    vaultMismatchReplacing: "Mengganti...",
   },
   knownHosts: {
     title: "Kunci Host Tepercaya (TOFU)",
@@ -196,5 +204,6 @@ export const settingsId: typeof settingsEn = {
     mergeDesc: "Menambahkan item baru dan memperbarui yang sudah ada berdasarkan ID. Kunci host tepercaya yang sidik jarinya berubah dibiarkan utuh (perlindungan MITM).",
     replaceAllTitle: "Ganti Semua (Timpa)",
     replaceAllDesc: "Menggantikan seluruh database Anda saat ini dengan cadangan. Semua data saat ini yang tidak ada di cadangan akan dihapus.",
+    credentialsSkippedIncompatible: "{{count}} kredensial tidak diimpor karena cadangan ini berasal dari vault lain (master password atau kunci vault berbeda), sehingga perangkat ini tidak dapat mendekripsinya. Kredensial Anda yang ada tidak berubah. Gunakan Ganti Semua untuk memakai vault dari cadangan.",
   },
 };

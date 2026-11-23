@@ -105,6 +105,9 @@ export const settingsEn = {
     recommendedFont: "Recommended font pairing",
     applyPairing: "Apply pairing",
     resetDefaults: "Reset to defaults",
+    clipboardTitle: "Select to Copy, Right-Click to Paste",
+    clipboardDesc:
+      "When on, selecting text copies it to the clipboard automatically and right-clicking pastes it. When off, right-click opens the context menu instead.",
     oscTitleAsTabNameTitle: "Use Terminal-Set Title as Tab Name",
     oscTitleAsTabNameDesc:
       "When on, the title a program sets (OSC 0/2) replaces the tab label. When off, tabs keep the host name and the program title shows in the pane header and the tab tooltip instead.",
@@ -157,6 +160,11 @@ export const settingsEn = {
     dockerDeployTitle: "Run Your Own Sync Server with Docker",
     copyDockerCmd: "Copy Docker Run Command",
     copiedDockerCmd: "Copied Docker run command",
+    vaultMismatchTitle: "Sync paused: vault key mismatch",
+    vaultMismatchDesc: "The data on the sync server is encrypted with a different vault key, most likely because the master password was changed on another device. Merging it would break your saved credentials, so pull and push are paused on this device.",
+    vaultMismatchAction: "Replace local data with server copy",
+    vaultMismatchConfirm: "Replace ALL local data on this device with the sync server copy?\n\nA safety snapshot of your current data is saved first. Afterwards, unlock the vault with the master password used on the other device.",
+    vaultMismatchReplacing: "Replacing...",
   },
   knownHosts: {
     title: "Trusted Host Keys (TOFU)",
@@ -194,5 +202,6 @@ export const settingsEn = {
     mergeDesc: "Adds new items and updates existing ones by ID. Trusted host keys with changed fingerprints are kept untouched (MITM protection).",
     replaceAllTitle: "Replace All (Overwrite)",
     replaceAllDesc: "Completely replaces your current database with the backup. All current data not present in the backup will be removed.",
+    credentialsSkippedIncompatible: "{{count}} credential(s) were not imported because this backup belongs to a different vault (different master password or vault key), so this device could not decrypt them. Your existing credentials are unchanged. Use Replace All to adopt the backup's vault instead.",
   },
 };
