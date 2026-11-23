@@ -205,6 +205,8 @@ export interface ImportSummary {
   known_hosts_conflicts: number;
   workspace_presets?: number;
   ai_providers?: number;
+  /** Credentials left out because the backup belongs to a different vault. */
+  credentials_skipped_incompatible?: number;
   vault_meta_restored: boolean;
   safety_snapshot_path: string | null;
 }

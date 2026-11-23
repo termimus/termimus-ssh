@@ -338,6 +338,10 @@ pub struct ImportSummary {
     pub workspace_presets: usize,
     #[serde(default)]
     pub ai_providers: usize,
+    /// Credentials left out because the bundle was encrypted under a
+    /// different vault key (different salt/verifier, or none recorded).
+    #[serde(default)]
+    pub credentials_skipped_incompatible: usize,
     pub vault_meta_restored: bool,
     pub safety_snapshot_path: Option<String>,
 }
