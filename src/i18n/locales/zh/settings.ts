@@ -159,6 +159,11 @@ export const settingsZh: typeof settingsEn = {
     dockerDeployTitle: "使用 Docker 快速搭建自建同步服务器",
     copyDockerCmd: "复制 Docker 运行命令",
     copiedDockerCmd: "已复制 Docker 命令",
+    vaultMismatchTitle: "同步已暂停：保险库密钥不一致",
+    vaultMismatchDesc: "同步服务器上的数据使用了不同的保险库密钥加密，很可能是在其他设备上修改了主密码。合并这些数据会损坏已保存的凭据，因此本设备已暂停拉取和推送。",
+    vaultMismatchAction: "用服务器副本替换本地数据",
+    vaultMismatchConfirm: "确定用同步服务器上的副本替换本设备上的全部本地数据吗？\n\n系统会先保存当前数据的安全快照。之后请使用其他设备上的主密码解锁保险库。",
+    vaultMismatchReplacing: "正在替换...",
   },
   knownHosts: {
     title: "受信任主机密钥 (TOFU)",
@@ -196,5 +201,6 @@ export const settingsZh: typeof settingsEn = {
     mergeDesc: "按 ID 添加新数据并更新已有项。指纹发生变更的受信任主机密钥将被保留不被覆盖 (中间人防护)。",
     replaceAllTitle: "完全替换 (覆盖覆盖)",
     replaceAllDesc: "使用备份文件完全替换当前数据库。当前数据库中未包含在备份中的所有数据将被移除。",
+    credentialsSkippedIncompatible: "有 {{count}} 个凭据未导入：此备份属于另一个保险库（主密码或保险库密钥不同），本设备无法解密。现有凭据保持不变。如需采用备份中的保险库，请使用“全部替换”。",
   },
 };
