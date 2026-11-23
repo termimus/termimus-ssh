@@ -38,7 +38,10 @@ interface SyncState {
 
   testConnection: () => Promise<{ ok: boolean; version?: string; revision?: number; error?: string }>;
   push: () => Promise<number>;
-  pull: () => Promise<ImportSummary>;
+  /** Pull from the relay. `replaceAll` overwrites all local data (and adopts
+   *  the server's vault) instead of merging — the recovery path for a
+   *  vault-key mismatch. */
+  pull: (replaceAll?: boolean) => Promise<ImportSummary>;
   getDevices: () => Promise<ConnectedDevice[]>;
   triggerAutoPush: (delayMs?: number) => void;
 }
@@ -195,7 +198,7 @@ export const useSyncStore = create<SyncState>()(
         }
       },
 
-      pull: async () => {
+      pull: async (replaceAll = false) => {
         const { serverUrl, authToken, syncPassword } = get();
         const cleanUrl = serverUrl.trim().replace(/\/+$/, "");
         if (!cleanUrl) throw new Error("Server URL is not configured");
@@ -204,7 +207,7 @@ export const useSyncStore = create<SyncState>()(
 
         try {
           // Native Rust HTTP pull: bypasses WebKitGTK mixed-content and CORS blocks entirely
-          const summary = await api.syncPull(cleanUrl, syncPassword, authToken);
+          const summary = await api.syncPull(cleanUrl, syncPassword, authToken, replaceAll);
 
           // Refresh UI stores after data import
           useHostStore.getState().refresh();
@@ -308,4 +311,12 @@ function scheduleSaveSecrets() {
       });
     }
   }, 500);
+}
+
+/** Prefix the backend puts on errors raised when the relay's bundle is
+ *  encrypted under a different vault key (see `sync_pull` / `sync_push`). */
+const VAULT_MISMATCH_PREFIX = "VAULT_MISMATCH:";
+
+export function isVaultMismatchError(error: string | null | undefined): boolean {
+  return !!error && error.includes(VAULT_MISMATCH_PREFIX);
 }

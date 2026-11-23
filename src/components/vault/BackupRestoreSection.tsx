@@ -283,6 +283,18 @@ export function BackupRestoreSection() {
             </div>
           )}
 
+          {/* Credentials from a different vault were not imported */}
+          {(importSummary.credentials_skipped_incompatible ?? 0) > 0 && (
+            <div className="flex items-start gap-2 rounded-md border border-[var(--warning)]/30 bg-[var(--warning)]/10 px-2.5 py-2 text-[11px] text-[var(--warning)]">
+              <ShieldAlert size={13} className="shrink-0 mt-0.5" />
+              <span>
+                {t("settings.backup.credentialsSkippedIncompatible", {
+                  count: importSummary.credentials_skipped_incompatible,
+                })}
+              </span>
+            </div>
+          )}
+
           {/* Vault master password restored */}
           {importSummary.vault_meta_restored && (
             <div className="flex items-start gap-2 rounded-md border border-[var(--warning)]/30 bg-[var(--warning)]/10 px-2.5 py-2 text-[11px] text-[var(--warning)]">

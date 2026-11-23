@@ -36,6 +36,7 @@ import {
 } from "../../stores/useSettingsStore";
 import { CustomSelect } from "../ui/CustomSelect";
 import { api } from "../../lib/api";
+import { useSyncStore } from "../../stores/useSyncStore";
 
 type SettingsTab = "general" | "security" | "terminal" | "sync" | "ai" | "known_hosts" | "backup";
 
@@ -589,6 +590,10 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
     setSubmitting(true);
     try {
       await api.changeVaultPassword(oldPassword, newPassword);
+      // The vault was re-salted and every credential re-encrypted: push right
+      // away so other devices see the new vault (and pause instead of merging
+      // stale ciphertext) as soon as possible. No-op when auto-sync is off.
+      useSyncStore.getState().triggerAutoPush(0);
       setSuccess(true);
       setTimeout(() => {
         onClose();
