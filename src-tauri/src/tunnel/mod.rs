@@ -330,7 +330,8 @@ impl TunnelManager {
                                 Err(e) => {
                                     eprintln!(
                                         "Remote forward: failed to reach {destination_address}:{destination_port} \
-                                         for {originator_address}:{originator_port}: {e}"
+                                         for {originator_address}:{originator_port}: {}",
+                                        crate::ssh::describe_connect_error(&e)
                                     );
                                     let _ = channel.close().await;
                                 }
@@ -415,7 +416,12 @@ async fn connect_ssh(
             crate::ssh::configure_tcp_stream(&s);
             s
         }
-        Err(e) => return Err(format!("Tunnel TCP connection failed: {e}")),
+        Err(e) => {
+            return Err(format!(
+                "Tunnel TCP connection failed: {}",
+                crate::ssh::describe_connect_error(&e)
+            ))
+        }
     };
     let mut handle = client::connect_stream(config, socket, handler)
         .await

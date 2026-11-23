@@ -24,6 +24,27 @@ pub fn configure_tcp_stream(stream: &tokio::net::TcpStream) {
     let _ = socket2::SockRef::from(stream).set_tcp_keepalive(&keepalive);
 }
 
+/// `EHOSTUNREACH` ("No route to host") on macOS/BSD.
+const MACOS_EHOSTUNREACH: i32 = 65;
+
+const LOCAL_NETWORK_HINT: &str = "If this host is on your local network, macOS may be blocking \
+Termimus: allow it in System Settings > Privacy & Security > Local Network, then restart Termimus.";
+
+/// Formats a TCP connect error. On macOS, a connection blocked by Local Network
+/// privacy fails with `EHOSTUNREACH`, which on its own reads like a routing
+/// problem, so append a hint pointing at the permission (#71).
+pub fn describe_connect_error(err: &std::io::Error) -> String {
+    with_local_network_hint(err.to_string(), err.raw_os_error(), cfg!(target_os = "macos"))
+}
+
+fn with_local_network_hint(message: String, raw_os_error: Option<i32>, is_macos: bool) -> String {
+    if is_macos && raw_os_error == Some(MACOS_EHOSTUNREACH) {
+        format!("{message}. {LOCAL_NETWORK_HINT}")
+    } else {
+        message
+    }
+}
+
 /// Creates a standard `russh::client::Config` with SSH-level keepalive enabled.
 /// Sends `keepalive@openssh.com` probes every 15 seconds to ensure sessions
 /// (interactive shells, long-running monitoring like btop/htop, SFTP, tunnels)
@@ -664,7 +685,7 @@ impl SessionManager {
                     s
                 }
                 Err(e) => {
-                    let msg = format!("Failed to reach Jump Host {}:{}: {e}", jump.address, jump.port);
+                    let msg = format!("Failed to reach Jump Host {}:{}: {}", jump.address, jump.port, describe_connect_error(&e));
                     emit_progress(1, "error", &msg, true);
                     return Err(msg);
                 }
@@ -730,7 +751,7 @@ impl SessionManager {
                     s
                 }
                 Err(e) => {
-                    let msg = format!("Connection failed: {e}");
+                    let msg = format!("Connection failed: {}", describe_connect_error(&e));
                     emit_progress(1, "error", &msg, true);
                     return Err(msg);
                 }
@@ -1229,6 +1250,20 @@ pub async fn detect_os_via_exec(
 #[cfg(test)]
 mod tests {
     use tokio::io::{AsyncRead, AsyncWrite};
+
+    #[test]
+    fn local_network_hint_only_for_macos_ehostunreach() {
+        let msg = || "No route to host (os error 65)".to_string();
+        let hinted = super::with_local_network_hint(msg(), Some(65), true);
+        assert!(hinted.starts_with("No route to host (os error 65). "));
+        assert!(hinted.contains("Privacy & Security > Local Network"));
+
+        // Same errno on other platforms means something else (65 is ENOPKG on Linux).
+        assert_eq!(super::with_local_network_hint(msg(), Some(65), false), msg());
+        // Other macOS errors are left alone (61 = ECONNREFUSED).
+        assert_eq!(super::with_local_network_hint(msg(), Some(61), true), msg());
+        assert_eq!(super::with_local_network_hint(msg(), None, true), msg());
+    }
 
     fn _assert_stream<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>() {}
 
