@@ -105,6 +105,9 @@ export const settingsEn = {
     recommendedFont: "Recommended font pairing",
     applyPairing: "Apply pairing",
     resetDefaults: "Reset to defaults",
+    clipboardTitle: "Select to Copy, Right-Click to Paste",
+    clipboardDesc:
+      "When on, selecting text copies it to the clipboard automatically and right-clicking pastes it. When off, right-click opens the context menu instead.",
   },
   sync: {
     title: "Self-Hosted Sync Relay",
