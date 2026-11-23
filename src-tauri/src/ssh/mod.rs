@@ -1,8 +1,9 @@
 use russh::client::{self, AuthResult, Handle, Handler, KeyboardInteractiveAuthResponse};
 use russh::keys::ssh_key::HashAlg;
 use russh::keys::{decode_secret_key, PrivateKeyWithHashAlg};
-use russh::{Disconnect, MethodKind};
+use russh::{cipher, kex, mac, Disconnect, MethodKind, Preferred};
 use serde::Serialize;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
@@ -31,7 +32,75 @@ pub fn default_client_config() -> Arc<client::Config> {
     let mut config = client::Config::default();
     config.keepalive_interval = Some(Duration::from_secs(15));
     config.keepalive_max = 4;
+    config.preferred = with_legacy_algorithms(config.preferred);
     Arc::new(config)
+}
+
+/// Legacy key exchanges offered as a last resort, for old embedded SSH
+/// servers (routers, switches, OLTs running Dropbear or vendor stacks) that
+/// support nothing in russh's modern defaults.
+const LEGACY_KEX: &[kex::Name] = &[
+    kex::ECDH_SHA2_NISTP256,
+    kex::ECDH_SHA2_NISTP384,
+    kex::ECDH_SHA2_NISTP521,
+    kex::DH_G14_SHA1,
+];
+
+/// RFC 8308 / OpenSSH strict-kex markers. They are not real key exchanges
+/// and must stay at the end of the kex list, after every real algorithm.
+const KEX_EXTENSION_MARKERS: &[kex::Name] = &[
+    kex::EXTENSION_SUPPORT_AS_CLIENT,
+    kex::EXTENSION_SUPPORT_AS_SERVER,
+    kex::EXTENSION_OPENSSH_STRICT_KEX_AS_CLIENT,
+    kex::EXTENSION_OPENSSH_STRICT_KEX_AS_SERVER,
+];
+
+/// AES-CBC only: 3DES is left out on purpose (64-bit block, Sweet32).
+const LEGACY_CIPHERS: &[cipher::Name] = &[cipher::AES_128_CBC, cipher::AES_256_CBC];
+
+/// Servers that only speak AES-CBC usually only speak SHA-1 MACs too.
+const LEGACY_MACS: &[mac::Name] = &[mac::HMAC_SHA1_ETM, mac::HMAC_SHA1];
+
+/// Appends legacy algorithms after russh's modern defaults. Negotiation picks
+/// the first algorithm in the client's list that the server also supports,
+/// so modern servers keep negotiating exactly what they did before; only
+/// servers that offer nothing better fall back to these.
+fn with_legacy_algorithms(mut preferred: Preferred) -> Preferred {
+    let mut kex_list: Vec<kex::Name> = preferred
+        .kex
+        .iter()
+        .filter(|k| !KEX_EXTENSION_MARKERS.contains(k))
+        .copied()
+        .collect();
+    append_missing(&mut kex_list, LEGACY_KEX);
+    append_missing(
+        &mut kex_list,
+        &preferred
+            .kex
+            .iter()
+            .filter(|k| KEX_EXTENSION_MARKERS.contains(k))
+            .copied()
+            .collect::<Vec<_>>(),
+    );
+    preferred.kex = Cow::Owned(kex_list);
+
+    let mut cipher_list = preferred.cipher.to_vec();
+    append_missing(&mut cipher_list, LEGACY_CIPHERS);
+    preferred.cipher = Cow::Owned(cipher_list);
+
+    let mut mac_list = preferred.mac.to_vec();
+    append_missing(&mut mac_list, LEGACY_MACS);
+    preferred.mac = Cow::Owned(mac_list);
+
+    preferred
+}
+
+fn append_missing<T: Copy + PartialEq>(list: &mut Vec<T>, extra: &[T]) {
+    for item in extra {
+        if !list.contains(item) {
+            list.push(*item);
+        }
+    }
 }
 
 /// Progress payload emitted to the frontend during connection handshake.
@@ -1187,5 +1256,49 @@ mod tests {
         assert_eq!(rx.try_recv().unwrap(), Some(vec!["123456".to_string()]));
         // A second answer (or an unknown id) must not be accepted.
         assert!(super::answer_auth_prompt("req-1", None).is_err());
+    }
+
+    #[test]
+    fn legacy_algorithms_follow_modern_defaults() {
+        let default = russh::Preferred::DEFAULT;
+        let preferred = super::with_legacy_algorithms(default.clone());
+
+        // Modern defaults keep their position at the front of every list.
+        let modern_kex: Vec<_> = default
+            .kex
+            .iter()
+            .filter(|k| !super::KEX_EXTENSION_MARKERS.contains(k))
+            .copied()
+            .collect();
+        assert_eq!(&preferred.kex[..modern_kex.len()], &modern_kex[..]);
+        assert_eq!(&preferred.cipher[..default.cipher.len()], &default.cipher[..]);
+        assert_eq!(&preferred.mac[..default.mac.len()], &default.mac[..]);
+
+        for k in super::LEGACY_KEX {
+            assert!(preferred.kex.contains(k), "missing legacy kex {k:?}");
+        }
+        for c in super::LEGACY_CIPHERS {
+            assert!(preferred.cipher.contains(c), "missing legacy cipher {c:?}");
+        }
+        for m in super::LEGACY_MACS {
+            assert!(preferred.mac.contains(m), "missing legacy mac {m:?}");
+        }
+    }
+
+    #[test]
+    fn kex_extension_markers_stay_last() {
+        let preferred = super::with_legacy_algorithms(russh::Preferred::DEFAULT);
+        let first_marker = preferred
+            .kex
+            .iter()
+            .position(|k| super::KEX_EXTENSION_MARKERS.contains(k))
+            .expect("default kex list carries extension markers");
+        assert!(preferred.kex[first_marker..]
+            .iter()
+            .all(|k| super::KEX_EXTENSION_MARKERS.contains(k)));
+        // Strict-kex (Terrapin mitigation) must still be advertised.
+        assert!(preferred
+            .kex
+            .contains(&russh::kex::EXTENSION_OPENSSH_STRICT_KEX_AS_CLIENT));
     }
 }

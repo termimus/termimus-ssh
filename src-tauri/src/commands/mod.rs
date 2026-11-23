@@ -1569,8 +1569,14 @@ pub fn backup_import(
     replace_all: bool,
     passphrase: Option<String>,
 ) -> Result<ImportSummary, String> {
+    let bundle = decode_backup_bundle(&backup_json, passphrase.as_deref())?;
+    apply_backup_bundle(&state, &bundle, replace_all)
+}
+
+/// Parse a backup file (plain v1 bundle or passphrase-encrypted v2 envelope).
+fn decode_backup_bundle(backup_json: &str, passphrase: Option<&str>) -> Result<BackupBundle, String> {
     // First, probe whether this is an encrypted envelope or a plain bundle.
-    let probe: serde_json::Value = serde_json::from_str(&backup_json)
+    let probe: serde_json::Value = serde_json::from_str(backup_json)
         .map_err(|e| format!("Invalid backup file: {e}"))?;
 
     let bundle: BackupBundle = if probe.get("encrypted").and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -1582,7 +1588,7 @@ pub fn backup_import(
             return Err(format!("Unsupported encrypted backup version: {}", envelope.format_version));
         }
 
-        let pw = passphrase.as_deref().unwrap_or("").trim().to_string();
+        let pw = passphrase.unwrap_or("").trim().to_string();
         if pw.is_empty() {
             return Err("This backup is encrypted. Please enter the backup passphrase to restore it.".to_string());
         }
@@ -1605,11 +1611,27 @@ pub fn backup_import(
         }
         b
     };
+    Ok(bundle)
+}
 
-    let (mut summary, safety_snapshot_json) = state
+/// Import an already-decoded bundle: safety snapshot (Replace All), atomic
+/// import, then lock the vault if its metadata was replaced.
+fn apply_backup_bundle(state: &AppState, bundle: &BackupBundle, replace_all: bool) -> Result<ImportSummary, String> {
+    // Replace All wipes the current data, so persist a safety snapshot to disk
+    // *before* touching anything. If it can't be written, refuse to import
+    // rather than proceed without a way back.
+    let safety_snapshot_path = if replace_all {
+        Some(write_pre_restore_snapshot(&state.db)?)
+    } else {
+        None
+    };
+
+    // Atomic: on error the database is rolled back to its pre-import state.
+    let mut summary = state
         .db
-        .import_backup_bundle(&bundle, replace_all)
-        .map_err(|e| e.to_string())?;
+        .import_backup_bundle(bundle, replace_all)
+        .map_err(|e| format!("Import failed, no changes were made: {e}"))?;
+    summary.safety_snapshot_path = safety_snapshot_path;
 
     // If vault metadata was replaced, the in-memory key is now stale — lock the vault
     // so the user must re-authenticate with the restored master password.
@@ -1617,22 +1639,58 @@ pub fn backup_import(
         state.vault.lock();
     }
 
-    // Write the safety snapshot to disk so the user can roll back if needed.
-    if let Some(snapshot_json) = safety_snapshot_json {
-        let mut snap_path = dirs::config_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("termimus");
-        let _ = std::fs::create_dir_all(&snap_path);
-        snap_path.push("auto-backup-pre-restore.json");
-        let path_str = snap_path.to_string_lossy().to_string();
-        if let Err(e) = std::fs::write(&snap_path, &snapshot_json) {
-            eprintln!("Warning: could not write safety snapshot to {path_str}: {e}");
-        } else {
-            summary.safety_snapshot_path = Some(path_str);
+    Ok(summary)
+}
+
+/// How many `pre-restore-*.json` snapshots to keep; older ones are pruned.
+const PRE_RESTORE_SNAPSHOTS_KEPT: usize = 5;
+
+/// Export the current database to a timestamped, verified file under the app
+/// config dir and return its path. Timestamped names mean a retried or second
+/// Replace All never overwrites the snapshot of the original data.
+fn write_pre_restore_snapshot(db: &Database) -> Result<String, String> {
+    let snapshot = db
+        .export_backup_bundle(env!("CARGO_PKG_VERSION"))
+        .map_err(|e| format!("Could not snapshot current data before import: {e}"))?;
+    let json = serde_json::to_string_pretty(&snapshot)
+        .map_err(|e| format!("Could not serialize safety snapshot: {e}"))?;
+
+    let dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("termimus")
+        .join("restore-snapshots");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Could not create snapshot directory {}: {e}", dir.display()))?;
+
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S%.3f");
+    let path = dir.join(format!("pre-restore-{stamp}.json"));
+    std::fs::write(&path, &json)
+        .map_err(|e| format!("Could not write safety snapshot to {}: {e}", path.display()))?;
+
+    // Verify the snapshot reads back as a valid bundle before we rely on it.
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str::<BackupBundle>(&s).ok())
+        .ok_or_else(|| format!("Safety snapshot at {} failed verification", path.display()))?;
+
+    // Prune old snapshots (names sort chronologically).
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        let mut snaps: Vec<_> = entries
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("pre-restore-") && n.ends_with(".json"))
+            })
+            .collect();
+        snaps.sort();
+        let excess = snaps.len().saturating_sub(PRE_RESTORE_SNAPSHOTS_KEPT);
+        for old in &snaps[..excess] {
+            let _ = std::fs::remove_file(old);
         }
     }
 
-    Ok(summary)
+    Ok(path.to_string_lossy().to_string())
 }
 
 // ── Self-Hosted Sync Relay (native HTTP client, bypasses WebView CORS/mixed-content) ─────
@@ -1805,6 +1863,11 @@ pub async fn sync_push(
         return Err("Sync Passphrase is required. Termimus enforces zero-knowledge E2EE encryption before uploading to the relay.".to_string());
     }
 
+    // See sync_pull: never push a bundle encrypted under a vault key that
+    // differs from the server's, or other devices would merge it and lose
+    // working credentials.
+    guard_sync_push_vault(&state.db)?;
+
     let encrypted_blob = backup_export(state, Some(password.to_string()))?;
 
     let base = server_url.trim_end_matches('/');
@@ -1883,13 +1946,56 @@ pub async fn sync_pull(
         return Err("Sync Passphrase is required to decrypt the incoming sync bundle.".to_string());
     }
 
-    backup_import(
-        state,
-        encrypted_blob,
-        replace_all.unwrap_or(false),
-        Some(password.to_string()),
-    )
+    let replace_all = replace_all.unwrap_or(false);
+    let bundle = decode_backup_bundle(&encrypted_blob, Some(password))?;
+
+    // A merge only makes sense between devices sharing one vault key. If the
+    // server's bundle was encrypted under a different vault (e.g. the master
+    // password was changed on another device, which re-salts and re-encrypts
+    // every credential), merging would overwrite working local credentials
+    // with ones this device can't decrypt. Refuse, and block pushes until the
+    // user resolves it, so this device can't push its stale vault either.
+    guard_sync_pull_vault(&state.db, &bundle, replace_all)?;
+
+    let summary = apply_backup_bundle(&state, &bundle, replace_all)?;
+    // Either the vaults match (merge) or we just adopted the server's vault
+    // (Replace All): this device is consistent with the server again.
+    state.db.set_sync_vault_mismatch(false).map_err(|e| e.to_string())?;
+    Ok(summary)
 }
+
+/// Refuse a merge pull whose bundle was encrypted under a different vault
+/// key, and persist the mismatch so pushes are blocked too (see sync_pull).
+fn guard_sync_pull_vault(db: &Database, bundle: &BackupBundle, replace_all: bool) -> Result<(), String> {
+    // A bundle with no vault metadata and no credentials (pushed by a device
+    // that never set up its vault) carries nothing key-dependent: merge it.
+    let bundle_has_vault_data = bundle.vault_salt.is_some() || !bundle.credentials.is_empty();
+    if !replace_all
+        && bundle_has_vault_data
+        && db.vault_initialized().map_err(|e| e.to_string())?
+        && !db.bundle_vault_matches(bundle).map_err(|e| e.to_string())?
+    {
+        db.set_sync_vault_mismatch(true).map_err(|e| e.to_string())?;
+        return Err(format!("{SYNC_VAULT_MISMATCH_ERROR} {SYNC_VAULT_MISMATCH_HELP}"));
+    }
+    Ok(())
+}
+
+/// Refuse to push while this device's vault is known to differ from the
+/// server's, so a stale vault can't overwrite the relay.
+fn guard_sync_push_vault(db: &Database) -> Result<(), String> {
+    if db.sync_vault_mismatch().map_err(|e| e.to_string())? {
+        return Err(format!("{SYNC_VAULT_MISMATCH_ERROR} {SYNC_VAULT_MISMATCH_HELP}"));
+    }
+    Ok(())
+}
+
+/// Prefix the frontend matches on to offer the "replace local data with the
+/// server copy" recovery action.
+const SYNC_VAULT_MISMATCH_ERROR: &str = "VAULT_MISMATCH:";
+const SYNC_VAULT_MISMATCH_HELP: &str = "The sync server's data is encrypted with a different vault key \
+(the master password was likely changed on another device). Sync is paused to protect your credentials. \
+Replace this device's data with the server copy and unlock with that vault's master password to resume.";
 
 // ── Sync secrets ────────────────────────────────────────────────────────────
 // The relay auth token and the E2EE sync passphrase live in the OS keyring,
@@ -2345,4 +2451,161 @@ pub async fn ai_explain_terminal_error(
 
     let raw = run_ai_stream(&app, &state, &request.request_id, messages).await?;
     Ok(crate::ai::command::strip_code_fences(&raw))
+}
+
+#[cfg(test)]
+mod sync_vault_tests {
+    //! Two-device simulation of issue #62 with real vault crypto: two
+    //! independent databases stand in for device A and device B, and backup
+    //! bundles stand in for what travels through the sync relay.
+    use super::*;
+
+    const SECRET: &[u8] = b"ssh-password-123";
+
+    /// Same steps as the `vault_setup` command; returns the derived key.
+    fn setup_vault(db: &Database, password: &str) -> [u8; 32] {
+        let salt = VaultManager::generate_salt();
+        let key = VaultManager::derive_key(password, &salt).unwrap();
+        let (ct, nonce) = VaultManager::encrypt_with_key(&key, VaultManager::verification_payload()).unwrap();
+        db.set_vault_meta("salt", &salt).unwrap();
+        db.set_vault_meta("verifier_ciphertext", &ct).unwrap();
+        db.set_vault_meta("verifier_nonce", &nonce).unwrap();
+        key
+    }
+
+    /// Same steps as the `vault_unlock` command: derive from the stored salt.
+    fn unlock(db: &Database, password: &str) -> [u8; 32] {
+        let salt = db.get_vault_meta("salt").unwrap().unwrap();
+        VaultManager::derive_key(password, &salt).unwrap()
+    }
+
+    /// Same steps as `vault_change_password`: fresh salt, re-encrypt every
+    /// credential with a bumped `updated_at`, commit atomically.
+    fn change_password(db: &Database, old_key: &[u8; 32], new_password: &str) -> [u8; 32] {
+        let new_salt = VaultManager::generate_salt();
+        let new_key = VaultManager::derive_key(new_password, &new_salt).unwrap();
+        let mut updated = Vec::new();
+        for mut cred in db.list_credentials().unwrap() {
+            let plain = VaultManager::decrypt_with_key(old_key, &cred.ciphertext, &cred.nonce).unwrap();
+            let (ct, nonce) = VaultManager::encrypt_with_key(&new_key, &plain).unwrap();
+            cred.ciphertext = ct;
+            cred.nonce = nonce;
+            cred.updated_at = "2099-01-01T00:00:00+00:00".into();
+            updated.push(cred);
+        }
+        let (vct, vnonce) = VaultManager::encrypt_with_key(&new_key, VaultManager::verification_payload()).unwrap();
+        db.rekey_vault(&new_salt, &vct, &vnonce, &updated).unwrap();
+        new_key
+    }
+
+    fn add_credential(db: &Database, key: &[u8; 32], id: &str) {
+        let (ct, nonce) = VaultManager::encrypt_with_key(key, SECRET).unwrap();
+        db.save_credential(&Credential {
+            id: id.into(),
+            kind: "password".into(),
+            ciphertext: ct,
+            nonce,
+            passphrase_ciphertext: None,
+            passphrase_nonce: None,
+            name: id.into(),
+            key_type: String::new(),
+            public_key: String::new(),
+            fingerprint: String::new(),
+            username: None,
+            created_at: "2026-01-01T00:00:00+00:00".into(),
+            updated_at: "2026-01-01T00:00:00+00:00".into(),
+        })
+        .unwrap();
+    }
+
+    fn decrypts(db: &Database, key: &[u8; 32], id: &str) -> bool {
+        let c = db.get_credential(id).unwrap().unwrap();
+        VaultManager::decrypt_with_key(key, &c.ciphertext, &c.nonce).as_deref() == Ok(SECRET)
+    }
+
+    /// Device A with a vault + one credential, and device B set up from A's
+    /// sync bundle (Replace All, as VaultModal does) — so both share a vault.
+    fn paired_devices() -> (Database, [u8; 32], Database) {
+        let a = Database::open_in_memory().unwrap();
+        let key_a = setup_vault(&a, "old-password");
+        add_credential(&a, &key_a, "cred-1");
+
+        let b = Database::open_in_memory().unwrap();
+        let bundle = a.export_backup_bundle("test").unwrap();
+        guard_sync_pull_vault(&b, &bundle, true).unwrap();
+        b.import_backup_bundle(&bundle, true).unwrap();
+        (a, key_a, b)
+    }
+
+    #[test]
+    fn devices_sharing_a_vault_sync_normally() {
+        let (a, key_a, b) = paired_devices();
+        let key_b = unlock(&b, "old-password");
+        assert!(decrypts(&b, &key_b, "cred-1"));
+
+        add_credential(&b, &key_b, "cred-2");
+        let bundle_b = b.export_backup_bundle("test").unwrap();
+        guard_sync_pull_vault(&a, &bundle_b, false).unwrap();
+        let summary = a.import_backup_bundle(&bundle_b, false).unwrap();
+
+        assert_eq!(summary.credentials_skipped_incompatible, 0);
+        assert!(decrypts(&a, &key_a, "cred-2"));
+        guard_sync_push_vault(&a).unwrap();
+    }
+
+    #[test]
+    fn password_change_on_other_device_pauses_sync_without_corrupting_credentials() {
+        let (a, key_a, b) = paired_devices();
+
+        // User changes the master password on device B, which then pushes.
+        let key_b_old = unlock(&b, "old-password");
+        change_password(&b, &key_b_old, "new-password");
+        let bundle_b = b.export_backup_bundle("test").unwrap();
+
+        // Device A's (auto) merge pull is refused and pushes are blocked.
+        let err = guard_sync_pull_vault(&a, &bundle_b, false).unwrap_err();
+        assert!(err.starts_with(SYNC_VAULT_MISMATCH_ERROR));
+        assert!(guard_sync_push_vault(&a).is_err());
+
+        // Even a direct merge (e.g. manual backup import) leaves A's working
+        // credential alone instead of letting B's newer copy win LWW.
+        let summary = a.import_backup_bundle(&bundle_b, false).unwrap();
+        assert_eq!(summary.credentials_skipped_incompatible, 1);
+        assert!(decrypts(&a, &key_a, "cred-1"));
+
+        // Recovery: Replace All from the server, then unlock with B's password.
+        guard_sync_pull_vault(&a, &bundle_b, true).unwrap();
+        a.import_backup_bundle(&bundle_b, true).unwrap();
+        a.set_sync_vault_mismatch(false).unwrap(); // as sync_pull does on success
+        let key_a_new = unlock(&a, "new-password");
+        assert!(decrypts(&a, &key_a_new, "cred-1"));
+        guard_sync_push_vault(&a).unwrap();
+    }
+
+    #[test]
+    fn same_password_but_independent_vaults_do_not_merge_credentials() {
+        // The exact scenario from issue #62: same master password, two
+        // separately created vaults (different salts → different keys).
+        let a = Database::open_in_memory().unwrap();
+        let key_a = setup_vault(&a, "same-password");
+        let b = Database::open_in_memory().unwrap();
+        let key_b = setup_vault(&b, "same-password");
+        assert_ne!(key_a, key_b);
+        add_credential(&b, &key_b, "cred-b");
+
+        let bundle_b = b.export_backup_bundle("test").unwrap();
+        assert!(guard_sync_pull_vault(&a, &bundle_b, false).is_err());
+        let summary = a.import_backup_bundle(&bundle_b, false).unwrap();
+        assert_eq!(summary.credentials_skipped_incompatible, 1);
+        assert!(a.get_credential("cred-b").unwrap().is_none());
+    }
+
+    #[test]
+    fn bundle_from_device_without_vault_does_not_pause_sync() {
+        let (a, _, _) = paired_devices();
+        let fresh = Database::open_in_memory().unwrap(); // never set up a vault
+        let bundle = fresh.export_backup_bundle("test").unwrap();
+        guard_sync_pull_vault(&a, &bundle, false).unwrap();
+        guard_sync_push_vault(&a).unwrap();
+    }
 }

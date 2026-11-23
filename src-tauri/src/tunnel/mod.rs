@@ -1,15 +1,16 @@
+mod relay;
 pub mod socks5;
 
 use russh::client::{self, Handle};
-use russh::{Channel, ChannelMsg, Disconnect};
+use russh::{Channel, Disconnect};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::task::JoinSet;
 
 use crate::db::Database;
 use crate::ssh::{ForwardedTcpip, SshAuth, SshClientHandler};
@@ -123,11 +124,17 @@ impl TunnelManager {
             let _ = app_for_status.emit(&status_event, "started");
             let ssh_closed = wait_ssh_closed(handle.clone());
             tokio::pin!(ssh_closed);
+            // Every accepted client runs in this set, so stopping the tunnel
+            // can tear down connections that are already established (or
+            // still mid SOCKS handshake), not just the listener.
+            let mut clients = JoinSet::new();
             let unexpected = loop {
                 tokio::select! {
                     _ = &mut stop_rx => {
                         break false;
                     }
+                    // Reap finished clients so the set doesn't grow unbounded.
+                    Some(_) = clients.join_next(), if !clients.is_empty() => {}
                     _ = &mut ssh_closed => {
                         eprintln!("Tunnel SSH connection lost; closing local listener");
                         break true;
@@ -139,7 +146,7 @@ impl TunnelManager {
                                 let remote_address = remote_address.clone();
                                 let originator_ip = peer_addr.ip().to_string();
                                 let originator_port = peer_addr.port() as u32;
-                                tokio::spawn(async move {
+                                clients.spawn(async move {
                                     if let Err(e) = forward_connection(
                                         handle,
                                         stream,
@@ -160,6 +167,8 @@ impl TunnelManager {
                     }
                 }
             };
+            drop(listener);
+            shutdown_tunnel(clients, &handle).await;
             let _ = app_for_status.emit(&format!("tunnel-status-{rule_id_for_task}"), "stopped");
             registration.release().await;
             notify_tunnel_ended(&app_for_status, &rule_id_for_task, unexpected);
@@ -207,11 +216,17 @@ impl TunnelManager {
             let _ = app_for_status.emit(&status_event, "started");
             let ssh_closed = wait_ssh_closed(handle.clone());
             tokio::pin!(ssh_closed);
+            // Every accepted client runs in this set, so stopping the tunnel
+            // can tear down connections that are already established (or
+            // still mid SOCKS handshake), not just the listener.
+            let mut clients = JoinSet::new();
             let unexpected = loop {
                 tokio::select! {
                     _ = &mut stop_rx => {
                         break false;
                     }
+                    // Reap finished clients so the set doesn't grow unbounded.
+                    Some(_) = clients.join_next(), if !clients.is_empty() => {}
                     _ = &mut ssh_closed => {
                         eprintln!("Tunnel SSH connection lost; closing local listener");
                         break true;
@@ -220,7 +235,7 @@ impl TunnelManager {
                         match accept_result {
                             Ok((stream, peer_addr)) => {
                                 let handle = handle.clone();
-                                tokio::spawn(async move {
+                                clients.spawn(async move {
                                     if let Err(e) = socks5::handle_socks5_client(
                                         handle,
                                         stream,
@@ -238,6 +253,8 @@ impl TunnelManager {
                     }
                 }
             };
+            drop(listener);
+            shutdown_tunnel(clients, &handle).await;
             let _ = app_for_status.emit(&format!("tunnel-status-{rule_id_for_task}"), "stopped");
             registration.release().await;
             notify_tunnel_ended(&app_for_status, &rule_id_for_task, unexpected);
@@ -293,20 +310,21 @@ impl TunnelManager {
 
         tokio::spawn(async move {
             let _ = app_for_status.emit(&status_event, "started");
+            let mut clients = JoinSet::new();
             let unexpected = loop {
                 tokio::select! {
                     _ = &mut stop_rx => {
                         let _ = handle.cancel_tcpip_forward(bind_address.clone(), bind_port as u32).await;
-                        let _ = handle.disconnect(Disconnect::ByApplication, "", "en").await;
                         break false;
                     }
+                    Some(_) = clients.join_next(), if !clients.is_empty() => {}
                     incoming = forward_rx.recv() => {
                         // None means the SSH connection (and its handler) went away.
                         let Some(ForwardedTcpip { channel, originator_address, originator_port }) = incoming else {
                             break true;
                         };
                         let destination_address = destination_address.clone();
-                        tokio::spawn(async move {
+                        clients.spawn(async move {
                             match TcpStream::connect((destination_address.as_str(), destination_port)).await {
                                 Ok(stream) => pipe_channel(stream, channel).await,
                                 Err(e) => {
@@ -321,6 +339,7 @@ impl TunnelManager {
                     }
                 }
             };
+            shutdown_tunnel(clients, &handle).await;
             let _ = app_for_status.emit(&status_event, "stopped");
             registration.release().await;
             notify_tunnel_ended(&app_for_status, &rule_id_for_task, unexpected);
@@ -350,6 +369,15 @@ struct TunnelEndedPayload<'a> {
 /// task ends, including when nobody clicked Stop.
 fn notify_tunnel_ended(app: &AppHandle, rule_id: &str, unexpected: bool) {
     let _ = app.emit("tunnel-ended", TunnelEndedPayload { rule_id, unexpected });
+}
+
+/// Tear down a tunnel run: abort every client task (dropping their local
+/// sockets and SSH channels) and close the SSH connection, so nothing that
+/// was accepted while the tunnel was running keeps carrying traffic or can
+/// open new channels after it reports stopped.
+async fn shutdown_tunnel(mut clients: JoinSet<()>, handle: &Handle<SshClientHandler>) {
+    clients.shutdown().await;
+    let _ = handle.disconnect(Disconnect::ByApplication, "", "en").await;
 }
 
 /// Resolves once the SSH session behind `handle` has ended (server
@@ -416,44 +444,9 @@ async fn forward_connection(
     Ok(())
 }
 
-/// Shuttle bytes in both directions between a local TCP stream and an SSH
-/// channel until either side closes.
-async fn pipe_channel(mut stream: TcpStream, mut channel: Channel<client::Msg>) {
+/// Relay bytes between a local TCP stream and an SSH channel; see
+/// [`relay::relay`] for the half-close semantics.
+async fn pipe_channel(stream: TcpStream, channel: Channel<client::Msg>) {
     let _ = stream.set_nodelay(true);
-    let mut buf = vec![0u8; 32 * 1024];
-    let mut stream_closed = false;
-
-    loop {
-        tokio::select! {
-            read_result = stream.read(&mut buf), if !stream_closed => {
-                match read_result {
-                    Ok(0) => {
-                        stream_closed = true;
-                        let _ = channel.eof().await;
-                    }
-                    Ok(n) => {
-                        if channel.data(&buf[..n]).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            msg = channel.wait() => {
-                match msg {
-                    Some(ChannelMsg::Data { ref data }) => {
-                        if stream.write_all(data).await.is_err() {
-                            break;
-                        }
-                    }
-                    Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    let _ = channel.close().await;
+    relay::relay(stream, channel).await;
 }

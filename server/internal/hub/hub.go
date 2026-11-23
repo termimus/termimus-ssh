@@ -141,18 +141,11 @@ func (c *Client) WritePump() {
 				return
 			}
 
-			w, err := c.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				return
-			}
-			_, _ = w.Write(message)
-
-			n := len(c.send)
-			for i := 0; i < n; i++ {
-				_, _ = w.Write(<-c.send)
-			}
-
-			if err := w.Close(); err != nil {
+			// One event per WebSocket message: clients parse each message as a
+			// single JSON object, so queued events must not be concatenated
+			// into one frame. Further queued events go out on the next loop
+			// iterations, each with its own write deadline.
+			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
 

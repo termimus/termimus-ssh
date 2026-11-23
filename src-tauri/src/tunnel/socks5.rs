@@ -1,7 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 use russh::client::Handle;
-use russh::ChannelMsg;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -162,7 +161,7 @@ pub async fn handle_socks5_client(
     let originator_ip = peer_addr.ip().to_string();
     let originator_port = peer_addr.port() as u32;
 
-    let mut channel = match handle
+    let channel = match handle
         .channel_open_direct_tcpip(
             target.host.clone(),
             target.port as u32,
@@ -199,40 +198,7 @@ pub async fn handle_socks5_client(
         .map_err(|e| format!("Failed to send SOCKS5 success reply: {e}"))?;
 
     // ── 5. Bidirectional Relay ───────────────────────────────────────────────
-    let mut buf = vec![0u8; 32 * 1024];
-    let mut stream_closed = false;
-
-    loop {
-        tokio::select! {
-            read_result = stream.read(&mut buf), if !stream_closed => {
-                match read_result {
-                    Ok(0) => {
-                        stream_closed = true;
-                        let _ = channel.eof().await;
-                    }
-                    Ok(n) => {
-                        if channel.data(&buf[..n]).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            msg = channel.wait() => {
-                match msg {
-                    Some(ChannelMsg::Data { ref data }) => {
-                        if stream.write_all(data).await.is_err() {
-                            break;
-                        }
-                    }
-                    Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
+    super::relay::relay(stream, channel).await;
 
     Ok(())
 }

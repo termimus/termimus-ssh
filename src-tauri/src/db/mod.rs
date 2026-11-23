@@ -1,12 +1,20 @@
 pub mod models;
 
+use parking_lot::ReentrantMutex;
 use rusqlite::{params, Connection, Result};
 use std::fs;
 use std::path::PathBuf;
 use models::{Folder, Host, Credential, KeychainItem, PortForwardRule, Snippet, KnownHost, BackupBundle, ImportSummary, Tombstone, WorkspacePreset, PresetNode, AiProvider};
 
+const SYNC_VAULT_MISMATCH_KEY: &str = "sync_vault_mismatch";
+
 pub struct Database {
-    conn: std::sync::Mutex<Connection>,
+    /// Reentrant so a multi-step operation (e.g. `import_backup_bundle`) can
+    /// hold the lock for its whole duration, wrap it in one SQLite transaction,
+    /// and still call the regular per-row helpers, which re-lock on the same
+    /// thread. Other threads block until the operation commits or rolls back,
+    /// so their writes can never leak into (or be rolled back with) it.
+    conn: ReentrantMutex<Connection>,
 }
 
 impl Database {
@@ -19,14 +27,24 @@ impl Database {
         let conn = Connection::open(&db_path)?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         let db = Database {
-            conn: std::sync::Mutex::new(conn),
+            conn: ReentrantMutex::new(conn),
         };
         db.init_tables()?;
         Ok(db)
     }
 
+    /// Fresh in-memory database with the full schema, for unit tests.
+    #[cfg(test)]
+    pub fn open_in_memory() -> Result<Self> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        let db = Database { conn: ReentrantMutex::new(conn) };
+        db.init_tables()?;
+        Ok(db)
+    }
+
     fn init_tables(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
 
         conn.execute_batch(
             "
@@ -162,7 +180,7 @@ impl Database {
     }
 
     pub fn record_tombstone(&self, entity_type: &str, entity_id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "INSERT INTO tombstones (entity_type, entity_id, deleted_at)
@@ -174,7 +192,7 @@ impl Database {
     }
 
     pub fn save_tombstone(&self, tombstone: &Tombstone) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO tombstones (entity_type, entity_id, deleted_at)
              VALUES (?1, ?2, ?3)
@@ -185,7 +203,7 @@ impl Database {
     }
 
     pub fn list_tombstones(&self) -> Result<Vec<Tombstone>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare("SELECT entity_type, entity_id, deleted_at FROM tombstones")?;
         let rows = stmt.query_map([], |row| {
             Ok(Tombstone {
@@ -202,7 +220,7 @@ impl Database {
     }
 
     pub fn is_tombstoned(&self, entity_type: &str, entity_id: &str) -> Result<Option<String>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare("SELECT deleted_at FROM tombstones WHERE entity_type = ?1 AND entity_id = ?2")?;
         let mut rows = stmt.query(params![entity_type, entity_id])?;
         if let Some(row) = rows.next()? {
@@ -213,13 +231,13 @@ impl Database {
     }
 
     pub fn remove_tombstone(&self, entity_type: &str, entity_id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute("DELETE FROM tombstones WHERE entity_type = ?1 AND entity_id = ?2", params![entity_type, entity_id])?;
         Ok(())
     }
 
     pub fn list_hosts(&self) -> Result<Vec<Host>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, os_icon, jump_host_id, created_at, updated_at FROM hosts ORDER BY label ASC"
         )?;
@@ -249,7 +267,7 @@ impl Database {
     }
 
     pub fn get_host(&self, id: &str) -> Result<Option<Host>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, folder_id, label, address, port, username, auth_method, credential_id, tags, last_connected_at, os_icon, jump_host_id, created_at, updated_at FROM hosts WHERE id = ?1"
         )?;
@@ -280,7 +298,7 @@ impl Database {
     }
 
     pub fn save_host(&self, host: &Host) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let tags_str = serde_json::to_string(&host.tags).unwrap_or_else(|_| "[]".to_string());
 
         conn.execute(
@@ -320,7 +338,7 @@ impl Database {
     }
 
     pub fn update_host_os_icon(&self, id: &str, os_icon: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE hosts SET os_icon = ?1, updated_at = ?2 WHERE id = ?3",
@@ -330,7 +348,7 @@ impl Database {
     }
 
     pub fn delete_host(&self, id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let _ = conn.execute("UPDATE hosts SET jump_host_id = NULL WHERE jump_host_id = ?1", params![id]);
         conn.execute("DELETE FROM hosts WHERE id = ?1", params![id])?;
         let now = chrono::Utc::now().to_rfc3339();
@@ -343,7 +361,7 @@ impl Database {
     }
 
     pub fn touch_host_last_connected(&self, id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let now = chrono::Utc::now().to_rfc3339();
         conn.execute(
             "UPDATE hosts SET last_connected_at = ?1 WHERE id = ?2",
@@ -353,7 +371,7 @@ impl Database {
     }
 
     pub fn save_credential(&self, cred: &Credential) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO credentials (id, kind, ciphertext, nonce, passphrase_ciphertext, passphrase_nonce, name, key_type, public_key, fingerprint, username, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
@@ -398,8 +416,8 @@ impl Database {
         new_verifier_nonce: &[u8],
         updated_credentials: &[Credential],
     ) -> Result<()> {
-        let mut conn = self.conn.lock().unwrap();
-        let tx = conn.transaction()?;
+        let conn = self.conn.lock();
+        let tx = conn.unchecked_transaction()?;
 
         tx.execute(
             "INSERT INTO vault_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -433,7 +451,7 @@ impl Database {
     }
 
     pub fn get_credential(&self, id: &str) -> Result<Option<Credential>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, kind, ciphertext, nonce, passphrase_ciphertext, passphrase_nonce, name, key_type, public_key, fingerprint, username, created_at, updated_at FROM credentials WHERE id = ?1"
         )?;
@@ -461,7 +479,7 @@ impl Database {
     }
 
     pub fn list_credentials(&self) -> Result<Vec<Credential>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, kind, ciphertext, nonce, passphrase_ciphertext, passphrase_nonce, name, key_type, public_key, fingerprint, username, created_at, updated_at FROM credentials ORDER BY name ASC"
         )?;
@@ -486,7 +504,7 @@ impl Database {
     }
 
     pub fn delete_credential(&self, id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute("DELETE FROM credentials WHERE id = ?1", params![id])?;
         let now = chrono::Utc::now().to_rfc3339();
         let _ = conn.execute(
@@ -500,7 +518,7 @@ impl Database {
     /// Returns all named Keychain entries (omits old unlabelled anonymous credentials
     /// that were auto-created per host without names).
     pub fn list_keychain_items(&self) -> Result<Vec<KeychainItem>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, kind, name, key_type, public_key, fingerprint, username, created_at, updated_at
              FROM credentials
@@ -528,7 +546,7 @@ impl Database {
     }
 
     pub fn list_folders(&self) -> Result<Vec<Folder>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare("SELECT id, name, parent_id, created_at, updated_at FROM folders ORDER BY name ASC")?;
         let folders = stmt.query_map([], |row| {
             let created_at: String = row.get(3)?;
@@ -547,7 +565,7 @@ impl Database {
     }
 
     pub fn get_folder(&self, id: &str) -> Result<Option<Folder>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare("SELECT id, name, parent_id, created_at, updated_at FROM folders WHERE id = ?1")?;
         let mut rows = stmt.query(params![id])?;
         if let Some(row) = rows.next()? {
@@ -567,7 +585,7 @@ impl Database {
     }
 
     pub fn save_folder(&self, folder: &Folder) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let updated_at = if folder.updated_at.is_empty() {
             chrono::Utc::now().to_rfc3339()
         } else {
@@ -586,7 +604,7 @@ impl Database {
     }
 
     pub fn delete_folder(&self, id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let _ = conn.execute("UPDATE hosts SET folder_id = NULL WHERE folder_id = ?1", params![id]);
         let _ = conn.execute("UPDATE folders SET parent_id = NULL WHERE parent_id = ?1", params![id]);
         conn.execute("DELETE FROM folders WHERE id = ?1", params![id])?;
@@ -600,7 +618,7 @@ impl Database {
     }
 
     pub fn list_port_forwards(&self) -> Result<Vec<PortForwardRule>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, host_id, label, forward_type, local_address, local_port, remote_address, remote_port, created_at FROM port_forwards ORDER BY label ASC"
         )?;
@@ -623,7 +641,7 @@ impl Database {
     }
 
     pub fn get_port_forward(&self, id: &str) -> Result<Option<PortForwardRule>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, host_id, label, forward_type, local_address, local_port, remote_address, remote_port, created_at FROM port_forwards WHERE id = ?1"
         )?;
@@ -647,7 +665,7 @@ impl Database {
     }
 
     pub fn save_port_forward(&self, rule: &PortForwardRule) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO port_forwards (id, host_id, label, forward_type, local_address, local_port, remote_address, remote_port, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
@@ -675,7 +693,7 @@ impl Database {
     }
 
     pub fn delete_port_forward(&self, id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute("DELETE FROM port_forwards WHERE id = ?1", params![id])?;
         let now = chrono::Utc::now().to_rfc3339();
         let _ = conn.execute(
@@ -687,7 +705,7 @@ impl Database {
     }
 
     pub fn list_snippets(&self) -> Result<Vec<Snippet>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, title, command, tags, created_at, updated_at FROM snippets ORDER BY title ASC"
         )?;
@@ -709,7 +727,7 @@ impl Database {
     }
 
     pub fn save_snippet(&self, snippet: &Snippet) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let tags_str = serde_json::to_string(&snippet.tags).unwrap_or_else(|_| "[]".to_string());
 
         conn.execute(
@@ -733,7 +751,7 @@ impl Database {
     }
 
     pub fn delete_snippet(&self, id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute("DELETE FROM snippets WHERE id = ?1", params![id])?;
         let now = chrono::Utc::now().to_rfc3339();
         let _ = conn.execute(
@@ -745,7 +763,7 @@ impl Database {
     }
 
     pub fn get_snippet(&self, id: &str) -> Result<Option<Snippet>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, title, command, tags, created_at, updated_at FROM snippets WHERE id = ?1"
         )?;
@@ -767,7 +785,7 @@ impl Database {
     }
 
     pub fn list_workspace_presets(&self) -> Result<Vec<WorkspacePreset>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, description, layout, nodes, broadcast_on_launch, created_at, updated_at FROM workspace_presets ORDER BY name COLLATE NOCASE ASC"
         )?;
@@ -791,7 +809,7 @@ impl Database {
     }
 
     pub fn get_workspace_preset(&self, id: &str) -> Result<Option<WorkspacePreset>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, description, layout, nodes, broadcast_on_launch, created_at, updated_at FROM workspace_presets WHERE id = ?1"
         )?;
@@ -815,7 +833,7 @@ impl Database {
     }
 
     pub fn save_workspace_preset(&self, preset: &WorkspacePreset) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let nodes_str = serde_json::to_string(&preset.nodes).unwrap_or_else(|_| "[]".to_string());
 
         conn.execute(
@@ -843,7 +861,7 @@ impl Database {
     }
 
     pub fn delete_workspace_preset(&self, id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute("DELETE FROM workspace_presets WHERE id = ?1", params![id])?;
         let now = chrono::Utc::now().to_rfc3339();
         let _ = conn.execute(
@@ -855,7 +873,7 @@ impl Database {
     }
 
     pub fn list_ai_providers(&self) -> Result<Vec<AiProvider>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, provider_type, base_url, model_name, credential_id, is_active, created_at, updated_at FROM ai_providers ORDER BY name ASC"
         )?;
@@ -879,7 +897,7 @@ impl Database {
     }
 
     pub fn get_ai_provider(&self, id: &str) -> Result<Option<AiProvider>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, provider_type, base_url, model_name, credential_id, is_active, created_at, updated_at FROM ai_providers WHERE id = ?1"
         )?;
@@ -903,7 +921,7 @@ impl Database {
     }
 
     pub fn get_active_ai_provider(&self) -> Result<Option<AiProvider>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT id, name, provider_type, base_url, model_name, credential_id, is_active, created_at, updated_at FROM ai_providers WHERE is_active = 1 LIMIT 1"
         )?;
@@ -947,7 +965,7 @@ impl Database {
     }
 
     pub fn save_ai_provider(&self, provider: &AiProvider) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let is_active_int = if provider.is_active { 1 } else { 0 };
 
         // If this provider is marked active, deactivate others
@@ -982,14 +1000,14 @@ impl Database {
     }
 
     pub fn set_active_ai_provider(&self, id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute("UPDATE ai_providers SET is_active = 0", [])?;
         conn.execute("UPDATE ai_providers SET is_active = 1 WHERE id = ?1", params![id])?;
         Ok(())
     }
 
     pub fn delete_ai_provider(&self, id: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute("DELETE FROM ai_providers WHERE id = ?1", params![id])?;
         let now = chrono::Utc::now().to_rfc3339();
         let _ = conn.execute(
@@ -1001,7 +1019,7 @@ impl Database {
     }
 
     pub fn get_known_host(&self, address: &str, port: u16) -> Result<Option<KnownHost>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT address, port, key_type, fingerprint, first_seen_at, last_seen_at FROM known_hosts WHERE address = ?1 AND port = ?2"
         )?;
@@ -1021,7 +1039,7 @@ impl Database {
     }
 
     pub fn save_known_host(&self, entry: &KnownHost) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO known_hosts (address, port, key_type, fingerprint, first_seen_at, last_seen_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -1042,7 +1060,7 @@ impl Database {
     }
 
     pub fn delete_known_host(&self, address: &str, port: u16) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute(
             "DELETE FROM known_hosts WHERE address = ?1 AND port = ?2",
             params![address, port],
@@ -1051,7 +1069,7 @@ impl Database {
     }
 
     pub fn list_known_hosts(&self) -> Result<Vec<KnownHost>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(
             "SELECT address, port, key_type, fingerprint, first_seen_at, last_seen_at FROM known_hosts ORDER BY last_seen_at DESC"
         )?;
@@ -1070,7 +1088,7 @@ impl Database {
 
     // Vault metadata: salt & verification token to confirm correct master password
     pub fn get_vault_meta(&self, key: &str) -> Result<Option<Vec<u8>>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare("SELECT value FROM vault_meta WHERE key = ?1")?;
         let mut rows = stmt.query(params![key])?;
         if let Some(row) = rows.next()? {
@@ -1081,7 +1099,7 @@ impl Database {
     }
 
     pub fn set_vault_meta(&self, key: &str, value: &[u8]) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute(
             "INSERT INTO vault_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             params![key, value],
@@ -1089,9 +1107,43 @@ impl Database {
         Ok(())
     }
 
+    /// True when `bundle` carries vault metadata identical to this database's,
+    /// i.e. its credential ciphertext was produced with the same vault key.
+    /// A bundle without vault metadata can't be verified and never matches.
+    pub fn bundle_vault_matches(&self, bundle: &BackupBundle) -> Result<bool> {
+        let (Some(salt), Some(ct)) = (&bundle.vault_salt, &bundle.vault_verifier_ciphertext) else {
+            return Ok(false);
+        };
+        Ok(self.get_vault_meta("salt")?.as_ref() == Some(salt)
+            && self.get_vault_meta("verifier_ciphertext")?.as_ref() == Some(ct))
+    }
+
+    /// Whether the local vault has been set up (has a salt).
+    pub fn vault_initialized(&self) -> Result<bool> {
+        Ok(self.get_vault_meta("salt")?.is_some())
+    }
+
+    /// Persisted "the sync server's vault differs from ours" flag. While set,
+    /// sync pushes are refused so this device can't overwrite the server with
+    /// a bundle encrypted under a stale vault key. Stored in `vault_meta` so it
+    /// survives restarts and is cleared by "Reset Vault".
+    pub fn sync_vault_mismatch(&self) -> Result<bool> {
+        Ok(self.get_vault_meta(SYNC_VAULT_MISMATCH_KEY)?.is_some())
+    }
+
+    pub fn set_sync_vault_mismatch(&self, mismatch: bool) -> Result<()> {
+        if mismatch {
+            self.set_vault_meta(SYNC_VAULT_MISMATCH_KEY, b"1")
+        } else {
+            let conn = self.conn.lock();
+            conn.execute("DELETE FROM vault_meta WHERE key = ?1", params![SYNC_VAULT_MISMATCH_KEY])?;
+            Ok(())
+        }
+    }
+
     /// Hard-wipe all credentials and vault metadata (used for "Reset Vault").
     pub fn reset_vault(&self) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock();
         conn.execute_batch(
             "DELETE FROM credentials;
              DELETE FROM vault_meta;
@@ -1129,19 +1181,27 @@ impl Database {
     /// Restore a backup bundle. When `replace_all` is true, every table this
     /// bundle covers is wiped first so the import produces an exact copy;
     /// otherwise rows are merged/upserted by their existing primary keys.
-    /// Returns (summary, safety_snapshot_json) — the snapshot is Some(_) only
-    /// when replace_all == true so the caller can persist it for rollback.
-    pub fn import_backup_bundle(&self, bundle: &BackupBundle, replace_all: bool) -> Result<(ImportSummary, Option<String>)> {
-        let safety_snapshot_json: Option<String> = if replace_all {
-            // Auto-snapshot current data as a safety net before wiping anything.
-            let snapshot = self.export_backup_bundle("0.1.0")?;
-            Some(serde_json::to_string_pretty(&snapshot).unwrap_or_default())
-        } else {
-            None
-        };
+    ///
+    /// The whole import (wipe, vault metadata, every row) runs in a single
+    /// SQLite transaction: if any step fails, the database is rolled back to
+    /// exactly what it was before the call. Callers that want an on-disk
+    /// safety snapshot for a successful-but-unwanted Replace All must write it
+    /// *before* calling this (see `commands::backup_import`).
+    pub fn import_backup_bundle(&self, bundle: &BackupBundle, replace_all: bool) -> Result<ImportSummary> {
+        // Hold the (reentrant) lock for the whole import so no other thread's
+        // writes interleave with the transaction; the helpers called below
+        // re-lock on this same thread and share the same connection.
+        let conn = self.conn.lock();
+        let tx = conn.unchecked_transaction()?;
+        // Any `?` error drops `tx`, which rolls everything back.
+        let summary = self.import_backup_bundle_inner(bundle, replace_all)?;
+        tx.commit()?;
+        Ok(summary)
+    }
 
+    fn import_backup_bundle_inner(&self, bundle: &BackupBundle, replace_all: bool) -> Result<ImportSummary> {
         {
-            let conn = self.conn.lock().unwrap();
+            let conn = self.conn.lock();
             if replace_all {
                 conn.execute_batch(
                     "DELETE FROM tombstones;
@@ -1181,6 +1241,15 @@ impl Database {
             // credentials already in the vault remain readable.
         }
 
+        // Credential ciphertext is only usable if it was encrypted under the
+        // same vault key as this database. The key is Argon2id(password, salt)
+        // and the salt is random per vault (and regenerated on every master
+        // password change), so a differing salt/verifier means a different
+        // key even when the master password is the same. Importing such
+        // ciphertext would yield credentials that can never be decrypted and,
+        // during a merge, could overwrite working local copies via LWW.
+        let credentials_compatible = self.bundle_vault_matches(bundle)?;
+
         // Process incoming tombstones during merge or replace
         for ts in &bundle.tombstones {
             self.save_tombstone(ts)?;
@@ -1189,7 +1258,7 @@ impl Database {
                     "host" => {
                         if let Ok(Some(local)) = self.get_host(&ts.entity_id) {
                             if local.updated_at <= ts.deleted_at {
-                                let conn = self.conn.lock().unwrap();
+                                let conn = self.conn.lock();
                                 let _ = conn.execute("UPDATE hosts SET jump_host_id = NULL WHERE jump_host_id = ?1", params![&ts.entity_id]);
                                 let _ = conn.execute("DELETE FROM hosts WHERE id = ?1", params![&ts.entity_id]);
                             }
@@ -1199,25 +1268,25 @@ impl Database {
                         if let Ok(Some(local)) = self.get_folder(&ts.entity_id) {
                             let local_time = if !local.updated_at.is_empty() { &local.updated_at } else { &local.created_at };
                             if local_time <= &ts.deleted_at {
-                                let conn = self.conn.lock().unwrap();
+                                let conn = self.conn.lock();
                                 let _ = conn.execute("UPDATE hosts SET folder_id = NULL WHERE folder_id = ?1", params![&ts.entity_id]);
                                 let _ = conn.execute("UPDATE folders SET parent_id = NULL WHERE parent_id = ?1", params![&ts.entity_id]);
                                 let _ = conn.execute("DELETE FROM folders WHERE id = ?1", params![&ts.entity_id]);
                             }
                         } else {
-                            let conn = self.conn.lock().unwrap();
+                            let conn = self.conn.lock();
                             let _ = conn.execute("UPDATE hosts SET folder_id = NULL WHERE folder_id = ?1", params![&ts.entity_id]);
                             let _ = conn.execute("UPDATE folders SET parent_id = NULL WHERE parent_id = ?1", params![&ts.entity_id]);
                         }
                     }
                     "credential" => {
-                        let conn = self.conn.lock().unwrap();
+                        let conn = self.conn.lock();
                         let _ = conn.execute("DELETE FROM credentials WHERE id = ?1", params![&ts.entity_id]);
                     }
                     "snippet" => {
                         if let Ok(Some(local)) = self.get_snippet(&ts.entity_id) {
                             if local.updated_at <= ts.deleted_at {
-                                let conn = self.conn.lock().unwrap();
+                                let conn = self.conn.lock();
                                 let _ = conn.execute("DELETE FROM snippets WHERE id = ?1", params![&ts.entity_id]);
                             }
                         }
@@ -1225,7 +1294,7 @@ impl Database {
                     "workspace_preset" => {
                         if let Ok(Some(local)) = self.get_workspace_preset(&ts.entity_id) {
                             if local.updated_at <= ts.deleted_at {
-                                let conn = self.conn.lock().unwrap();
+                                let conn = self.conn.lock();
                                 let _ = conn.execute("DELETE FROM workspace_presets WHERE id = ?1", params![&ts.entity_id]);
                             }
                         }
@@ -1233,13 +1302,13 @@ impl Database {
                     "ai_provider" => {
                         if let Ok(Some(local)) = self.get_ai_provider(&ts.entity_id) {
                             if local.updated_at <= ts.deleted_at {
-                                let conn = self.conn.lock().unwrap();
+                                let conn = self.conn.lock();
                                 let _ = conn.execute("DELETE FROM ai_providers WHERE id = ?1", params![&ts.entity_id]);
                             }
                         }
                     }
                     "port_forward" => {
-                        let conn = self.conn.lock().unwrap();
+                        let conn = self.conn.lock();
                         let _ = conn.execute("DELETE FROM port_forwards WHERE id = ?1", params![&ts.entity_id]);
                     }
                     _ => {}
@@ -1266,7 +1335,12 @@ impl Database {
             }
             self.save_folder(folder)?;
         }
+        let mut credentials_imported: usize = 0;
+        let credentials_skipped_incompatible = if credentials_compatible { 0 } else { bundle.credentials.len() };
         for cred in &bundle.credentials {
+            if !credentials_compatible {
+                break;
+            }
             if !replace_all {
                 let cred_time = if !cred.updated_at.is_empty() { &cred.updated_at } else { &cred.created_at };
                 if let Ok(Some(del_at)) = self.is_tombstoned("credential", &cred.id) {
@@ -1284,6 +1358,7 @@ impl Database {
                 }
             }
             self.save_credential(cred)?;
+            credentials_imported += 1;
         }
         for host in &bundle.hosts {
             if !replace_all {
@@ -1300,7 +1375,22 @@ impl Database {
                     }
                 }
             }
-            self.save_host(host)?;
+            // A host may point at a folder or credential that is neither in
+            // the bundle nor locally (hand-edited backup, skipped tombstoned
+            // credential, ...). With foreign_keys=ON that would fail the
+            // insert and abort the whole import, so drop the dangling link.
+            let mut host = host.clone();
+            if let Some(ref fid) = host.folder_id {
+                if self.get_folder(fid)?.is_none() {
+                    host.folder_id = None;
+                }
+            }
+            if let Some(ref cid) = host.credential_id {
+                if self.get_credential(cid)?.is_none() {
+                    host.credential_id = None;
+                }
+            }
+            self.save_host(&host)?;
         }
         for rule in &bundle.port_forwards {
             if !replace_all {
@@ -1311,6 +1401,11 @@ impl Database {
                         let _ = self.remove_tombstone("port_forward", &rule.id);
                     }
                 }
+            }
+            // A rule is meaningless without its host (and the FK would abort
+            // the import), so skip rules whose host didn't make it in.
+            if self.get_host(&rule.host_id)?.is_none() {
+                continue;
             }
             self.save_port_forward(rule)?;
         }
@@ -1401,7 +1496,7 @@ impl Database {
 
         // Post-import cleanup: ensure referential consistency if any parent entity was deleted
         {
-            let conn = self.conn.lock().unwrap();
+            let conn = self.conn.lock();
             let _ = conn.execute(
                 "UPDATE hosts SET folder_id = NULL WHERE folder_id IS NOT NULL AND folder_id NOT IN (SELECT id FROM folders)",
                 [],
@@ -1449,9 +1544,10 @@ impl Database {
             }
         }
 
-        Ok((ImportSummary {
+        Ok(ImportSummary {
             folders: bundle.folders.len(),
-            credentials: bundle.credentials.len(),
+            credentials: credentials_imported,
+            credentials_skipped_incompatible,
             hosts: bundle.hosts.len(),
             port_forwards: bundle.port_forwards.len(),
             snippets: bundle.snippets.len(),
@@ -1460,8 +1556,8 @@ impl Database {
             workspace_presets: workspace_presets_imported,
             ai_providers: ai_providers_imported,
             vault_meta_restored,
-            safety_snapshot_path: None, // filled in by the command layer after writing to disk
-        }, safety_snapshot_json))
+            safety_snapshot_path: None, // filled in by the command layer
+        })
     }
 }
 
@@ -1470,4 +1566,279 @@ fn get_database_path() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
         .join("termimus");
     base_dir.join("termimus.db")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_db() -> Database {
+        Database::open_in_memory().unwrap()
+    }
+
+    const T0: &str = "2026-01-01T00:00:00+00:00";
+    const T1: &str = "2026-02-01T00:00:00+00:00";
+
+    fn folder(id: &str) -> Folder {
+        Folder { id: id.into(), name: id.into(), parent_id: None, created_at: T0.into(), updated_at: T0.into() }
+    }
+
+    fn credential(id: &str) -> Credential {
+        Credential {
+            id: id.into(),
+            kind: "password".into(),
+            ciphertext: vec![1, 2, 3],
+            nonce: vec![4, 5, 6],
+            passphrase_ciphertext: None,
+            passphrase_nonce: None,
+            name: id.into(),
+            key_type: String::new(),
+            public_key: String::new(),
+            fingerprint: String::new(),
+            username: None,
+            created_at: T0.into(),
+            updated_at: T0.into(),
+        }
+    }
+
+    fn host(id: &str, folder_id: Option<&str>, credential_id: Option<&str>) -> Host {
+        Host {
+            id: id.into(),
+            folder_id: folder_id.map(Into::into),
+            label: id.into(),
+            address: "10.0.0.1".into(),
+            port: 22,
+            username: "root".into(),
+            auth_method: "password".into(),
+            credential_id: credential_id.map(Into::into),
+            tags: vec![],
+            last_connected_at: None,
+            os_icon: None,
+            jump_host_id: None,
+            created_at: T0.into(),
+            updated_at: T1.into(),
+        }
+    }
+
+    fn port_forward(id: &str, host_id: &str) -> PortForwardRule {
+        PortForwardRule {
+            id: id.into(),
+            host_id: host_id.into(),
+            label: id.into(),
+            forward_type: "local".into(),
+            local_address: "127.0.0.1".into(),
+            local_port: 8080,
+            remote_address: "127.0.0.1".into(),
+            remote_port: 80,
+            created_at: T0.into(),
+        }
+    }
+
+    fn snippet(id: &str) -> Snippet {
+        Snippet { id: id.into(), title: id.into(), command: "ls".into(), tags: vec![], created_at: T0.into(), updated_at: T0.into() }
+    }
+
+    fn bundle() -> BackupBundle {
+        BackupBundle {
+            format_version: 1,
+            app_version: "test".into(),
+            exported_at: T0.into(),
+            vault_salt: None,
+            vault_verifier_ciphertext: None,
+            vault_verifier_nonce: None,
+            folders: vec![],
+            credentials: vec![],
+            hosts: vec![],
+            port_forwards: vec![],
+            snippets: vec![],
+            known_hosts: vec![],
+            tombstones: vec![],
+            workspace_presets: vec![],
+            ai_providers: vec![],
+        }
+    }
+
+    fn with_vault(mut b: BackupBundle, salt: &[u8], ct: &[u8]) -> BackupBundle {
+        b.vault_salt = Some(salt.to_vec());
+        b.vault_verifier_ciphertext = Some(ct.to_vec());
+        b.vault_verifier_nonce = Some(b"nonce".to_vec());
+        b
+    }
+
+    /// DB with one folder, credential, host and vault salt "old-salt".
+    fn seeded_db() -> Database {
+        let db = test_db();
+        db.save_folder(&folder("f-old")).unwrap();
+        db.save_credential(&credential("c-old")).unwrap();
+        db.save_host(&host("h-old", Some("f-old"), Some("c-old"))).unwrap();
+        db.set_vault_meta("salt", b"old-salt").unwrap();
+        db.set_vault_meta("verifier_ciphertext", b"old-ct").unwrap();
+        db.set_vault_meta("verifier_nonce", b"old-nonce").unwrap();
+        db
+    }
+
+    #[test]
+    fn failed_replace_all_rolls_back_everything() {
+        let db = seeded_db();
+        // Make the import fail late: after the wipe, the vault-meta swap and
+        // the host inserts have already happened inside the transaction.
+        db.conn
+            .lock()
+            .execute_batch(
+                "CREATE TEMP TRIGGER fail_snippet BEFORE INSERT ON snippets
+                 BEGIN SELECT RAISE(ABORT, 'boom'); END;",
+            )
+            .unwrap();
+
+        let mut b = bundle();
+        b.vault_salt = Some(b"new-salt".to_vec());
+        b.vault_verifier_ciphertext = Some(b"new-ct".to_vec());
+        b.vault_verifier_nonce = Some(b"new-nonce".to_vec());
+        b.hosts = vec![host("h-new", None, None)];
+        b.snippets = vec![snippet("s-new")];
+
+        assert!(db.import_backup_bundle(&b, true).is_err());
+
+        let hosts = db.list_hosts().unwrap();
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].id, "h-old");
+        assert_eq!(db.list_folders().unwrap().len(), 1);
+        assert_eq!(db.list_credentials().unwrap().len(), 1);
+        assert_eq!(db.get_vault_meta("salt").unwrap().as_deref(), Some(&b"old-salt"[..]));
+        assert_eq!(db.get_vault_meta("verifier_ciphertext").unwrap().as_deref(), Some(&b"old-ct"[..]));
+    }
+
+    #[test]
+    fn replace_all_drops_dangling_references_instead_of_failing() {
+        // The exact reproduction from issue #59: a host pointing at a
+        // nonexistent folder must not abort the import.
+        let db = seeded_db();
+        let mut b = bundle();
+        b.hosts = vec![host("h-new", Some("missing-folder"), Some("missing-cred"))];
+        b.port_forwards = vec![port_forward("pf-ok", "h-new"), port_forward("pf-orphan", "missing-host")];
+
+        db.import_backup_bundle(&b, true).unwrap();
+
+        let hosts = db.list_hosts().unwrap();
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].id, "h-new");
+        assert_eq!(hosts[0].folder_id, None);
+        assert_eq!(hosts[0].credential_id, None);
+        let rules = db.list_port_forwards().unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].id, "pf-ok");
+    }
+
+    #[test]
+    fn merge_with_tombstoned_credential_still_imports_host() {
+        let db = test_db();
+        db.set_vault_meta("salt", b"s").unwrap();
+        db.set_vault_meta("verifier_ciphertext", b"v").unwrap();
+        let mut b = with_vault(bundle(), b"s", b"v");
+        // The credential was deleted after its last update, so the merge
+        // skips it — but a host in the same bundle still references it.
+        b.tombstones = vec![Tombstone { entity_type: "credential".into(), entity_id: "c1".into(), deleted_at: T1.into() }];
+        b.credentials = vec![credential("c1")];
+        b.hosts = vec![host("h1", None, Some("c1"))];
+
+        db.import_backup_bundle(&b, false).unwrap();
+
+        assert!(db.get_credential("c1").unwrap().is_none());
+        let h = db.get_host("h1").unwrap().unwrap();
+        assert_eq!(h.credential_id, None);
+    }
+
+    #[test]
+    fn successful_replace_all_commits() {
+        let db = seeded_db();
+        let mut b = with_vault(bundle(), b"new-salt", b"new-ct");
+        b.folders = vec![folder("f-new")];
+        b.credentials = vec![credential("c-new")];
+        b.hosts = vec![host("h-new", Some("f-new"), Some("c-new"))];
+        b.snippets = vec![snippet("s-new")];
+
+        db.import_backup_bundle(&b, true).unwrap();
+
+        let hosts = db.list_hosts().unwrap();
+        assert_eq!(hosts.len(), 1);
+        assert_eq!(hosts[0].folder_id.as_deref(), Some("f-new"));
+        assert_eq!(hosts[0].credential_id.as_deref(), Some("c-new"));
+        assert_eq!(db.list_snippets().unwrap().len(), 1);
+    }
+    // ── Issue #62: credentials from a different vault ──────────────────────
+
+    #[test]
+    fn merge_from_different_vault_skips_credentials_and_keeps_local_ones() {
+        let db = seeded_db();
+        // Same credential id, newer timestamp (as after a master password
+        // change on another device), but encrypted under another vault key.
+        let mut foreign = credential("c-old");
+        foreign.ciphertext = vec![9, 9, 9];
+        foreign.updated_at = T1.into();
+        let mut b = with_vault(bundle(), b"other-salt", b"other-ct");
+        b.credentials = vec![foreign, credential("c-foreign")];
+        b.snippets = vec![snippet("s-new")];
+
+        let summary = db.import_backup_bundle(&b, false).unwrap();
+
+        assert_eq!(summary.credentials, 0);
+        assert_eq!(summary.credentials_skipped_incompatible, 2);
+        // The working local credential was NOT overwritten by LWW.
+        assert_eq!(db.get_credential("c-old").unwrap().unwrap().ciphertext, vec![1, 2, 3]);
+        assert!(db.get_credential("c-foreign").unwrap().is_none());
+        // Non-secret data still merges, and local vault meta is untouched.
+        assert_eq!(db.list_snippets().unwrap().len(), 1);
+        assert_eq!(db.get_vault_meta("salt").unwrap().as_deref(), Some(&b"old-salt"[..]));
+    }
+
+    #[test]
+    fn merge_from_same_vault_imports_credentials() {
+        let db = seeded_db();
+        let mut b = with_vault(bundle(), b"old-salt", b"old-ct");
+        b.credentials = vec![credential("c-new")];
+
+        let summary = db.import_backup_bundle(&b, false).unwrap();
+
+        assert_eq!(summary.credentials, 1);
+        assert_eq!(summary.credentials_skipped_incompatible, 0);
+        assert!(db.get_credential("c-new").unwrap().is_some());
+    }
+
+    #[test]
+    fn bundle_without_vault_meta_never_imports_credentials() {
+        let db = seeded_db();
+        let mut b = bundle();
+        b.credentials = vec![credential("c-new")];
+        b.hosts = vec![host("h-new", None, Some("c-new"))];
+
+        let summary = db.import_backup_bundle(&b, true).unwrap();
+
+        assert_eq!(summary.credentials_skipped_incompatible, 1);
+        assert!(db.get_credential("c-new").unwrap().is_none());
+        assert_eq!(db.get_host("h-new").unwrap().unwrap().credential_id, None);
+    }
+
+    #[test]
+    fn merge_into_uninitialized_vault_adopts_bundle_vault() {
+        let db = test_db();
+        let mut b = with_vault(bundle(), b"s", b"v");
+        b.credentials = vec![credential("c1")];
+
+        let summary = db.import_backup_bundle(&b, false).unwrap();
+
+        assert!(summary.vault_meta_restored);
+        assert_eq!(summary.credentials, 1);
+    }
+
+    #[test]
+    fn sync_vault_mismatch_flag_round_trips() {
+        let db = seeded_db();
+        assert!(!db.sync_vault_mismatch().unwrap());
+        db.set_sync_vault_mismatch(true).unwrap();
+        assert!(db.sync_vault_mismatch().unwrap());
+        db.set_sync_vault_mismatch(false).unwrap();
+        assert!(!db.sync_vault_mismatch().unwrap());
+        // Clearing an unset flag is a no-op, not an error.
+        db.set_sync_vault_mismatch(false).unwrap();
+    }
 }
