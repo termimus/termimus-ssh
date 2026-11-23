@@ -302,6 +302,23 @@ async fn connect_ssh_agent() -> Result<AgentClient<Box<dyn AgentStream + Send + 
     Err("SSH agent authentication is not supported on this platform".to_string())
 }
 
+/// The platform's SSH agent endpoint, for error messages: the socket named
+/// by `SSH_AUTH_SOCK` on Unix, the OpenSSH named pipe on Windows.
+#[cfg(unix)]
+fn agent_endpoint() -> String {
+    std::env::var("SSH_AUTH_SOCK").unwrap_or_else(|_| "(SSH_AUTH_SOCK unset)".to_string())
+}
+
+#[cfg(windows)]
+fn agent_endpoint() -> String {
+    r"\\.\pipe\openssh-ssh-agent".to_string()
+}
+
+#[cfg(not(any(unix, windows)))]
+fn agent_endpoint() -> String {
+    "(unsupported platform)".to_string()
+}
+
 /// Authenticate with a key held by the local SSH agent. Tries each identity
 /// the agent offers, in order, until the server accepts one — mirroring the
 /// publickey rejection behaviour of `authenticate_publickey_smart` (a
