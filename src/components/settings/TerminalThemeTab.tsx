@@ -13,6 +13,7 @@ import {
   normalizeFontFamily,
   type TerminalCursorStyle,
 } from "../../stores/useTerminalThemeStore";
+import { useSettingsStore } from "../../stores/useSettingsStore";
 import { CustomSelect } from "../ui/CustomSelect";
 import { TerminalPreview } from "./TerminalPreview";
 
@@ -62,6 +63,8 @@ export function TerminalThemeTab() {
   const resetDefaults = useTerminalThemeStore((s) => s.resetDefaults);
   const getTheme = useTerminalThemeStore((s) => s.getTheme);
   const theme = getTheme();
+  const useOscTitleAsTabName = useSettingsStore((s) => s.useOscTitleAsTabName);
+  const setUseOscTitleAsTabName = useSettingsStore((s) => s.setUseOscTitleAsTabName);
 
   return (
     <div className="space-y-5">
@@ -325,6 +328,30 @@ export function TerminalThemeTab() {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* ── Terminal-set title ──────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-low)] shadow-sm">
+        <div className="rounded-t-2xl border-b border-[var(--border)] px-5 py-3.5 bg-[var(--surface-container)]/30">
+          <h4 className="text-xs font-semibold text-[var(--text-primary)] flex items-center gap-2">
+            <Type size={15} className="text-[var(--primary)]" />
+            {t("settings.terminal.oscTitleAsTabNameTitle")}
+          </h4>
+          <p className="text-[11px] text-[var(--text-muted)] mt-0.5">
+            {t("settings.terminal.oscTitleAsTabNameDesc")}
+          </p>
+        </div>
+
+        <div className="p-5 flex items-center justify-between gap-4 text-xs">
+          <p className="font-semibold text-[var(--text-primary)]">
+            {t("settings.terminal.oscTitleAsTabNameTitle")}
+          </p>
+          <Toggle
+            checked={useOscTitleAsTabName}
+            onChange={setUseOscTitleAsTabName}
+            label={t("settings.terminal.oscTitleAsTabNameTitle")}
+          />
         </div>
       </div>
 

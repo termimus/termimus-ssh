@@ -107,6 +107,9 @@ export const settingsId: typeof settingsEn = {
     recommendedFont: "Rekomendasi pasangan font",
     applyPairing: "Terapkan pasangan font",
     resetDefaults: "Reset ke bawaan",
+    oscTitleAsTabNameTitle: "Gunakan Judul dari Terminal sebagai Nama Tab",
+    oscTitleAsTabNameDesc:
+      "Saat aktif, judul yang diatur program (OSC 0/2) menggantikan label tab. Saat nonaktif, tab tetap menampilkan nama host dan judul program muncul di header panel dan tooltip tab.",
   },
   sync: {
     title: "Relay Sinkronisasi Mandiri",

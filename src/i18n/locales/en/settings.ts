@@ -105,6 +105,9 @@ export const settingsEn = {
     recommendedFont: "Recommended font pairing",
     applyPairing: "Apply pairing",
     resetDefaults: "Reset to defaults",
+    oscTitleAsTabNameTitle: "Use Terminal-Set Title as Tab Name",
+    oscTitleAsTabNameDesc:
+      "When on, the title a program sets (OSC 0/2) replaces the tab label. When off, tabs keep the host name and the program title shows in the pane header and the tab tooltip instead.",
   },
   sync: {
     title: "Self-Hosted Sync Relay",

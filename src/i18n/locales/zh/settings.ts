@@ -107,6 +107,9 @@ export const settingsZh: typeof settingsEn = {
     recommendedFont: "推荐字体搭配",
     applyPairing: "应用推荐搭配",
     resetDefaults: "恢复默认设置",
+    oscTitleAsTabNameTitle: "使用终端设置的标题作为标签名",
+    oscTitleAsTabNameDesc:
+      "开启后，程序设置的标题（OSC 0/2）将替换标签名称。关闭时，标签保持主机名，程序标题显示在窗格标题栏和标签提示中。",
   },
   sync: {
     title: "自建同步中继",

@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { PaneLeaf, findPaneById } from "../../lib/layoutTree";
 import { useSessionStore } from "../../stores/useSessionStore";
+import { useSettingsStore } from "../../stores/useSettingsStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { useTerminalThemeStore } from "../../stores/useTerminalThemeStore";
 import { getTerminalTheme } from "../../lib/terminalThemes";
@@ -64,6 +65,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
 
   const hosts = useHostStore((s) => s.hosts);
   const themeId = useTerminalThemeStore((s) => s.themeId);
+  const useOscTitleAsTabName = useSettingsStore((s) => s.useOscTitleAsTabName);
   const themeBg = getTerminalTheme(themeId).xterm.background ?? "#0a0e14";
   const isFocused = activePaneId === pane.id;
   const isMaximized = maximizedPaneId === pane.id;
@@ -250,7 +252,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                         }`}
                       />
                     )}
-                    <span className="truncate flex-1 min-w-0 text-center leading-none translate-y-[0.5px]">{tab.oscTitle || tab.hostLabel}</span>
+                    <span className="truncate flex-1 min-w-0 text-center leading-none translate-y-[0.5px]">{useOscTitleAsTabName && tab.oscTitle ? tab.oscTitle : tab.hostLabel}</span>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -285,8 +287,13 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                   />
                 )}
                 <span className="font-medium text-[var(--text-primary)] truncate">
-                  {activeTab?.oscTitle || activeTab?.hostLabel || "Terminal"}
+                  {activeTab?.hostLabel || "Terminal"}
                 </span>
+                {activeTab?.oscTitle && (
+                  <span className="text-[10px] text-[var(--text-muted)] truncate hidden sm:inline">
+                    · {activeTab.oscTitle}
+                  </span>
+                )}
                 <span className="text-[10px] text-[var(--text-muted)] truncate hidden sm:inline">
                   {activeTab?.hostAddress}
                 </span>
