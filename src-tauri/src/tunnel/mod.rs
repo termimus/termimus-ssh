@@ -1,13 +1,13 @@
+mod relay;
 pub mod socks5;
 
 use russh::client::{self, Handle};
-use russh::{Channel, ChannelMsg, Disconnect};
+use russh::{Channel, Disconnect};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinSet;
@@ -444,44 +444,9 @@ async fn forward_connection(
     Ok(())
 }
 
-/// Shuttle bytes in both directions between a local TCP stream and an SSH
-/// channel until either side closes.
-async fn pipe_channel(mut stream: TcpStream, mut channel: Channel<client::Msg>) {
+/// Relay bytes between a local TCP stream and an SSH channel; see
+/// [`relay::relay`] for the half-close semantics.
+async fn pipe_channel(stream: TcpStream, channel: Channel<client::Msg>) {
     let _ = stream.set_nodelay(true);
-    let mut buf = vec![0u8; 32 * 1024];
-    let mut stream_closed = false;
-
-    loop {
-        tokio::select! {
-            read_result = stream.read(&mut buf), if !stream_closed => {
-                match read_result {
-                    Ok(0) => {
-                        stream_closed = true;
-                        let _ = channel.eof().await;
-                    }
-                    Ok(n) => {
-                        if channel.data(&buf[..n]).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            msg = channel.wait() => {
-                match msg {
-                    Some(ChannelMsg::Data { ref data }) => {
-                        if stream.write_all(data).await.is_err() {
-                            break;
-                        }
-                    }
-                    Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    let _ = channel.close().await;
+    relay::relay(stream, channel).await;
 }
