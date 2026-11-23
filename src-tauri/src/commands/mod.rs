@@ -516,7 +516,7 @@ fn resolve_host_auth(state: &AppState, host: &Host) -> Result<SshAuth, String> {
             Ok(SshAuth::Password(secret))
         }
         "private_key" => {
-            let (pem, passphrase) = if let Some(cred_id) = &host.credential_id {
+            let (key, passphrase) = if let Some(cred_id) = &host.credential_id {
                 let cred = state
                     .db
                     .get_credential(cred_id)
@@ -531,9 +531,10 @@ fn resolve_host_auth(state: &AppState, host: &Host) -> Result<SshAuth, String> {
                 }
 
                 let pem_bytes = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
-                let pem_str = String::from_utf8(pem_bytes).map_err(|e| format!("Invalid utf-8 PEM: {e}"))?;
+                let pem_str = String::from_utf8(pem_bytes).map_err(|_| "Invalid UTF-8 SSH key".to_string())?;
+                let key = crate::sshkey::StoredKey::decode(pem_str)?;
 
-                if crate::sshkey::is_public_key_text(&pem_str) {
+                if crate::sshkey::is_public_key_text(&key.pem) {
                     return Err("The configured key is an OpenSSH Public Key (starts with ssh-rsa/ssh-ed25519). SSH client login requires the Private Key (starts with '-----BEGIN ... PRIVATE KEY-----'), not the public key.".to_string());
                 }
 
@@ -544,11 +545,11 @@ fn resolve_host_auth(state: &AppState, host: &Host) -> Result<SshAuth, String> {
                     }
                     _ => None,
                 };
-                (pem_str, pp)
+                (Arc::new(key), pp)
             } else {
                 return Err("No private key configured for this host".to_string());
             };
-            Ok(SshAuth::PrivateKey { pem, passphrase })
+            Ok(SshAuth::PrivateKey { key, passphrase })
         }
         _ => Err(format!("Unsupported auth method: {}", host.auth_method)),
     }
@@ -752,6 +753,10 @@ pub fn keychain_save_key(
         None
     };
 
+    if input.private_key_pem.trim().is_empty() && input.user_certificate.is_some() {
+        return Err("Load the private key before changing its user certificate".into());
+    }
+
     let (kind, ciphertext, nonce, passphrase_ciphertext, passphrase_nonce, key_type, public_key, fingerprint) =
         if input.private_key_pem.trim().is_empty() {
             if let Some(ref c) = existing {
@@ -776,7 +781,25 @@ pub fn keychain_save_key(
                 "private_key".to_string()
             };
 
-            let (ciphertext, nonce) = state.vault.encrypt(input.private_key_pem.as_bytes())?;
+            let user_certificate = match (&input.user_certificate, &existing) {
+                (Some(cert), _) => Some(cert.trim().to_owned()).filter(|s| !s.is_empty()),
+                (None, Some(cred)) if cred.kind == "private_key" => {
+                    let plaintext = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
+                    let plaintext = String::from_utf8(plaintext).map_err(|_| "Invalid UTF-8 SSH key")?;
+                    crate::sshkey::StoredKey::decode(plaintext)?.user_certificate.clone()
+                }
+                _ => None,
+            };
+            if let Some(cert) = &user_certificate {
+                if details.is_public_key_only {
+                    return Err("A user certificate requires the matching FIDO2 private key handle".into());
+                }
+                let public_key = russh::keys::PublicKey::from_openssh(&details.public_key)
+                    .map_err(|_| "Could not read the security key's public key")?;
+                crate::sshkey::match_user_certificate(cert, &public_key)?;
+            }
+            let secret = crate::sshkey::StoredKey::encode(&input.private_key_pem, user_certificate.as_deref())?;
+            let (ciphertext, nonce) = state.vault.encrypt(secret.as_bytes())?;
             let (passphrase_ciphertext, passphrase_nonce) = match &input.passphrase {
                 Some(p) if !p.trim().is_empty() => {
                     let (ct, n) = state.vault.encrypt(p.as_bytes())?;
@@ -886,6 +909,7 @@ pub fn keychain_get_public_key(state: State<AppState>, id: String) -> Result<Str
 pub struct DecryptedKeyDetails {
     pub private_key_pem: String,
     pub passphrase: Option<String>,
+    pub user_certificate: Option<String>,
 }
 
 /// Returns the decrypted private key and passphrase for a stored Keychain SSH key.
@@ -901,7 +925,8 @@ pub fn keychain_get_private_key(state: State<AppState>, id: String) -> Result<De
         .ok_or_else(|| "Keychain item not found".to_string())?;
 
     let bytes = state.vault.decrypt(&cred.ciphertext, &cred.nonce)?;
-    let private_key_pem = String::from_utf8(bytes).map_err(|e| format!("Invalid utf-8 PEM: {e}"))?;
+    let plaintext = String::from_utf8(bytes).map_err(|_| "Invalid UTF-8 SSH key")?;
+    let mut key = crate::sshkey::StoredKey::decode(plaintext)?;
 
     let passphrase = match (&cred.passphrase_ciphertext, &cred.passphrase_nonce) {
         (Some(ct), Some(n)) => {
@@ -912,8 +937,9 @@ pub fn keychain_get_private_key(state: State<AppState>, id: String) -> Result<De
     };
 
     Ok(DecryptedKeyDetails {
-        private_key_pem,
+        private_key_pem: std::mem::take(&mut key.pem),
         passphrase,
+        user_certificate: key.user_certificate.take(),
     })
 }
 

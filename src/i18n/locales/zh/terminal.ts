@@ -79,6 +79,11 @@ export const terminalZh: typeof terminalEn = {
     codePlaceholder: "6 位验证码",
     codeHint: "打开身份验证器应用并输入当前验证码。",
     answerPlaceholder: "输入您的回答",
+    securityKeyTitle: "安全密钥",
+    securityKeySubtitle: "正在登录 {{target}}",
+    securityKeyTouch: "安全密钥的指示灯闪烁时，请轻触密钥。",
+    securityKeyPin: "安全密钥 PIN",
+    securityKeyPinHint: "请输入实体安全密钥的 PIN，而不是服务器密码。PIN 仅在本机使用，不会保存。",
   },
   broadcastBanner: {
     active: "互联已启用：",

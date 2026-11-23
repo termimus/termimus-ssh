@@ -74,6 +74,11 @@ Prebuilt installers for every release are published automatically to the **[GitH
 - **Instant Public Key Derivation**: Automatically derive OpenSSH public key lines (`ssh-ed25519`, `ssh-rsa`, `ecdsa`) and SHA256 fingerprints from imported private keys to paste into remote `authorized_keys`.
 - **Private Key Reveal & Copy**: Securely inspect or copy decrypted private keys on demand when the vault is unlocked, protected with privacy blur.
 - **Password Identities**: Store reusable username & password combinations to assign across multiple hosts without re-typing.
+- **FIDO2 SSH keys (Linux)**: Use an existing OpenSSH `ecdsa-sk` or `ed25519-sk` identity on a USB security key such as a YubiKey. An optional matching OpenSSH user certificate can be stored with the key.
+
+On Ubuntu 22.04, install the Debian package with APT so it pulls in `libfido2-1`. In **Keychain → Add Key**, import the OpenSSH handle file (for example `id_ed25519_sk`, **not** `id_ed25519_sk.pub`). Enter its file passphrase if it is encrypted. If your server authenticates via an SSH CA, import the matching `*-cert.pub` under **OpenSSH user certificate**. Assign the Keychain item to your host and connect with the key plugged in. Touch it when it blinks; if asked for a security-key PIN, enter the PIN for the token, not the server password. Installing the package does not change USB device permissions. If the key isn't detected, check that your distribution's FIDO2 udev rules grant your signed-in desktop user access to it. Do not run Termimus as root. For ambiguous PIN-protected credentials, unplug other security keys before retrying.
+
+The vault stores the OpenSSH handle and optional certificate, never the token's private key or PIN. An attached certificate is used instead of the bare key. Clients without certificate support cannot use a Keychain item with an attached certificate. SSH agent forwarding, PIV/PKCS#11 and token enrollment are not part of this feature.
 
 ### 🌐 Port Forwarding & SSH Tunnels
 - **Multi-Type Tunnels**: Support for Local (`-L`), Remote (`-R`), and Dynamic SOCKS5 (`-D`) port forwarding, with tunnels auto-stopping and reporting when the SSH connection drops.

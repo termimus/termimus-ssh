@@ -6,7 +6,71 @@
 //! `~/.ssh/authorized_keys`.
 
 use russh::keys::decode_secret_key;
-use russh::keys::ssh_key::{Algorithm, EcdsaCurve, LineEnding, PrivateKey, PublicKey};
+use russh::keys::ssh_key::{certificate::CertType, Algorithm, Certificate, EcdsaCurve, LineEnding, PrivateKey, PublicKey};
+use serde::{Deserialize, Serialize};
+use zeroize::{ZeroizeOnDrop, Zeroizing};
+
+const CERTIFIED_KEY_PREFIX: &str = "TERMIMUS-CERTIFIED-KEY-v1\n";
+
+#[derive(Deserialize, ZeroizeOnDrop)]
+pub struct StoredKey {
+    pub pem: String,
+    pub user_certificate: Option<String>,
+}
+
+impl StoredKey {
+    pub fn decode(plaintext: String) -> Result<Self, String> {
+        let plaintext = Zeroizing::new(plaintext);
+        if let Some(json) = plaintext.strip_prefix(CERTIFIED_KEY_PREFIX) {
+            let key: Self = serde_json::from_str(json)
+                .map_err(|_| "Invalid certified SSH key in the vault".to_string())?;
+            if key.user_certificate.as_deref().is_none_or(|s| s.trim().is_empty()) {
+                return Err("Certified SSH key is missing its user certificate".into());
+            }
+            Ok(key)
+        } else {
+            Ok(Self { pem: plaintext.to_string(), user_certificate: None })
+        }
+    }
+
+    // Keep the key and certificate in one encrypted payload so old clients
+    // fail to parse it instead of authenticating without the certificate.
+    pub fn encode(pem: &str, user_certificate: Option<&str>) -> Result<Zeroizing<String>, String> {
+        let Some(user_certificate) = user_certificate else {
+            return Ok(Zeroizing::new(pem.to_owned()));
+        };
+        #[derive(Serialize)]
+        struct CertifiedKey<'a> {
+            pem: &'a str,
+            user_certificate: &'a str,
+        }
+        let json = Zeroizing::new(serde_json::to_string(&CertifiedKey { pem, user_certificate })
+            .map_err(|_| "Could not encode certified SSH key".to_string())?);
+        let mut bytes = Zeroizing::new(String::with_capacity(CERTIFIED_KEY_PREFIX.len() + json.len()));
+        bytes.push_str(CERTIFIED_KEY_PREFIX);
+        bytes.push_str(&json);
+        Ok(bytes)
+    }
+}
+
+pub fn is_security_key(algorithm: Algorithm) -> bool {
+    matches!(algorithm, Algorithm::SkEd25519 | Algorithm::SkEcdsaSha2NistP256)
+}
+
+pub fn match_user_certificate(text: &str, key: &PublicKey) -> Result<Certificate, String> {
+    if !is_security_key(key.algorithm()) {
+        return Err("User certificates are supported only for FIDO2 security keys".into());
+    }
+    let certificate = Certificate::from_openssh(text.trim())
+        .map_err(|e| format!("Invalid OpenSSH user certificate: {e}"))?;
+    if certificate.cert_type() != CertType::User {
+        return Err("A user certificate is required; host certificates cannot authenticate a user".into());
+    }
+    if certificate.public_key() != key.key_data() {
+        return Err("The user certificate does not match this security key".into());
+    }
+    Ok(certificate)
+}
 
 /// Returns true if the provided text looks like an OpenSSH public key line.
 pub fn is_public_key_text(text: &str) -> bool {
@@ -136,6 +200,8 @@ pub fn inspect_key(pem: &str, passphrase: Option<&str>) -> Result<KeyDetails, St
         Algorithm::Ed25519 => "ED25519".to_string(),
         Algorithm::Rsa { .. } => "RSA".to_string(),
         Algorithm::Ecdsa { .. } => "ECDSA".to_string(),
+        Algorithm::SkEd25519 => "ED25519-SK".to_string(),
+        Algorithm::SkEcdsaSha2NistP256 => "ECDSA-SK".to_string(),
         other => other.to_string(),
     };
     Ok(KeyDetails {
@@ -174,5 +240,55 @@ mod tests {
     #[test]
     fn derive_public_key_fails_on_garbage_input() {
         assert!(derive_public_key("not a real key", None).is_err());
+    }
+
+    fn synthetic_sk(application: &str) -> PrivateKey {
+        use russh::keys::ssh_key::{private, public};
+        let software = PrivateKey::random(&mut rand_10::rng(), Algorithm::Ed25519).unwrap();
+        let public = public::SkEd25519::new(*software.public_key().key_data().ed25519().unwrap(), application);
+        PrivateKey::new(private::SkEd25519::new(public, 5, vec![7; 32]).unwrap().into(), "test handle").unwrap()
+    }
+
+    #[test]
+    fn reads_encrypted_and_unencrypted_sk_handles() {
+        let key = synthetic_sk("ssh:test");
+        let clear = key.to_openssh(LineEnding::LF).unwrap();
+        let sealed = key.encrypt(&mut rand_10::rng(), "local test passphrase").unwrap();
+        let sealed = sealed.to_openssh(LineEnding::LF).unwrap();
+        assert_eq!(inspect_key(&clear, None).unwrap().algorithm, "ED25519-SK");
+        assert_eq!(inspect_key(&sealed, Some("local test passphrase")).unwrap().public_key,
+            key.public_key().to_openssh().unwrap());
+    }
+
+    #[test]
+    fn accepts_only_matching_sk_user_certificates() {
+        use russh::keys::ssh_key::certificate::Builder;
+        let key = synthetic_sk("ssh:test");
+        let ca = PrivateKey::random(&mut rand_10::rng(), Algorithm::Ed25519).unwrap();
+        let make_cert = |public: &PublicKey, cert_type| {
+            let mut builder = Builder::new(vec![0; 16], public.key_data().clone(), 0, 2_100_000_000).unwrap();
+            builder.cert_type(cert_type).unwrap();
+            builder.valid_principal("tester").unwrap();
+            builder.sign(&ca).unwrap().to_openssh().unwrap()
+        };
+        let user = make_cert(key.public_key(), CertType::User);
+        assert!(match_user_certificate(&user, key.public_key()).is_ok());
+        let wrong_key = synthetic_sk("ssh:other");
+        assert!(match_user_certificate(&user, wrong_key.public_key()).is_err());
+        let host = make_cert(key.public_key(), CertType::Host);
+        assert!(match_user_certificate(&host, key.public_key()).is_err());
+        assert!(match_user_certificate(&user, ca.public_key()).is_err());
+
+        let pem = key.to_openssh(LineEnding::LF).unwrap();
+        let ciphertext_input = StoredKey::encode(&pem, Some(&user)).unwrap();
+        // Older clients refuse this payload, rather than silently dropping its cert.
+        assert!(decode_secret_key(&ciphertext_input, None).is_err());
+        let restored = StoredKey::decode(ciphertext_input.to_string()).unwrap();
+        assert_eq!(restored.user_certificate.as_deref(), Some(user.as_str()));
+        assert_eq!(restored.pem, pem.as_str());
+        let legacy = StoredKey::decode(pem.to_string()).unwrap();
+        assert!(legacy.user_certificate.is_none());
+        assert_eq!(legacy.pem, pem.as_str());
+        assert!(StoredKey::decode(format!("{CERTIFIED_KEY_PREFIX}{{\"pem\":\"not a key\"}}")).is_err());
     }
 }

@@ -51,7 +51,14 @@ export interface KeychainKeyInput {
   public_key: string;
   fingerprint: string;
   passphrase?: string;
+  user_certificate?: string | null;
   username?: string;
+}
+
+export interface DecryptedKeyDetails {
+  private_key_pem: string;
+  passphrase?: string | null;
+  user_certificate?: string | null;
 }
 
 export interface KeychainIdentityInput {
@@ -87,13 +94,14 @@ export interface SyncTestResult {
   error?: string;
 }
 
-/** Keyboard-interactive questions from the server (e.g. PAM password + 2FA code). */
+/** Keyboard-interactive questions from the server or a local security-key request. */
 export interface AuthPromptRequest {
   request_id: string;
   target: string;
   name: string;
   instructions: string;
   prompts: { prompt: string; echo: boolean }[];
+  security_key?: "pin" | "touch";
 }
 
 export interface FileEntry {
@@ -364,10 +372,7 @@ export const api = {
   getCredentialSecret: (id: string) =>
     invoke<string>("credential_get_secret", { id }),
   getKeychainPrivateKey: (id: string) =>
-    invoke<{ private_key_pem: string; passphrase?: string | null }>(
-      "keychain_get_private_key",
-      { id }
-    ),
+    invoke<DecryptedKeyDetails>("keychain_get_private_key", { id }),
 
   // SFTP Remote
   connectSftp: (hostId: string, sessionId: string) =>

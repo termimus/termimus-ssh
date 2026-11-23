@@ -77,6 +77,11 @@ export const terminalEn = {
     codePlaceholder: "6-digit code",
     codeHint: "Open your authenticator app and enter the current code.",
     answerPlaceholder: "Type your answer",
+    securityKeyTitle: "Security key",
+    securityKeySubtitle: "Signing in to {{target}}",
+    securityKeyTouch: "Touch your security key when it starts blinking.",
+    securityKeyPin: "Security key PIN",
+    securityKeyPinHint: "Enter the PIN for your physical security key, not your server password. The PIN stays on this device and is not saved.",
   },
   broadcastBanner: {
     active: "Interconnection Active:",

@@ -220,7 +220,10 @@ impl Handler for SshClientHandler {
 #[derive(Clone)]
 pub enum SshAuth {
     Password(String),
-    PrivateKey { pem: String, passphrase: Option<String> },
+    PrivateKey {
+        key: Arc<crate::sshkey::StoredKey>,
+        passphrase: Option<String>,
+    },
 }
 
 #[derive(Clone)]
@@ -360,6 +363,8 @@ pub struct AuthPromptPayload {
     pub name: String,
     pub instructions: String,
     pub prompts: Vec<AuthPromptField>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub security_key: Option<&'static str>,
 }
 
 /// Delivers the user's answers (`None` = cancelled) to a pending prompt.
@@ -373,25 +378,52 @@ pub fn answer_auth_prompt(request_id: &str, responses: Option<Vec<String>>) -> R
     Ok(())
 }
 
-async fn ask_auth_prompt(app: &AppHandle, payload: AuthPromptPayload) -> Result<Vec<String>, String> {
-    let (tx, rx) = oneshot::channel();
-    let id = payload.request_id.clone();
-    PENDING_AUTH_PROMPTS.lock().unwrap().insert(id.clone(), tx);
+struct AuthPromptGuard<'a> {
+    app: &'a AppHandle,
+    id: String,
+}
 
-    if let Err(e) = app.emit("ssh-auth-prompt", payload) {
-        PENDING_AUTH_PROMPTS.lock().unwrap().remove(&id);
-        return Err(format!("Could not show authentication prompt: {e}"));
+impl Drop for AuthPromptGuard<'_> {
+    fn drop(&mut self) {
+        PENDING_AUTH_PROMPTS.lock().unwrap().remove(&self.id);
+        let _ = self.app.emit("ssh-auth-prompt-closed", &self.id);
     }
+}
 
-    let res = tokio::time::timeout(AUTH_PROMPT_TIMEOUT, rx).await;
-    PENDING_AUTH_PROMPTS.lock().unwrap().remove(&id);
-    match res {
+type AuthPromptReceiver = oneshot::Receiver<Option<Vec<String>>>;
+
+fn open_auth_prompt(
+    app: &AppHandle,
+    payload: AuthPromptPayload,
+) -> Result<(AuthPromptGuard<'_>, AuthPromptReceiver), String> {
+    let (tx, rx) = oneshot::channel();
+    let guard = AuthPromptGuard { app, id: payload.request_id.clone() };
+    PENDING_AUTH_PROMPTS.lock().unwrap().insert(guard.id.clone(), tx);
+    app.emit("ssh-auth-prompt", payload)
+        .map_err(|e| format!("Could not show authentication prompt: {e}"))?;
+    Ok((guard, rx))
+}
+
+pub(crate) async fn ask_auth_prompt(app: &AppHandle, payload: AuthPromptPayload) -> Result<Vec<String>, String> {
+    let (_guard, rx) = open_auth_prompt(app, payload)?;
+    match tokio::time::timeout(AUTH_PROMPT_TIMEOUT, rx).await {
         Ok(Ok(Some(responses))) => Ok(responses),
-        Ok(_) => Err("Authentication cancelled".to_string()),
-        Err(_) => {
-            let _ = app.emit("ssh-auth-prompt-closed", &id);
-            Err("Timed out waiting for authentication input".to_string())
-        }
+        Ok(_) => Err("Authentication cancelled".into()),
+        Err(_) => Err("Timed out waiting for authentication input".into()),
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) async fn with_security_key_touch<T>(
+    app: &AppHandle,
+    payload: AuthPromptPayload,
+    operation: impl std::future::Future<Output = T>,
+) -> Result<T, String> {
+    let (_guard, cancel) = open_auth_prompt(app, payload)?;
+    tokio::select! {
+        biased;
+        _ = cancel => Err("Security key authentication cancelled".into()),
+        result = operation => Ok(result),
     }
 }
 
@@ -409,15 +441,51 @@ pub async fn authenticate<H: Handler>(
     username: &str,
     auth: &SshAuth,
 ) -> Result<(), String> {
+    let mut using_security_key = false;
     let first = match auth {
         SshAuth::Password(password) => handle
             .authenticate_password(username, password)
             .await
             .map_err(|e| format!("Auth error: {e}"))?,
-        SshAuth::PrivateKey { pem, passphrase } => {
-            let key_pair = decode_secret_key(pem, passphrase.as_deref())
+        SshAuth::PrivateKey { key, passphrase } => {
+            let key_pair = decode_secret_key(&key.pem, passphrase.as_deref())
                 .map_err(|e| format!("Invalid private key: {e}"))?;
-            authenticate_publickey_smart(handle, username, key_pair).await?
+            let certificate = key.user_certificate.as_deref()
+                .map(|cert| crate::sshkey::match_user_certificate(cert, key_pair.public_key()))
+                .transpose()?;
+            using_security_key = crate::sshkey::is_security_key(key_pair.algorithm());
+            if using_security_key {
+                let Some(app) = app else {
+                    return Err("Background probes do not use FIDO2 security keys".into());
+                };
+                #[cfg(target_os = "linux")]
+                {
+                    let verify_required = certificate.as_ref().is_some_and(|cert| {
+                        cert.critical_options().contains_key("verify-required")
+                    });
+                    let mut signer = crate::fido::SecurityKeySigner::new(app, target, &key_pair, verify_required)?;
+                    let result = if let Some(cert) = certificate {
+                        handle.authenticate_certificate_with(username, cert, None, &mut signer).await
+                    } else {
+                        handle.authenticate_publickey_with(username, key_pair.public_key().clone(), None, &mut signer).await
+                    };
+                    let result = result.map_err(|e| e.to_string())?;
+                    // An unsigned public-key probe cannot establish partial authentication.
+                    if !signer.signed() && matches!(&result,
+                        AuthResult::Success | AuthResult::Failure { partial_success: true, .. })
+                    {
+                        return Err("Server accepted security-key authentication without a signature".into());
+                    }
+                    result
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    let _ = (app, certificate);
+                    return Err("FIDO2 security-key SSH authentication is currently supported only on Linux".into());
+                }
+            } else {
+                authenticate_publickey_smart(handle, username, key_pair).await?
+            }
         }
     };
 
@@ -433,12 +501,15 @@ pub async fn authenticate<H: Handler>(
         SshAuth::PrivateKey { .. } if partial_success => {
             "SSH key accepted, but the server requires another authentication method".to_string()
         }
+        SshAuth::PrivateKey { key, .. } if key.user_certificate.is_some() => {
+            "SSH user certificate rejected by server (check CA trust, principal, expiry and key policy)".to_string()
+        }
         SshAuth::PrivateKey { .. } => {
             "SSH key rejected by server (is its public key in authorized_keys?)".to_string()
         }
     };
     let Some(app) = app else { return Err(primary_rejected) };
-    if !remaining.contains(&MethodKind::KeyboardInteractive) {
+    if (using_security_key && !partial_success) || !remaining.contains(&MethodKind::KeyboardInteractive) {
         return Err(primary_rejected);
     }
 
@@ -484,6 +555,7 @@ pub async fn authenticate<H: Handler>(
                     target: target.to_string(),
                     name,
                     instructions,
+                    security_key: None,
                     prompts: prompts
                         .into_iter()
                         .map(|p| AuthPromptField { prompt: p.prompt, echo: p.echo })
