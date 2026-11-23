@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useSyncStore } from "../stores/useSyncStore";
+import { parseSyncEvents } from "../lib/syncEvents";
 
 /**
  * Root-level hook that maintains a continuous WebSocket connection
@@ -44,21 +45,21 @@ export function useLiveSync() {
         };
 
         socket.onmessage = async (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === "SYNC_UPDATED") {
-              const myDeviceId = getDeviceId();
-              if (data.device_id && data.device_id === myDeviceId) {
-                // Ignore broadcast originating from this device itself
-                return;
-              }
-              // Remote update detected from another device — auto pull changes
-              await pullRef.current().catch(() => {
-                // Error is already tracked in store
-              });
-            }
-          } catch {
-            // Ignore parse errors (e.g. non-JSON control messages)
+          if (typeof event.data !== "string") return;
+          // A message may carry several events (older relays batch them);
+          // non-JSON control messages yield no events.
+          const myDeviceId = getDeviceId();
+          const remoteUpdate = parseSyncEvents(event.data).some((data) => {
+            if (!data || typeof data !== "object") return false;
+            const { type, device_id } = data as { type?: unknown; device_id?: unknown };
+            // Ignore broadcasts originating from this device itself
+            return type === "SYNC_UPDATED" && !(device_id && device_id === myDeviceId);
+          });
+          if (remoteUpdate) {
+            // One pull fetches the latest state, however many updates arrived.
+            await pullRef.current().catch(() => {
+              // Error is already tracked in store
+            });
           }
         };
 
