@@ -255,6 +255,13 @@ export interface TerminalAiRequest {
   /** Fallbacks used only when environment detection is unavailable. */
   os_type?: string | null;
   username?: string | null;
+  /** Earlier exchange this request follows up on (prompt + answer only, no buffer). */
+  previous?: AiPreviousTurn | null;
+}
+
+export interface AiPreviousTurn {
+  prompt: string;
+  answer: string;
 }
 
 export type AiRiskLevel = "safe" | "modifying" | "destructive";

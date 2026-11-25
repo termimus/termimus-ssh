@@ -6,6 +6,7 @@ import {
   TerminalAiRequest,
   AiStreamChunk,
   AiCommandResult,
+  AiPreviousTurn,
   TerminalEnvironment,
   AI_CANCELLED,
 } from "../lib/api";
@@ -38,6 +39,31 @@ export interface AiHistoryItem {
   timestamp: string;
   sessionId?: string;
   hostLabel?: string;
+  /** Prompt of the earlier answer this entry followed up on. */
+  followUpTo?: string;
+}
+
+/**
+ * The earlier exchange sent as context when following up on `item`. Generate
+ * answers are replayed in the model's JSON contract so a follow-up in Generate
+ * mode keeps answering in that format.
+ */
+export function previousTurnOf(item: AiHistoryItem): AiPreviousTurn {
+  const cmd = item.command;
+  const answer = cmd
+    ? JSON.stringify({
+        command: cmd.command,
+        explanation: cmd.explanation,
+        risk: cmd.risk,
+        needs_sudo: cmd.needs_sudo,
+      })
+    : item.result;
+  return { prompt: item.prompt, answer };
+}
+
+/** Whether `item` has a usable answer to follow up on. */
+export function canFollowUp(item: AiHistoryItem): boolean {
+  return !item.error && !item.cancelled && !!item.result.trim();
 }
 
 /** A request currently streaming for one terminal session + mode. */
@@ -45,6 +71,7 @@ export interface AiLiveRun {
   requestId: string;
   mode: AiMode;
   prompt: string;
+  followUpTo?: string;
   /** Raw streamed text (JSON in generate mode) — render via `extractStreamingCommand`. */
   stream: string;
   error: string | null;
@@ -272,11 +299,12 @@ export const useAiStore = create<AiState>((set, get) => {
         ...base,
         prompt: input.prompt || (isGen ? "" : i18n.t("ai.diagnosePrompt")),
         hostLabel: input.host_label ?? undefined,
+        followUpTo: input.previous ? input.previous.prompt || i18n.t("ai.diagnosePrompt") : undefined,
       };
       const item = base;
       set((s) => ({
         runs: withRun(s.runs, sessionId, mode, (r) =>
-          r.requestId === requestId ? { ...r, prompt: item.prompt } : r
+          r.requestId === requestId ? { ...r, prompt: item.prompt, followUpTo: item.followUpTo } : r
         ),
       }));
 
