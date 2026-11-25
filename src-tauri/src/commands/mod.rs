@@ -2097,6 +2097,44 @@ pub struct TerminalAiRequest {
     pub os_type: Option<String>,
     /// Fallback username (host config) when detection is unavailable.
     pub username: Option<String>,
+    /// Earlier Copilot exchange this request follows up on (one turn only).
+    #[serde(default)]
+    pub previous: Option<AiPreviousTurn>,
+}
+
+/// One earlier question/answer pair, replayed as conversation context for a
+/// follow-up. Only the prompt and answer travel — never the earlier terminal
+/// buffer — so a follow-up doesn't silently resend old terminal output.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AiPreviousTurn {
+    pub prompt: String,
+    pub answer: String,
+}
+
+/// Upper bound (in chars) for a replayed earlier answer, to keep follow-ups cheap.
+const AI_PREVIOUS_ANSWER_MAX_CHARS: usize = 8_000;
+
+/// Builds the chat messages: system prompt, the optional earlier exchange
+/// (user + assistant), then the new user message.
+fn ai_messages(
+    system_prompt: String,
+    previous: Option<&AiPreviousTurn>,
+    user_content: String,
+) -> Vec<crate::ai::ChatMessage> {
+    use crate::ai::ChatMessage;
+    let mut messages = vec![ChatMessage { role: "system".to_string(), content: system_prompt }];
+    if let Some(prev) = previous.filter(|p| !p.answer.trim().is_empty()) {
+        let question = if prev.prompt.trim().is_empty() {
+            "Please diagnose the terminal issue.".to_string()
+        } else {
+            prev.prompt.trim().to_string()
+        };
+        let answer: String = prev.answer.trim().chars().take(AI_PREVIOUS_ANSWER_MAX_CHARS).collect();
+        messages.push(ChatMessage { role: "user".to_string(), content: question });
+        messages.push(ChatMessage { role: "assistant".to_string(), content: answer });
+    }
+    messages.push(ChatMessage { role: "user".to_string(), content: user_content });
+    messages
 }
 
 impl TerminalAiRequest {
@@ -2442,13 +2480,10 @@ pub async fn ai_generate_terminal_command(
 
     let mut user_content =
         build_user_content("Recent terminal output:", request.buffer_context.as_deref());
-    user_content.push_str("Task: ");
+    user_content.push_str(if request.previous.is_some() { "Follow-up task: " } else { "Task: " });
     user_content.push_str(&request.prompt);
 
-    let messages = vec![
-        crate::ai::ChatMessage { role: "system".to_string(), content: system_prompt },
-        crate::ai::ChatMessage { role: "user".to_string(), content: user_content },
-    ];
+    let messages = ai_messages(system_prompt, request.previous.as_ref(), user_content);
 
     let raw = run_ai_stream(&app, &state, &request.request_id, messages).await?;
     let result = crate::ai::parse_command_response(&raw);
@@ -2471,17 +2506,50 @@ pub async fn ai_explain_terminal_error(
     if !request.prompt.trim().is_empty() {
         user_content.push_str("User note / question: ");
         user_content.push_str(&request.prompt);
+    } else if request.previous.is_some() {
+        user_content.push_str("Re-check the issue against the output above and update the diagnosis and fix.");
     } else {
         user_content.push_str("Please diagnose this terminal issue and provide the fix command.");
     }
 
-    let messages = vec![
-        crate::ai::ChatMessage { role: "system".to_string(), content: system_prompt },
-        crate::ai::ChatMessage { role: "user".to_string(), content: user_content },
-    ];
+    let messages = ai_messages(system_prompt, request.previous.as_ref(), user_content);
 
     let raw = run_ai_stream(&app, &state, &request.request_id, messages).await?;
     Ok(crate::ai::command::strip_code_fences(&raw))
+}
+
+#[cfg(test)]
+mod ai_message_tests {
+    use super::*;
+
+    #[test]
+    fn without_previous_sends_system_and_user() {
+        let m = ai_messages("sys".into(), None, "ask".into());
+        let roles: Vec<_> = m.iter().map(|m| m.role.as_str()).collect();
+        assert_eq!(roles, ["system", "user"]);
+    }
+
+    #[test]
+    fn follow_up_replays_one_turn_before_new_question() {
+        let prev = AiPreviousTurn { prompt: "why?".into(), answer: "because".into() };
+        let m = ai_messages("sys".into(), Some(&prev), "and now?".into());
+        let pairs: Vec<_> = m.iter().map(|m| (m.role.as_str(), m.content.as_str())).collect();
+        assert_eq!(
+            pairs,
+            [("system", "sys"), ("user", "why?"), ("assistant", "because"), ("user", "and now?")]
+        );
+    }
+
+    #[test]
+    fn empty_previous_answer_is_ignored_and_long_one_truncated() {
+        let empty = AiPreviousTurn { prompt: "q".into(), answer: "  ".into() };
+        assert_eq!(ai_messages("s".into(), Some(&empty), "u".into()).len(), 2);
+
+        let long = AiPreviousTurn { prompt: "".into(), answer: "x".repeat(20_000) };
+        let m = ai_messages("s".into(), Some(&long), "u".into());
+        assert_eq!(m[2].content.chars().count(), AI_PREVIOUS_ANSWER_MAX_CHARS);
+        assert!(!m[1].content.is_empty());
+    }
 }
 
 #[cfg(test)]
