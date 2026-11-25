@@ -16,6 +16,9 @@ import {
   Square,
   Cpu,
   Ban,
+  Reply,
+  CornerDownRight,
+  X,
 } from "lucide-react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Trans, useTranslation } from "react-i18next";
@@ -27,7 +30,9 @@ import {
   AI_COPILOT_SHORTCUT_LABEL,
   EMPTY_HISTORY,
   aiHostKey,
+  canFollowUp,
   extractStreamingCommand,
+  previousTurnOf,
 } from "../../stores/useAiStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useHostStore } from "../../stores/useHostStore";
@@ -119,6 +124,8 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [pendingRun, setPendingRun] = useState<PendingRun | null>(null);
+  /** Earlier answer the next request follows up on (sent as conversation context). */
+  const [followUp, setFollowUp] = useState<AiHistoryItem | null>(null);
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const feedEndRef = useRef<HTMLDivElement>(null);
@@ -151,6 +158,17 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
     .filter((r): r is AiLiveRun => !!r);
   const modeBusy = !!sessionRuns?.[mode];
   const liveSize = liveRuns.reduce((n, r) => n + r.stream.length, 0);
+
+  // A follow-up belongs to the host it was picked on.
+  useEffect(() => {
+    setFollowUp(null);
+  }, [hostKey]);
+
+  const startFollowUp = (item: AiHistoryItem) => {
+    setFollowUp(item);
+    setMode(item.mode);
+    inputRef.current?.focus();
+  };
 
   // Keep the newest card in view
   useEffect(() => {
@@ -238,10 +256,14 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
 
     // Same context builder as the inline `# prompt` flow (env probe is cached).
     // Passed as a promise so the request slot is claimed before the probe runs.
-    const req = buildAiRequest(sessionId, prompt, bufferContext);
+    const previous = followUp ? previousTurnOf(followUp) : undefined;
+    const req = buildAiRequest(sessionId, prompt, bufferContext, previous);
     const outcome =
       mode === "generate" ? await generateCommand(sessionId, req) : await explainError(sessionId, req);
-    if (outcome.value !== null) setPrompt("");
+    if (outcome.value !== null) {
+      setPrompt("");
+      setFollowUp(null);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -434,6 +456,8 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
             onCopy={handleCopy}
             isCopied={copiedId === item.id}
             snippetActions={snippetActions(item)}
+            onFollowUp={startFollowUp}
+            isFollowUpTarget={followUp?.id === item.id}
           />
         ))}
 
@@ -464,6 +488,24 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
             </label>
           </div>
 
+          {followUp && (
+            <div className="flex items-center gap-1.5 rounded-lg border border-[var(--primary)]/30 bg-[var(--primary)]/10 px-2 py-1 text-[11px] text-[var(--text-secondary)]">
+              <CornerDownRight className="w-3 h-3 shrink-0 text-[var(--primary)]" />
+              <span className="shrink-0 font-medium text-[var(--primary)]">{t("ai.sidebar.followUpTo")}</span>
+              <span className="truncate" title={followUp.prompt}>
+                &ldquo;{followUp.prompt || t("ai.diagnosePrompt")}&rdquo;
+              </span>
+              <button
+                type="button"
+                onClick={() => setFollowUp(null)}
+                title={t("ai.sidebar.cancelFollowUp")}
+                className="ml-auto shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container-high)] cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
           <div className="relative">
             <textarea
               ref={inputRef}
@@ -472,7 +514,9 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={
-                mode === "generate"
+                followUp
+                  ? t("ai.sidebar.placeholderFollowUp")
+                  : mode === "generate"
                   ? t("ai.sidebar.placeholderGenerate")
                   : t("ai.sidebar.placeholderExplain")
               }
@@ -546,9 +590,21 @@ interface HistoryCardProps {
   isCopied: boolean;
   /** Copy / Insert / Run for code blocks inside an Explain answer. */
   snippetActions: CodeBlockActions;
+  onFollowUp: (item: AiHistoryItem) => void;
+  /** This card is the context of the follow-up being composed. */
+  isFollowUpTarget: boolean;
 }
 
-function HistoryCard({ item, onRun, onInsert, onCopy, isCopied, snippetActions }: HistoryCardProps) {
+function HistoryCard({
+  item,
+  onRun,
+  onInsert,
+  onCopy,
+  isCopied,
+  snippetActions,
+  onFollowUp,
+  isFollowUpTarget,
+}: HistoryCardProps) {
   const { t } = useTranslation();
   const cmd = item.command;
   // Only complete, structured generate results are runnable — never a partial
@@ -556,7 +612,11 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied, snippetActions }
   const runnable = item.mode === "generate" && !!cmd && !item.cancelled && !item.error;
 
   return (
-    <div className="p-3 rounded-xl border border-[var(--border)]/80 bg-[var(--surface-container-low)] space-y-2 text-xs shadow-xs">
+    <div
+      className={`p-3 rounded-xl border bg-[var(--surface-container-low)] space-y-2 text-xs shadow-xs transition-colors ${
+        isFollowUpTarget ? "border-[var(--primary)]/60" : "border-[var(--border)]/80"
+      }`}
+    >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[var(--surface-container-high)] text-[var(--text-secondary)] uppercase">
@@ -583,6 +643,8 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied, snippetActions }
           )}
         </div>
       </div>
+
+      {item.followUpTo && <FollowUpLine prompt={item.followUpTo} />}
 
       {item.prompt && (
         <div className="text-[11px] text-[var(--text-secondary)] font-medium select-text cursor-text [overflow-wrap:anywhere]">
@@ -625,6 +687,17 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied, snippetActions }
 
           {item.result && (
             <div className="flex items-center justify-end gap-1.5 mt-2">
+              {canFollowUp(item) && (
+                <button
+                  type="button"
+                  onClick={() => onFollowUp(item)}
+                  title={t("ai.sidebar.followUpTitle")}
+                  className="mr-auto px-1.5 py-0.5 rounded-md text-[10px] font-medium text-[var(--text-muted)] hover:text-[var(--primary)] hover:bg-[var(--primary)]/10 flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Reply className="w-3 h-3" />
+                  {t("ai.sidebar.followUp")}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => onCopy(item.result, item.id)}
@@ -704,6 +777,8 @@ function LiveRunCard({ run, detecting }: { run: AiLiveRun; detecting: boolean })
         </span>
       </div>
 
+      {run.followUpTo && <FollowUpLine prompt={run.followUpTo} />}
+
       {run.prompt && (
         <div className="text-[11px] text-[var(--text-secondary)] font-medium select-text [overflow-wrap:anywhere]">
           &ldquo;{run.prompt}&rdquo;
@@ -725,6 +800,19 @@ function LiveRunCard({ run, detecting }: { run: AiLiveRun; detecting: boolean })
       ) : (
         <AiMarkdown text={text} streaming />
       )}
+    </div>
+  );
+}
+
+function FollowUpLine({ prompt }: { prompt: string }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center gap-1 text-[10px] text-[var(--text-muted)] min-w-0">
+      <CornerDownRight className="w-3 h-3 shrink-0" />
+      <span className="shrink-0">{t("ai.sidebar.followUpTo")}</span>
+      <span className="truncate" title={prompt}>
+        &ldquo;{prompt}&rdquo;
+      </span>
     </div>
   );
 }

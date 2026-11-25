@@ -1,6 +1,7 @@
 import { useSessionStore, SshTab } from "../stores/useSessionStore";
 import { useHostStore } from "../stores/useHostStore";
 import { useAiStore, AiRequestInput } from "../stores/useAiStore";
+import type { AiPreviousTurn } from "./api";
 
 export function detectLocalOs(): string {
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
@@ -18,12 +19,14 @@ export function isLocalTab(tab: SshTab | undefined, sessionId?: string): boolean
  * environment (probed once per session) and host-config fallbacks. Shared by
  * the Copilot sidebar and the inline `# prompt` flow so both send identical
  * context. `bufferContext` is passed in (rather than read here) to keep this
- * module free of an import cycle with XtermView's terminal pool.
+ * module free of an import cycle with XtermView's terminal pool. `previous`
+ * makes it a follow-up to an earlier Copilot answer.
  */
 export async function buildAiRequest(
   sessionId: string,
   prompt: string,
-  bufferContext?: string
+  bufferContext?: string,
+  previous?: AiPreviousTurn
 ): Promise<AiRequestInput> {
   const tab = useSessionStore.getState().tabs.find((t) => t.id === sessionId);
   const host = tab ? useHostStore.getState().hosts.find((h) => h.id === tab.hostId) : undefined;
@@ -40,6 +43,7 @@ export async function buildAiRequest(
     environment,
     os_type: isLocal ? detectLocalOs() : host?.os_icon ?? null,
     username: isLocal ? null : host?.username ?? null,
+    previous: previous ?? null,
   };
 }
 
