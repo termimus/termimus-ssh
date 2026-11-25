@@ -16,7 +16,7 @@ export function RightPanelTabs() {
     useShallow((s) => ({ activeTab: s.activeTab, setTab: s.setTab }))
   );
   const snippetCount = useSnippetStore((s) => s.snippets.length);
-  const aiBusy = useAiStore((s) => s.isGenerating || s.isExplaining);
+  const aiBusy = useAiStore((s) => Object.keys(s.runs).length > 0);
 
   const tabs: {
     id: RightPanelTab;

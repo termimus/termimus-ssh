@@ -129,6 +129,7 @@ pub fn run() {
             commands::ai_explain_terminal_error,
             commands::ai_detect_environment,
             commands::ai_cancel,
+            commands::ai_classify_command,
         ])
         .build(tauri::generate_context!())
         .expect("error while building termimus application")

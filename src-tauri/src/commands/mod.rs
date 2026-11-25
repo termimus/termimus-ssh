@@ -2340,6 +2340,21 @@ pub async fn ai_detect_environment(
     Ok(crate::ai::parse_probe_output(&output))
 }
 
+/// Risk classification for a command the user is about to run from the Copilot
+/// (e.g. a fix suggested inside an Explain answer). Uses the same local
+/// heuristic as generated commands, independent of the model.
+#[derive(serde::Serialize)]
+pub struct AiCommandRisk {
+    pub risk: crate::ai::RiskLevel,
+    pub reasons: Vec<String>,
+}
+
+#[tauri::command]
+pub fn ai_classify_command(command: String) -> Result<AiCommandRisk, String> {
+    let (risk, reasons) = crate::ai::classify_risk(&command);
+    Ok(AiCommandRisk { risk, reasons })
+}
+
 /// Aborts an in-flight `ai_generate_terminal_command` / `ai_explain_terminal_error`.
 #[tauri::command]
 pub fn ai_cancel(state: State<'_, AppState>, request_id: String) -> Result<bool, String> {

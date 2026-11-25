@@ -213,8 +213,8 @@ async function runInlineAi(sessionId: string, query: string) {
   }
 
   // From here on everything up to generateCommand() is synchronous, so the
-  // generate slot is claimed before any other request can start.
-  if (useAiStore.getState().isGenerating) {
+  // session's generate slot is claimed before any other request can start.
+  if (useAiStore.getState().isBusy(sessionId, "generate")) {
     ai.setInline(sessionId, { status: "error", prompt: query, message: aiBusyMessage() });
     return;
   }
@@ -224,7 +224,7 @@ async function runInlineAi(sessionId: string, query: string) {
   const context = getTerminalBufferSlice(sessionId, 51).split("\n").slice(0, -1).join("\n");
   const outcome = await useAiStore
     .getState()
-    .generateCommand(buildAiRequest(sessionId, query, context));
+    .generateCommand(sessionId, buildAiRequest(sessionId, query, context));
   const result = outcome.value;
 
   const st = useAiStore.getState();
@@ -489,7 +489,7 @@ function bindTerminalShortcuts(
       useAiStore.getState().inline[targetSessionId]?.status === "generating"
     ) {
       event.preventDefault();
-      void useAiStore.getState().cancelInFlight("generate");
+      void useAiStore.getState().cancelInFlight(targetSessionId, "generate");
       return false;
     }
 
