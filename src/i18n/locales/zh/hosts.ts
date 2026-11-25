@@ -96,6 +96,9 @@ export const hostsZh: typeof hostsEn = {
     authMethod: "认证方式",
     authPassword: "密码",
     authKey: "私钥 PEM",
+    authAgent: "SSH 代理",
+    agentNote:
+      "使用本地 SSH 代理持有的密钥（Bitwarden、1Password 或系统 OpenSSH 代理）。无需导入密钥——由代理签署登录挑战。",
     keychainIdentity: "钥匙串凭据",
     reusableCredentials: "可复用凭据",
     customPassword: "-- 自定义单次密码 --",
