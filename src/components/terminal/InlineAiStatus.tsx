@@ -31,7 +31,7 @@ export function InlineAiStatus({ sessionId }: { sessionId: string }) {
   const setInline = useAiStore((s) => s.setInline);
   const openSidebar = useAiStore((s) => s.openSidebar);
   const streaming = useAiStore((s) =>
-    state?.status === "generating" ? s.streamingCommand.length : 0
+    state?.status === "generating" ? s.runs[sessionId]?.generate?.stream.length ?? 0 : 0
   );
 
   useEffect(() => {

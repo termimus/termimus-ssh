@@ -511,4 +511,6 @@ export const api = {
   detectAiEnvironment: (sessionId: string, isLocal: boolean) =>
     invoke<TerminalEnvironment>("ai_detect_environment", { sessionId, isLocal }),
   cancelAi: (requestId: string) => invoke<boolean>("ai_cancel", { requestId }),
+  classifyAiCommand: (command: string) =>
+    invoke<{ risk: AiRiskLevel; reasons: string[] }>("ai_classify_command", { command }),
 };

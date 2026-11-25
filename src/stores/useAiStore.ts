@@ -11,6 +11,7 @@ import {
 } from "../lib/api";
 import { listen } from "@tauri-apps/api/event";
 import { useRightPanelStore } from "./useRightPanelStore";
+import { useSessionStore } from "./useSessionStore";
 import i18n from "../i18n";
 
 /** Display label for the Copilot toggle shortcut (Alt+I, or Cmd+I on macOS). */
@@ -20,6 +21,9 @@ export const AI_COPILOT_SHORTCUT_LABEL =
     : "Alt+I";
 
 export type AiMode = "generate" | "explain";
+
+/** Max Copilot history entries kept per host (in memory only). */
+const HISTORY_LIMIT = 50;
 
 export interface AiHistoryItem {
   id: string;
@@ -36,6 +40,16 @@ export interface AiHistoryItem {
   hostLabel?: string;
 }
 
+/** A request currently streaming for one terminal session + mode. */
+export interface AiLiveRun {
+  requestId: string;
+  mode: AiMode;
+  prompt: string;
+  /** Raw streamed text (JSON in generate mode) — render via `extractStreamingCommand`. */
+  stream: string;
+  error: string | null;
+}
+
 /** Request payload without the store-generated `request_id`. */
 export type AiRequestInput = Omit<TerminalAiRequest, "request_id">;
 
@@ -44,7 +58,7 @@ export interface AiOutcome<T> {
   value: T | null;
   error?: string;
   cancelled?: boolean;
-  /** Another request of the same mode was already running; nothing was sent. */
+  /** Another request of the same mode was already running for this session; nothing was sent. */
   busy?: boolean;
 }
 
@@ -62,6 +76,20 @@ export interface InlineAiState {
   command?: AiCommandResult;
 }
 
+/**
+ * History bucket for a terminal session: its saved host id (`"local"` for local
+ * shells). Keyed by host rather than session so history survives reconnects
+ * and new tabs to the same server.
+ */
+export function aiHostKey(sessionId: string): string {
+  const tab = useSessionStore.getState().tabs.find((t) => t.id === sessionId);
+  if (tab?.isLocal || sessionId.startsWith("local-")) return "local";
+  return tab?.hostId ?? sessionId;
+}
+
+/** Stable empty values so selectors don't return fresh references. */
+export const EMPTY_HISTORY: AiHistoryItem[] = [];
+
 interface AiState {
   providers: AiProviderSummary[];
   activeProvider: AiProviderSummary | null;
@@ -70,25 +98,15 @@ interface AiState {
 
   // Sidebar state (open/closed lives in useRightPanelStore, "ai" tab)
   activeSessionId: string | null;
-  history: AiHistoryItem[];
+  /** Copilot history per host (see `aiHostKey`). In memory only. */
+  histories: Record<string, AiHistoryItem[]>;
 
   // Detected terminal environments, keyed by session id
   environments: Record<string, TerminalEnvironment>;
   environmentStatus: Record<string, EnvironmentStatus>;
 
-  // Active generation state
-  isGenerating: boolean;
-  /** Raw streamed text (JSON in generate mode) — render via `extractStreamingCommand`. */
-  streamingCommand: string;
-  generationError: string | null;
-
-  // Explainer state
-  isExplaining: boolean;
-  streamingExplanation: string;
-  explanationError: string | null;
-
-  /** In-flight request ids per mode (used for Stop). */
-  inflight: Record<AiMode, string | null>;
+  /** In-flight requests per session id and mode. */
+  runs: Record<string, Partial<Record<AiMode, AiLiveRun>>>;
 
   /** Inline `# prompt` status per terminal session (drives the in-terminal overlay). */
   inline: Record<string, InlineAiState>;
@@ -105,24 +123,32 @@ interface AiState {
   toggleSidebar: (sessionId?: string) => void;
   openSidebar: (sessionId?: string) => void;
   closeSidebar: () => void;
-  clearHistory: () => void;
+  /** Clears the history of one host (see `aiHostKey`). */
+  clearHistory: (hostKey: string) => void;
 
   /** Detects (once per session, deduplicated) the session's OS/shell/user. Never throws. */
   ensureEnvironment: (sessionId: string, isLocal: boolean) => Promise<TerminalEnvironment | null>;
 
+  /** Whether a request of `mode` (or any mode) is running for `sessionId`. */
+  isBusy: (sessionId: string, mode?: AiMode) => boolean;
+
   /**
-   * Runs a request. The mode's slot is claimed synchronously (before `request`
-   * resolves), so concurrent callers get `busy` instead of interleaving
-   * streams, and Stop works while the context is still being prepared.
+   * Runs a request for `sessionId`. The session's mode slot is claimed
+   * synchronously (before `request` resolves), so concurrent callers for the
+   * same terminal get `busy` instead of interleaving streams, other terminals
+   * are unaffected, and Stop works while the context is still being prepared.
    */
   generateCommand: (
+    sessionId: string,
     request: AiRequestInput | Promise<AiRequestInput>
   ) => Promise<AiOutcome<AiCommandResult>>;
-  explainError: (request: AiRequestInput | Promise<AiRequestInput>) => Promise<AiOutcome<string>>;
-  /** Stops in-flight AI requests (all modes, or only `mode`). */
-  cancelInFlight: (mode?: AiMode) => Promise<void>;
-  clearStreaming: () => void;
-  /** Drops per-session state (inline status, detected environment) when a tab closes. */
+  explainError: (
+    sessionId: string,
+    request: AiRequestInput | Promise<AiRequestInput>
+  ) => Promise<AiOutcome<string>>;
+  /** Stops in-flight AI requests of one session (or all sessions), optionally only `mode`. */
+  cancelInFlight: (sessionId?: string, mode?: AiMode) => Promise<void>;
+  /** Drops per-session state (inline status, detected environment, runs) when a tab closes. */
   forgetSession: (sessionId: string) => void;
 }
 
@@ -167,105 +193,132 @@ export function extractStreamingCommand(raw: string): string {
   return head.startsWith("{") || head.startsWith("```") ? "" : raw;
 }
 
+function withRun(
+  runs: AiState["runs"],
+  sessionId: string,
+  mode: AiMode,
+  update: ((run: AiLiveRun) => AiLiveRun | null) | AiLiveRun | null
+): AiState["runs"] {
+  const current = runs[sessionId] ?? {};
+  const prev = current[mode];
+  const next = typeof update === "function" ? (prev ? update(prev) : null) : update;
+  const forSession = { ...current };
+  if (next) forSession[mode] = next;
+  else delete forSession[mode];
+  const out = { ...runs };
+  if (forSession.generate || forSession.explain) out[sessionId] = forSession;
+  else delete out[sessionId];
+  return out;
+}
+
+function withHistoryItem(
+  histories: AiState["histories"],
+  hostKey: string,
+  item: AiHistoryItem
+): AiState["histories"] {
+  const list = [...(histories[hostKey] ?? []), item];
+  return { ...histories, [hostKey]: list.slice(-HISTORY_LIMIT) };
+}
+
 export const useAiStore = create<AiState>((set, get) => {
   /** Shared runner for both modes: stream listener, history entry, cancel handling. */
   async function runRequest<T>(
     mode: AiMode,
+    sessionId: string,
     inputOrPromise: AiRequestInput | Promise<AiRequestInput>,
     invokeFn: (req: TerminalAiRequest) => Promise<T>,
     toHistory: (value: T) => Pick<AiHistoryItem, "result" | "command">
   ): Promise<AiOutcome<T>> {
     const isGen = mode === "generate";
-    const streamKey = isGen ? "streamingCommand" : "streamingExplanation";
-    const errorKey = isGen ? "generationError" : "explanationError";
-    const busyKey = isGen ? "isGenerating" : "isExplaining";
 
     // Claim the slot synchronously — no await before this point.
-    if (get()[busyKey]) return { value: null, busy: true, error: aiBusyMessage() };
+    if (get().isBusy(sessionId, mode)) return { value: null, busy: true, error: aiBusyMessage() };
     const requestId = newRequestId();
+    // Resolved now so the entry lands with the host the request was made for.
+    const hostKey = aiHostKey(sessionId);
+    const isActive = () => get().runs[sessionId]?.[mode]?.requestId === requestId;
+    const addHistory = (item: AiHistoryItem) =>
+      set((s) => ({ histories: withHistoryItem(s.histories, hostKey, item) }));
+
     set((s) => ({
-      [busyKey]: true,
-      [streamKey]: "",
-      [errorKey]: null,
-      inflight: { ...s.inflight, [mode]: requestId },
-    }) as Partial<AiState>);
+      runs: withRun(s.runs, sessionId, mode, {
+        requestId,
+        mode,
+        prompt: "",
+        stream: "",
+        error: null,
+      }),
+    }));
 
     let unlisten: (() => void) | null = null;
-    let base: Omit<AiHistoryItem, "result"> | null = null;
+    let base: Omit<AiHistoryItem, "result"> = {
+      id: requestId,
+      mode,
+      prompt: "",
+      timestamp: nowLabel(),
+      sessionId,
+    };
     try {
       let input: AiRequestInput;
       try {
         input = await inputOrPromise;
       } catch (err: unknown) {
         const msg = errorMessage(err);
-        set({ [errorKey]: msg } as Partial<AiState>);
+        addHistory({ ...base, result: "", error: msg });
         return { value: null, error: msg };
       }
 
       base = {
-        id: requestId,
-        mode,
+        ...base,
         prompt: input.prompt || (isGen ? "" : i18n.t("ai.diagnosePrompt")),
-        timestamp: nowLabel(),
-        sessionId: input.session_id,
         hostLabel: input.host_label ?? undefined,
       };
       const item = base;
+      set((s) => ({
+        runs: withRun(s.runs, sessionId, mode, (r) =>
+          r.requestId === requestId ? { ...r, prompt: item.prompt } : r
+        ),
+      }));
 
       unlisten = await listen<AiStreamChunk>(`ai-stream-${requestId}`, (event) => {
         // Ignore stragglers once the request is no longer the active one.
-        if (get().inflight[mode] !== requestId) return;
-        if (event.payload.error) {
-          set({ [errorKey]: event.payload.error } as Partial<AiState>);
-        } else if (!event.payload.done) {
-          set((s) => ({ [streamKey]: s[streamKey] + event.payload.chunk }) as Partial<AiState>);
-        }
+        if (!isActive()) return;
+        const { chunk, done, error } = event.payload;
+        if (!error && (done || !chunk)) return;
+        set((s) => ({
+          runs: withRun(s.runs, sessionId, mode, (r) =>
+            error ? { ...r, error } : { ...r, stream: r.stream + chunk }
+          ),
+        }));
       });
 
       // Stopped while the context was being prepared.
       if (cancelledBeforeStart.has(requestId)) {
-        set((s) => ({ history: [...s.history, { ...item, result: "", cancelled: true }] }));
+        addHistory({ ...item, result: "", cancelled: true });
         return { value: null, cancelled: true };
       }
 
       const request: TerminalAiRequest = { ...input, request_id: requestId };
       const value = await invokeFn(request);
-      // The finished result lives in history; clear the live card so it isn't shown twice.
-      set((s) => ({
-        [streamKey]: "",
-        [errorKey]: null,
-        history: [...s.history, { ...item, ...toHistory(value) }],
-      }) as Partial<AiState>);
+      addHistory({ ...item, ...toHistory(value) });
       return { value };
     } catch (err: unknown) {
       const msg = errorMessage(err);
       const cancelled = msg === AI_CANCELLED || cancelledBeforeStart.has(requestId);
-      const partial = get()[streamKey];
-      const item = base;
-      set((s) => ({
-        [streamKey]: "",
-        [errorKey]: null,
-        history: item
-          ? [
-              ...s.history,
-              cancelled
-                ? {
-                    ...item,
-                    result: isGen ? extractStreamingCommand(partial) : partial,
-                    cancelled: true,
-                  }
-                : { ...item, result: "", error: msg },
-            ]
-          : s.history,
-      }) as Partial<AiState>);
+      const partial = get().runs[sessionId]?.[mode]?.stream ?? "";
+      addHistory(
+        cancelled
+          ? { ...base, result: isGen ? extractStreamingCommand(partial) : partial, cancelled: true }
+          : { ...base, result: "", error: msg }
+      );
       return cancelled ? { value: null, cancelled: true } : { value: null, error: msg };
     } finally {
       unlisten?.();
       cancelledBeforeStart.delete(requestId);
+      // The finished result now lives in history; drop the live run.
       set((s) => ({
-        [busyKey]: false,
-        inflight: { ...s.inflight, [mode]: s.inflight[mode] === requestId ? null : s.inflight[mode] },
-      }) as Partial<AiState>);
+        runs: withRun(s.runs, sessionId, mode, (r) => (r.requestId === requestId ? null : r)),
+      }));
     }
   }
 
@@ -276,20 +329,12 @@ export const useAiStore = create<AiState>((set, get) => {
     error: null,
 
     activeSessionId: null,
-    history: [],
+    histories: {},
 
     environments: {},
     environmentStatus: {},
 
-    isGenerating: false,
-    streamingCommand: "",
-    generationError: null,
-
-    isExplaining: false,
-    streamingExplanation: "",
-    explanationError: null,
-
-    inflight: { generate: null, explain: null },
+    runs: {},
 
     inline: {},
     setInline: (sessionId, state) =>
@@ -370,8 +415,12 @@ export const useAiStore = create<AiState>((set, get) => {
       if (panel.activeTab === "ai") panel.close();
     },
 
-    clearHistory: () => {
-      set({ history: [], streamingCommand: "", streamingExplanation: "" });
+    clearHistory: (hostKey: string) => {
+      set((s) => {
+        const histories = { ...s.histories };
+        delete histories[hostKey];
+        return { histories };
+      });
     },
 
     ensureEnvironment: async (sessionId: string, isLocal: boolean) => {
@@ -400,20 +449,29 @@ export const useAiStore = create<AiState>((set, get) => {
       return probe;
     },
 
-    generateCommand: (request) =>
-      runRequest("generate", request, api.generateTerminalCommand, (cmd) => ({
+    isBusy: (sessionId: string, mode?: AiMode) => {
+      const run = get().runs[sessionId];
+      return mode ? !!run?.[mode] : !!(run?.generate || run?.explain);
+    },
+
+    generateCommand: (sessionId, request) =>
+      runRequest("generate", sessionId, request, api.generateTerminalCommand, (cmd) => ({
         result: cmd.command,
         command: cmd,
       })),
 
-    explainError: (request) =>
-      runRequest("explain", request, api.explainTerminalError, (text) => ({ result: text })),
+    explainError: (sessionId, request) =>
+      runRequest("explain", sessionId, request, api.explainTerminalError, (text) => ({
+        result: text,
+      })),
 
-    cancelInFlight: async (mode?: AiMode) => {
-      const { inflight } = get();
-      const ids = (mode ? [inflight[mode]] : Object.values(inflight)).filter(
-        (id): id is string => !!id
-      );
+    cancelInFlight: async (sessionId?: string, mode?: AiMode) => {
+      const { runs } = get();
+      const sessions = sessionId ? [runs[sessionId]] : Object.values(runs);
+      const ids = sessions
+        .flatMap((r) => (r ? (mode ? [r[mode]] : [r.generate, r.explain]) : []))
+        .map((run) => run?.requestId)
+        .filter((id): id is string => !!id);
       // Requests still preparing (env probe) haven't reached the backend yet.
       ids.forEach((id) => cancelledBeforeStart.add(id));
       await Promise.all(
@@ -423,6 +481,8 @@ export const useAiStore = create<AiState>((set, get) => {
 
     forgetSession: (sessionId: string) => {
       pendingEnvironment.delete(sessionId);
+      // A closed terminal's requests have nowhere to land; stop them.
+      void get().cancelInFlight(sessionId);
       set((s) => {
         const inline = { ...s.inline };
         const environments = { ...s.environments };
@@ -431,15 +491,6 @@ export const useAiStore = create<AiState>((set, get) => {
         delete environments[sessionId];
         delete environmentStatus[sessionId];
         return { inline, environments, environmentStatus };
-      });
-    },
-
-    clearStreaming: () => {
-      set({
-        streamingCommand: "",
-        generationError: null,
-        streamingExplanation: "",
-        explanationError: null,
       });
     },
   };

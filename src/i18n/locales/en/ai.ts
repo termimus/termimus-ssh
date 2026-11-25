@@ -67,7 +67,8 @@ export const aiEn = {
   },
   sidebar: {
     ariaLabel: "AI Copilot Sidebar",
-    clearHistory: "Clear Interaction History",
+    clearHistory: "Clear this host's history",
+    copyAnswer: "Copy full answer",
     configureProvider: "Configure AI Provider",
     configureProviderByok: "Configure AI Provider (BYOK)",
     localShort: "Local",

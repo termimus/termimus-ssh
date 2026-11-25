@@ -12,7 +12,6 @@ import {
   Check,
   Loader2,
   Terminal as TerminalIcon,
-  CheckCircle2,
   CornerDownLeft,
   Square,
   Cpu,
@@ -24,12 +23,16 @@ import { useShallow } from "zustand/react/shallow";
 import {
   useAiStore,
   AiHistoryItem,
+  AiLiveRun,
   AI_COPILOT_SHORTCUT_LABEL,
+  EMPTY_HISTORY,
+  aiHostKey,
   extractStreamingCommand,
 } from "../../stores/useAiStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useHostStore } from "../../stores/useHostStore";
-import { AiRiskLevel, TerminalEnvironment } from "../../lib/api";
+import { api, AiRiskLevel, TerminalEnvironment } from "../../lib/api";
+import { AiMarkdown, CodeBlockActions } from "./AiMarkdown";
 import { getTerminalBufferSlice, focusTerminalSession } from "./XtermView";
 import { AiProviderModal } from "../settings/AiProviderModal";
 import { buildAiRequest, isInsertableCommand } from "../../lib/aiContext";
@@ -75,15 +78,7 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
     explainError,
     cancelInFlight,
     ensureEnvironment,
-    isGenerating,
-    isExplaining,
-    streamingCommand,
-    streamingExplanation,
-    generationError,
-    explanationError,
-    history,
     clearHistory,
-    clearStreaming,
   } = useAiStore(
     useShallow((s) => ({
       activeProvider: s.activeProvider,
@@ -92,15 +87,7 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
       explainError: s.explainError,
       cancelInFlight: s.cancelInFlight,
       ensureEnvironment: s.ensureEnvironment,
-      isGenerating: s.isGenerating,
-      isExplaining: s.isExplaining,
-      streamingCommand: s.streamingCommand,
-      streamingExplanation: s.streamingExplanation,
-      generationError: s.generationError,
-      explanationError: s.explanationError,
-      history: s.history,
       clearHistory: s.clearHistory,
-      clearStreaming: s.clearStreaming,
     }))
   );
 
@@ -115,6 +102,12 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const host = useHostStore((s) => s.hosts.find((h) => h.id === activeTab?.hostId));
   const isLocal = !activeTab || !!activeTab.isLocal || activeTab.id.startsWith("local-");
+  // Requests and history follow the active terminal; history is shared by every
+  // tab of the same saved host and survives reconnects.
+  const sessionId = activeTabId || "default";
+  const hostKey = aiHostKey(sessionId);
+  const history = useAiStore((s) => s.histories[hostKey] ?? EMPTY_HISTORY);
+  const sessionRuns = useAiStore((s) => s.runs[sessionId]);
   const environment = useAiStore((s) => (activeTabId ? s.environments[activeTabId] : undefined));
   const environmentStatus = useAiStore((s) =>
     activeTabId ? s.environmentStatus[activeTabId] : undefined
@@ -151,16 +144,18 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
     }
   }, [active, activeTab?.id, activeTab?.connected, isLocal, ensureEnvironment]);
 
-  const isStreaming = isGenerating || isExplaining;
-  const inProgress = isStreaming;
-  const currentResult =
-    mode === "generate" ? extractStreamingCommand(streamingCommand) : streamingExplanation;
-  const currentError = mode === "generate" ? generationError : explanationError;
+  // Live (still streaming) requests of this terminal, both modes — switching
+  // the mode tab never hides or drops an answer that is still coming in.
+  const liveRuns = (["generate", "explain"] as const)
+    .map((m) => sessionRuns?.[m])
+    .filter((r): r is AiLiveRun => !!r);
+  const modeBusy = !!sessionRuns?.[mode];
+  const liveSize = liveRuns.reduce((n, r) => n + r.stream.length, 0);
 
   // Keep the newest card in view
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ block: "end" });
-  }, [history.length, currentResult]);
+  }, [history.length, liveSize, hostKey]);
 
   const handleCopy = (text: string, id: string) => {
     void copyToClipboard(text.trim());
@@ -175,6 +170,24 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
     },
     [writeCommandToSession]
   );
+
+  /** Run a fix command suggested inside an Explain answer (risk classified locally). */
+  const handleRunSnippet = async (command: string, item: AiHistoryItem) => {
+    let risk: AiRiskLevel = "modifying";
+    let reasons: string[] = [];
+    try {
+      ({ risk, reasons } = await api.classifyAiCommand(command));
+    } catch (e) {
+      console.warn("AI risk classification failed:", e);
+    }
+    handleRunCommand({ command, risk, reasons, sessionId: item.sessionId, hostLabel: item.hostLabel });
+  };
+
+  const snippetActions = (item: AiHistoryItem): CodeBlockActions => ({
+    onCopy: (text) => void copyToClipboard(text),
+    onInsert: (cmd) => void handleInsertCommand(cmd),
+    onRun: activeTab?.connected ? (cmd) => handleRunSnippet(cmd, item) : undefined,
+  });
 
   const handleRunCommand = (item: RunnableCommand) => {
     if (!item.command.trim() || !activeTab?.connected) return;
@@ -213,21 +226,21 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (inProgress) return;
+    if (modeBusy) return;
     if (!activeProvider) {
       setIsSettingsModalOpen(true);
       return;
     }
     if (mode === "generate" && !prompt.trim()) return;
 
-    const sessionId = activeTabId || "default";
     const bufferContext =
       includeBuffer && activeTabId ? getTerminalBufferSlice(activeTabId, 50) : undefined;
 
     // Same context builder as the inline `# prompt` flow (env probe is cached).
     // Passed as a promise so the request slot is claimed before the probe runs.
     const req = buildAiRequest(sessionId, prompt, bufferContext);
-    const outcome = mode === "generate" ? await generateCommand(req) : await explainError(req);
+    const outcome =
+      mode === "generate" ? await generateCommand(sessionId, req) : await explainError(sessionId, req);
     if (outcome.value !== null) setPrompt("");
   };
 
@@ -251,7 +264,7 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
           {history.length > 0 && (
             <button
               type="button"
-              onClick={clearHistory}
+              onClick={() => clearHistory(hostKey)}
               title={t("ai.sidebar.clearHistory")}
               className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors cursor-pointer"
             >
@@ -348,10 +361,7 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
             <button
               key={m}
               type="button"
-              onClick={() => {
-                setMode(m);
-                clearStreaming();
-              }}
+              onClick={() => setMode(m)}
               className={`flex-1 py-1 text-center rounded-md font-medium transition-colors cursor-pointer ${
                 mode === m
                   ? "bg-[var(--primary)] text-[var(--on-primary)] font-semibold shadow-xs"
@@ -367,7 +377,7 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
       {/* ── Scrollable History & Stream Results Feed ─────────────────────────── */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {/* Empty State */}
-        {history.length === 0 && !currentResult && !inProgress && !currentError && (
+        {history.length === 0 && liveRuns.length === 0 && (
           <div className="py-8 px-2 text-center">
             <div className="w-10 h-10 rounded-2xl bg-[var(--primary)]/10 text-[var(--primary)] border border-[var(--primary)]/20 flex items-center justify-center mx-auto mb-3 shadow-xs">
               <Sparkles className="w-5 h-5" />
@@ -423,45 +433,18 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
             onInsert={handleInsertCommand}
             onCopy={handleCopy}
             isCopied={copiedId === item.id}
+            snippetActions={snippetActions(item)}
           />
         ))}
 
-        {/* Live Streaming / Error Card (finished results move into history) */}
-        {(currentResult || inProgress || currentError) && (
-          <div className="p-3 rounded-2xl border border-[var(--primary)]/40 bg-[var(--surface-container-low)] shadow-sm animate-in fade-in duration-150">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-semibold text-[var(--primary)] uppercase tracking-wider flex items-center gap-1.5">
-                {inProgress ? (
-                  <>
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    {environmentStatus === "detecting" && !currentResult ? t("ai.sidebar.detectingEnv") : t("ai.sidebar.synthesizing")}
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-3 h-3" />
-                    {t("ai.sidebar.latestResult")}
-                  </>
-                )}
-              </span>
-            </div>
-
-            {currentError ? (
-              <div className="p-2.5 rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 text-[var(--danger)] text-xs flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span className="break-words leading-relaxed">{currentError}</span>
-              </div>
-            ) : (
-              <div className="p-2.5 rounded-xl border border-[var(--border)] bg-[var(--canvas)] font-mono text-xs text-[var(--primary)] overflow-x-auto leading-relaxed shadow-inner">
-                <pre className="whitespace-pre-wrap break-all font-mono">
-                  {currentResult}
-                  {isStreaming && (
-                    <span className="inline-block w-1.5 h-3.5 bg-[var(--primary)] ml-1 animate-pulse align-middle" />
-                  )}
-                </pre>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Live streaming cards (finished results move into history) */}
+        {liveRuns.map((run) => (
+          <LiveRunCard
+            key={run.requestId}
+            run={run}
+            detecting={environmentStatus === "detecting"}
+          />
+        ))}
 
         <div ref={feedEndRef} />
       </div>
@@ -496,10 +479,10 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
               className="w-full resize-none p-2.5 pr-14 text-xs rounded-xl border border-[var(--border)] bg-[var(--surface-low)] text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:outline-hidden focus:border-[var(--primary)]/60 focus:ring-1 focus:ring-[var(--primary)]/30 transition-all font-sans leading-relaxed"
             />
 
-            {isStreaming ? (
+            {modeBusy ? (
               <button
                 type="button"
-                onClick={() => void cancelInFlight()}
+                onClick={() => void cancelInFlight(sessionId, mode)}
                 className="absolute right-2 bottom-2.5 p-1.5 rounded-lg bg-[var(--danger)] hover:opacity-90 text-white transition-colors flex items-center justify-center shadow-xs cursor-pointer"
                 title={t("ai.sidebar.stop")}
               >
@@ -508,15 +491,11 @@ export function AiSidebar({ active = true }: { active?: boolean }) {
             ) : (
               <button
                 type="submit"
-                disabled={inProgress || (mode === "generate" && !prompt.trim())}
+                disabled={mode === "generate" && !prompt.trim()}
                 className="absolute right-2 bottom-2.5 p-1.5 rounded-lg bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[var(--on-primary)] disabled:opacity-40 transition-colors flex items-center justify-center shadow-xs cursor-pointer"
                 title={t("ai.sidebar.send")}
               >
-                {inProgress ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <CornerDownLeft className="w-3.5 h-3.5" />
-                )}
+                <CornerDownLeft className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -565,9 +544,11 @@ interface HistoryCardProps {
   onInsert: (cmd: string) => void;
   onCopy: (text: string, id: string) => void;
   isCopied: boolean;
+  /** Copy / Insert / Run for code blocks inside an Explain answer. */
+  snippetActions: CodeBlockActions;
 }
 
-function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardProps) {
+function HistoryCard({ item, onRun, onInsert, onCopy, isCopied, snippetActions }: HistoryCardProps) {
   const { t } = useTranslation();
   const cmd = item.command;
   // Only complete, structured generate results are runnable — never a partial
@@ -604,25 +585,31 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardPro
       </div>
 
       {item.prompt && (
-        <div className="text-[11px] text-[var(--text-secondary)] font-medium">
+        <div className="text-[11px] text-[var(--text-secondary)] font-medium select-text cursor-text [overflow-wrap:anywhere]">
           &ldquo;{item.prompt}&rdquo;
         </div>
       )}
 
       {item.error ? (
-        <div className="p-2 rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 text-[var(--danger)] text-xs flex items-center gap-1.5">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-          <span className="break-words">{item.error}</span>
+        <div className="p-2 rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 text-[var(--danger)] text-xs flex items-start gap-1.5">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span className="select-text cursor-text [overflow-wrap:anywhere]">{item.error}</span>
         </div>
       ) : (
         <div>
-          {item.result ? (
+          {item.result && item.mode === "explain" ? (
+            <div className={item.cancelled ? "opacity-70" : undefined}>
+              <AiMarkdown text={item.result} actions={item.cancelled ? undefined : snippetActions} />
+            </div>
+          ) : item.result ? (
             <div
               className={`p-2 rounded-lg border border-[var(--border)] bg-[var(--canvas)] font-mono text-xs overflow-x-auto leading-relaxed shadow-inner ${
                 item.cancelled ? "text-[var(--text-muted)]" : "text-[var(--primary)]"
               }`}
             >
-              <pre className="whitespace-pre-wrap break-all font-mono">{item.result}</pre>
+              <pre className="whitespace-pre-wrap font-mono select-text cursor-text [overflow-wrap:anywhere]">
+                {item.result}
+              </pre>
             </div>
           ) : (
             item.cancelled && (
@@ -631,7 +618,7 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardPro
           )}
 
           {cmd?.explanation && !item.cancelled && (
-            <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-secondary)]">
+            <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-secondary)] select-text cursor-text">
               {cmd.explanation}
             </p>
           )}
@@ -642,7 +629,7 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardPro
                 type="button"
                 onClick={() => onCopy(item.result, item.id)}
                 className="p-1 rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--surface-container-high)] transition-colors cursor-pointer"
-                title={t("common.copy")}
+                title={item.mode === "explain" ? t("ai.sidebar.copyAnswer") : t("common.copy")}
               >
                 {isCopied ? (
                   <Check className="w-3 h-3 text-[var(--success)]" />
@@ -695,6 +682,48 @@ function HistoryCard({ item, onRun, onInsert, onCopy, isCopied }: HistoryCardPro
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+function LiveRunCard({ run, detecting }: { run: AiLiveRun; detecting: boolean }) {
+  const { t } = useTranslation();
+  const isGen = run.mode === "generate";
+  const text = isGen ? extractStreamingCommand(run.stream) : run.stream;
+
+  return (
+    <div className="p-3 rounded-2xl border border-[var(--primary)]/40 bg-[var(--surface-container-low)] shadow-sm animate-in fade-in duration-150 space-y-2">
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] font-semibold text-[var(--primary)] uppercase tracking-wider flex items-center gap-1.5">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          {detecting && !text ? t("ai.sidebar.detectingEnv") : t("ai.sidebar.synthesizing")}
+        </span>
+        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[var(--surface-container-high)] text-[var(--text-secondary)] uppercase">
+          {t(`ai.mode.${run.mode}`)}
+        </span>
+      </div>
+
+      {run.prompt && (
+        <div className="text-[11px] text-[var(--text-secondary)] font-medium select-text [overflow-wrap:anywhere]">
+          &ldquo;{run.prompt}&rdquo;
+        </div>
+      )}
+
+      {run.error ? (
+        <div className="p-2.5 rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 text-[var(--danger)] text-xs flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span className="select-text [overflow-wrap:anywhere] leading-relaxed">{run.error}</span>
+        </div>
+      ) : isGen ? (
+        <div className="p-2.5 rounded-xl border border-[var(--border)] bg-[var(--canvas)] font-mono text-xs text-[var(--primary)] overflow-x-auto leading-relaxed shadow-inner">
+          <pre className="whitespace-pre-wrap font-mono select-text [overflow-wrap:anywhere]">
+            {text}
+            <span className="inline-block w-1.5 h-3.5 bg-[var(--primary)] ml-1 animate-pulse align-middle" />
+          </pre>
+        </div>
+      ) : (
+        <AiMarkdown text={text} streaming />
       )}
     </div>
   );

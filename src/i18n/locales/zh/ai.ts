@@ -68,7 +68,8 @@ export const aiZh: typeof aiEn = {
   },
   sidebar: {
     ariaLabel: "AI 助手侧边栏",
-    clearHistory: "清空交互历史",
+    clearHistory: "清空此主机的历史",
+    copyAnswer: "复制完整回答",
     configureProvider: "配置 AI 提供商",
     configureProviderByok: "配置 AI 提供商（BYOK）",
     localShort: "本地",

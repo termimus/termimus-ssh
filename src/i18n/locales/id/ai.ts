@@ -69,7 +69,8 @@ export const aiId: typeof aiEn = {
   },
   sidebar: {
     ariaLabel: "Panel Samping AI Copilot",
-    clearHistory: "Hapus Riwayat Interaksi",
+    clearHistory: "Hapus riwayat host ini",
+    copyAnswer: "Salin seluruh jawaban",
     configureProvider: "Konfigurasi Provider AI",
     configureProviderByok: "Konfigurasi Provider AI (BYOK)",
     localShort: "Lokal",
