@@ -56,7 +56,7 @@ export const settingsEn = {
     biometricsTitle: "Biometric Unlock (Touch ID / Windows Hello)",
     biometricsDesc: "Prompt for biometric verification before unlocking or accessing sensitive credentials.",
     biometricsAvailable: "Available",
-    biometricsNotDetected: "Touch ID / Biometric sensor not detected on this machine.",
+    biometricsNotDetected: "No biometric sensor (Touch ID / Windows Hello) detected on this machine.",
     masterPasswordSection: "Master Password & Maintenance",
     masterPasswordDesc: "Rotate your master password (all credentials will be re-encrypted) or reset the vault.",
     changePasswordBtn: "Change Master Password",

@@ -311,7 +311,7 @@ function SecurityVaultTab() {
         </div>
 
         <div className="divide-y divide-[var(--border)] text-xs">
-          {/* A. Biometric (Touch ID) Authentication */}
+          {/* A. Biometric (Touch ID / Windows Hello) Authentication */}
           <div className="p-5 flex items-start justify-between gap-6">
             <div className="space-y-1">
               <div className="flex items-center gap-2 font-semibold text-[var(--text-primary)]">

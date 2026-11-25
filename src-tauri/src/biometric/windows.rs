@@ -3,13 +3,14 @@
 //! Uses the WinRT `Windows.Security.Credentials.UI.UserConsentVerifier` API
 //! to prompt for Windows Hello verification (fingerprint, face, or PIN).
 //!
-//! Caveat: `UserConsentVerifier::RequestVerificationAsync` is documented by
-//! Microsoft as the UWP path. For an unpackaged desktop app the supported
-//! alternative is `IUserConsentVerifierInterop::RequestVerificationForWindowAsync`,
-//! which needs the owning window handle. This module uses the plain
-//! `RequestVerificationAsync` call, so on an unpackaged desktop build the
-//! prompt may fail — if it does, the interop path (passing the Tauri window
-//! HWND through the command) is the fix.
+//! Note: Microsoft documents `UserConsentVerifier::RequestVerificationAsync`
+//! as the UWP path; for unpackaged desktop apps it recommends
+//! `IUserConsentVerifierInterop::RequestVerificationForWindowAsync` (which
+//! needs the owning window HWND). The plain call has been verified to show the
+//! Windows Security prompt from the installed (unpackaged) MSI build on
+//! Windows 11, so the interop path is not used. If a future Windows release
+//! stops showing the prompt (or it appears behind the app window), switch to
+//! the interop call and pass the Tauri window HWND through the command.
 
 use windows::core::HSTRING;
 use windows::Security::Credentials::UI::{
