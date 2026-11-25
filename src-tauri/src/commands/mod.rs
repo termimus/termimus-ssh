@@ -199,17 +199,29 @@ pub fn vault_keyring_has_key() -> Result<bool, String> {
     }
 }
 
-/// Check whether biometric hardware (e.g. Touch ID on macOS) is supported and enrolled.
+/// Check whether biometric hardware (e.g. Touch ID on macOS, Windows Hello
+/// on Windows) is supported and enrolled.
+///
+/// Async so the check runs off the main thread: on Windows, `is_supported()`
+/// blocks on `CheckAvailabilityAsync().join()`, which would freeze the UI if
+/// called from a sync Tauri command.
 #[tauri::command]
-pub fn vault_biometric_supported() -> bool {
-    crate::biometric::is_supported()
+pub async fn vault_biometric_supported() -> bool {
+    tokio::task::spawn_blocking(crate::biometric::is_supported)
+        .await
+        .unwrap_or(false)
 }
 
 /// Authenticate with biometric hardware (Touch ID) and unlock the vault
 /// using the key persisted in the OS keyring.
 #[tauri::command]
 pub async fn vault_biometric_unlock(state: State<'_, AppState>) -> Result<bool, String> {
-    if !crate::biometric::is_supported() {
+    // Off the async runtime: on Windows `is_supported()` blocks on
+    // `CheckAvailabilityAsync().join()`.
+    let supported = tokio::task::spawn_blocking(crate::biometric::is_supported)
+        .await
+        .unwrap_or(false);
+    if !supported {
         return Err("Biometric authentication is not supported or enrolled on this device.".to_string());
     }
 

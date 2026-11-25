@@ -58,7 +58,7 @@ export const settingsZh: typeof settingsEn = {
     biometricsTitle: "生物识别解锁 (触控 ID / Windows Hello)",
     biometricsDesc: "在解锁或访问敏感凭据前提示进行生物特征识别验证。",
     biometricsAvailable: "可用",
-    biometricsNotDetected: "在此设备上未检测到触控 ID 或生物识别传感器。",
+    biometricsNotDetected: "在此设备上未检测到生物识别传感器（触控 ID / Windows Hello）。",
     masterPasswordSection: "主密码与维护",
     masterPasswordDesc: "轮换您的主密码 (所有凭据将自动重新加密) 或重置保险库。",
     changePasswordBtn: "修改主密码",

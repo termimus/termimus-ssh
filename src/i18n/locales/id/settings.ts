@@ -58,7 +58,7 @@ export const settingsId: typeof settingsEn = {
     biometricsTitle: "Buka Kunci Biometrik (Touch ID / Windows Hello)",
     biometricsDesc: "Minta verifikasi biometrik sebelum membuka kunci atau mengakses kredensial sensitif.",
     biometricsAvailable: "Tersedia",
-    biometricsNotDetected: "Sensor Touch ID / Biometrik tidak terdeteksi pada komputer ini.",
+    biometricsNotDetected: "Sensor biometrik (Touch ID / Windows Hello) tidak terdeteksi pada komputer ini.",
     masterPasswordSection: "Password Master & Pemeliharaan",
     masterPasswordDesc: "Ganti password master Anda (semua kredensial akan dienkripsi ulang) atau reset brankas.",
     changePasswordBtn: "Ubah Password Master",
