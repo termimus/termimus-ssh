@@ -36,3 +36,4 @@ Closes #<!-- issue number, e.g. Closes #12 -->
 - [ ] Backend tests pass: `cd src-tauri && cargo test`
 - [ ] **No version bumps** — do not modify version fields in `package.json`, `Cargo.toml`, `tauri.conf.json`, etc. (versions are managed by the maintainer at release time)
 - [ ] Commits follow the Conventional Commits format (`feat:`, `fix:`, `style:`, etc.)
+- [ ] User-visible change? Added an entry under `## [Unreleased]` in `CHANGELOG.md` (see the Changelog section in `AGENTS.md`). Skip for refactors, CI, and docs.
