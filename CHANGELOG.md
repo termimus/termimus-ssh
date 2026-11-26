@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-26
+
 ### Added
 
 - **SSH agent authentication** — hosts can authenticate with a key held by
@@ -84,44 +86,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.0] - 2026-11-12
 
-### Added
-
-- **AI Terminal Copilot (bring your own key)** — OpenAI-compatible, Anthropic,
-  or local Ollama providers. Turn natural language into shell commands
-  (`Alt+I` / `⌘I` panel or inline `# prompt`), and explain errors from
-  terminal output. Commands are never auto-executed, risky commands need
-  confirmation, and secrets are redacted before leaving your machine. API
-  keys are stored in the vault. (#38, #43)
-- **Keyboard-interactive 2FA** — servers requiring
-  `publickey,keyboard-interactive` (e.g. PAM + Google Authenticator) now work
-  for terminal, SFTP, and tunnels. (#40, closes #39)
-- **Remote port forwarding (`-R`)**. (#44)
-- **Dynamic SOCKS5 forwarding (`-D`)** with IPv4, IPv6, and remote DNS
-  resolution. (#34, closes #31)
-- **Cloud-to-cloud SFTP transfers** — the left pane can be any saved host,
-  and files can be transferred directly between two servers. (#36)
+- **AI Terminal Copilot (bring your own key)** — OpenAI-compatible,
+  Anthropic, or local Ollama providers; natural language → shell command
+  (`Alt+I` / `⌘I` or inline `# prompt`) and error explanations. Commands are
+  never auto-executed and secrets are redacted. (#38, #43)
+- **Keyboard-interactive 2FA** for terminal, SFTP, and tunnels. (#40,
+  closes #39)
+- **Remote (`-R`) and dynamic SOCKS5 (`-D`) port forwarding**, with a new
+  tunnel setup flow. (#34, #44, closes #31)
+- **Cloud-to-cloud SFTP transfers** between two saved hosts. (#36)
 - **Simplified Chinese (`zh`)** UI language. (#35, closes #25)
+- **Security** — russh 0.50 → 0.65 (22 advisories, including pre-auth DoS)
+  and other dependency updates; terminal and SFTP sessions reject
+  server-opened forwarded channels. (#41, #44)
 
-### Changed
-
-- New tunnel setup flow with a Local / Remote / Dynamic type picker and a
-  searchable host selector. (#34, #44)
-- Login failures say which step was rejected (key, password, or 2FA code).
-  (#40)
-
-### Fixed
-
-- Tunnels stop and report "connection lost" when the SSH connection drops,
-  instead of appearing active. (#44)
-- A failed SFTP connect resets the pane, and stale failures no longer
-  override a newer connection. (#42)
-- A timed-out 2FA prompt no longer drops the next queued prompt. (#42)
-
-### Security
-
-- Updated russh 0.50 → 0.65 (22 advisories, including pre-auth DoS),
-  rusqlite (bundled SQLite CVE), rustls, tokio, and vite. (#41)
-- Terminal and SFTP sessions reject server-opened forwarded channels. (#44)
+[Full release notes](https://github.com/termimus/termimus-ssh/releases/tag/v0.9.0)
 
 ## [0.8.0] - 2026-10-31
 
@@ -215,7 +194,8 @@ details.
 - **0.1.0 / 0.1.1** (2026-09-23) — initial release: SSH terminal, SFTP,
   encrypted keychain, port forwarding, snippets, optional self-hosted sync.
 
-[Unreleased]: https://github.com/termimus/termimus-ssh/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/termimus/termimus-ssh/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/termimus/termimus-ssh/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/termimus/termimus-ssh/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/termimus/termimus-ssh/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/termimus/termimus-ssh/compare/v0.6.2...v0.7.0
