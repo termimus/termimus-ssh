@@ -23,6 +23,7 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useShallow } from "zustand/react/shallow";
 import { useSessionStore, SshTab } from "../../stores/useSessionStore";
+import { useSettingsStore } from "../../stores/useSettingsStore";
 import { useSyncStore } from "../../stores/useSyncStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { useVaultStore } from "../../stores/useVaultStore";
@@ -92,6 +93,7 @@ export function Header({
   const { t } = useTranslation();
   const isRightPanelOpen = useRightPanelStore((s) => s.isOpen);
   const toggleRightPanel = useRightPanelStore((s) => s.toggle);
+  const useOscTitleAsTabName = useSettingsStore((s) => s.useOscTitleAsTabName);
   const isVaultInitialized = useVaultStore((s) => s.isInitialized);
   const lockApp = useVaultStore((s) => s.lockApp);
   const onGoHomeRef = useRef(onGoHome);
@@ -434,15 +436,47 @@ export function Header({
             const isConnecting = groupTabs.some((t) => t.connecting);
             const isConnected = groupTabs.every((t) => t.connected);
 
+            // The tab label stays the workspace label / host name: that is
+            // how people find their sessions among many tabs, and most
+            // shells set an OSC title (user@host: cwd) on every prompt, so a
+            // program-set title would make tabs read alike and change on
+            // every cd. The OSC title is shown as secondary info instead
+            // (pane header + tooltip). The "Use terminal-set title as tab
+            // name" setting restores the old PuTTY-style behaviour for
+            // people who want it.
+            const focusedTabId =
+              isActive && activePaneId
+                ? findPaneById(group.rootPane, activePaneId)?.activeTabId ??
+                  primaryTab.id
+                : primaryTab.id;
+            const focusedTab =
+              tabs.find((t) => t.id === focusedTabId) ?? primaryTab;
+            const oscTitle = focusedTab.oscTitle;
+
             // If the group has a workspace label, use it; otherwise fall back to
             // the primary host name, with a count suffix when split into multiple panes.
-            const displayLabel = group.label
-              ? count > 1 && !group.label.includes(`(${count})`)
-                ? `${group.label} (${count})`
+            // A terminal-set (OSC) title replaces both only when the
+            // "Use terminal-set title as tab name" setting is on.
+            const displayLabel =
+              useOscTitleAsTabName && oscTitle
+                ? count > 1
+                  ? `${oscTitle} (${count})`
+                  : oscTitle
                 : group.label
-              : count > 1
-              ? `${primaryTab.hostLabel} (${count})`
-              : primaryTab.hostLabel;
+                ? count > 1 && !group.label.includes(`(${count})`)
+                  ? `${group.label} (${count})`
+                  : group.label
+                : count > 1
+                ? `${primaryTab.hostLabel} (${count})`
+                : primaryTab.hostLabel;
+
+            // The tooltip always carries the full OSC title when one is set
+            // and the tab label is not already showing it, so a long live
+            // status (e.g. a capture count at the end) stays readable.
+            const tooltipLabel =
+              oscTitle && !useOscTitleAsTabName
+                ? `${oscTitle} — ${displayLabel}`
+                : displayLabel;
 
             return (
               <div
@@ -475,8 +509,8 @@ export function Header({
                 }}
                 title={
                   count > 1
-                    ? `${displayLabel} — ${count} terminals in split screen. Middle-click or ✕ to close.`
-                    : "Drag to reorder/split. Middle-click or ✕ to close."
+                    ? `${tooltipLabel} — ${count} terminals in split screen. Middle-click or ✕ to close.`
+                    : `${tooltipLabel} — Drag to reorder/split. Middle-click or ✕ to close.`
                 }
                 className={`group relative flex h-7.5 items-center gap-2 rounded-lg px-2.5 text-xs font-mono min-w-[130px] max-w-[220px] cursor-grab active:cursor-grabbing transition-all select-none ${
                   isActive

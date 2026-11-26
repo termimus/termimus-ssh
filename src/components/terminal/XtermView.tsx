@@ -68,6 +68,8 @@ interface TerminalSessionEntry {
   hasConnected: boolean;
   unlistenFns: Array<() => void>;
   dataDisposable: { dispose: () => void };
+  /** Listener for OSC 0/2 title changes, surfaced on the tab (see setSessionTitle). */
+  titleDisposable: { dispose: () => void };
   lastSize: { cols: number; rows: number };
   lastPixelSize?: { width: number; height: number };
   // Keyword highlighting (decoration overlays — never touches the buffer).
@@ -640,6 +642,12 @@ export function disposeTerminalSession(sessionId: string) {
     // ignore
   }
 
+  try {
+    entry.titleDisposable.dispose();
+  } catch {
+    // ignore
+  }
+
   entry.unlistenFns.forEach((fn) => {
     try {
       fn();
@@ -1005,6 +1013,14 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
         }
       });
 
+      // Surface the terminal title (OSC 0/2) on the tab in the top header.
+      // Programs that show live status only in the title (e.g. a capture
+      // count) would otherwise be invisible; the tab falls back to the
+      // host label when no title is set.
+      const titleDisposable = term.onTitleChange((title) => {
+        useSessionStore.getState().setSessionTitle(sessionId, title);
+      });
+
       // Stream listeners
       const unlistenFns: Array<() => void> = [];
 
@@ -1063,6 +1079,7 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
         hasConnected: false,
         unlistenFns,
         dataDisposable,
+        titleDisposable,
         lastSize: { cols: initialCols, rows: initialRows },
         lastPixelSize: {
           width: containerRef.current.clientWidth,

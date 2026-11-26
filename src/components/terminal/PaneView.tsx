@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { PaneLeaf, findPaneById } from "../../lib/layoutTree";
 import { useSessionStore } from "../../stores/useSessionStore";
+import { useSettingsStore } from "../../stores/useSettingsStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { useTerminalThemeStore } from "../../stores/useTerminalThemeStore";
 import { getTerminalTheme } from "../../lib/terminalThemes";
@@ -64,6 +65,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
 
   const hosts = useHostStore((s) => s.hosts);
   const themeId = useTerminalThemeStore((s) => s.themeId);
+  const useOscTitleAsTabName = useSettingsStore((s) => s.useOscTitleAsTabName);
   const themeBg = getTerminalTheme(themeId).xterm.background ?? "#0a0e14";
   const isFocused = activePaneId === pane.id;
   const isMaximized = maximizedPaneId === pane.id;
@@ -226,7 +228,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                       }
                       handlePointerDownTab(e, tab.id);
                     }}
-                    title="Drag to split screen or dock. Middle-click or ✕ to close."
+                    title={tab.oscTitle ? `${tab.oscTitle} — Drag to split screen or dock. Middle-click or ✕ to close.` : "Drag to split screen or dock. Middle-click or ✕ to close."}
                     className={`group relative flex h-5.5 max-w-[160px] cursor-grab active:cursor-grabbing items-center gap-1.5 rounded-md px-2 text-[11px] font-mono transition-all select-none ${
                       isActiveInPane
                         ? isFocused
@@ -250,7 +252,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                         }`}
                       />
                     )}
-                    <span className="truncate flex-1 min-w-0 text-center leading-none translate-y-[0.5px]">{tab.hostLabel}</span>
+                    <span className="truncate flex-1 min-w-0 text-center leading-none translate-y-[0.5px]">{useOscTitleAsTabName && tab.oscTitle ? tab.oscTitle : tab.hostLabel}</span>
                     <button
                       type="button"
                       onClick={(e) => {
@@ -272,7 +274,7 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
             ) : (
               <div
                 onPointerDown={(e) => activeTab && handlePointerDownTab(e, activeTab.id)}
-                title="Drag to move or split pane"
+                title={activeTab?.oscTitle ? `${activeTab.oscTitle} — Drag to move or split pane` : "Drag to move or split pane"}
                 className="flex items-center gap-2 cursor-grab active:cursor-grabbing font-mono text-[11px] truncate select-none"
               >
                 {activeTab?.connecting ? (
@@ -287,6 +289,11 @@ export function PaneView({ pane, visible = true }: PaneViewProps) {
                 <span className="font-medium text-[var(--text-primary)] truncate">
                   {activeTab?.hostLabel || "Terminal"}
                 </span>
+                {activeTab?.oscTitle && (
+                  <span className="text-[10px] text-[var(--text-muted)] truncate hidden sm:inline">
+                    · {activeTab.oscTitle}
+                  </span>
+                )}
                 <span className="text-[10px] text-[var(--text-muted)] truncate hidden sm:inline">
                   {activeTab?.hostAddress}
                 </span>

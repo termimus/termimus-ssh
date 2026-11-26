@@ -110,6 +110,9 @@ export const settingsId: typeof settingsEn = {
     clipboardTitle: "Pilih untuk Menyalin, Klik Kanan untuk Menempel",
     clipboardDesc:
       "Saat aktif, teks yang dipilih otomatis disalin ke clipboard dan klik kanan menempelkannya. Saat nonaktif, klik kanan membuka menu konteks.",
+    oscTitleAsTabNameTitle: "Gunakan Judul dari Terminal sebagai Nama Tab",
+    oscTitleAsTabNameDesc:
+      "Saat aktif, judul yang diatur program (OSC 0/2) menggantikan label tab. Saat nonaktif, tab tetap menampilkan nama host dan judul program muncul di header panel dan tooltip tab.",
   },
   sync: {
     title: "Relay Sinkronisasi Mandiri",

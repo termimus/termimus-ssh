@@ -110,6 +110,9 @@ export const settingsZh: typeof settingsEn = {
     clipboardTitle: "选中复制，右键粘贴",
     clipboardDesc:
       "开启后，选中文本会自动复制到剪贴板，右键点击直接粘贴。关闭时，右键打开上下文菜单。",
+    oscTitleAsTabNameTitle: "使用终端设置的标题作为标签名",
+    oscTitleAsTabNameDesc:
+      "开启后，程序设置的标题（OSC 0/2）将替换标签名称。关闭时，标签保持主机名，程序标题显示在窗格标题栏和标签提示中。",
   },
   sync: {
     title: "自建同步中继",

@@ -108,6 +108,9 @@ export const settingsEn = {
     clipboardTitle: "Select to Copy, Right-Click to Paste",
     clipboardDesc:
       "When on, selecting text copies it to the clipboard automatically and right-clicking pastes it. When off, right-click opens the context menu instead.",
+    oscTitleAsTabNameTitle: "Use Terminal-Set Title as Tab Name",
+    oscTitleAsTabNameDesc:
+      "When on, the title a program sets (OSC 0/2) replaces the tab label. When off, tabs keep the host name and the program title shows in the pane header and the tab tooltip instead.",
   },
   sync: {
     title: "Self-Hosted Sync Relay",
