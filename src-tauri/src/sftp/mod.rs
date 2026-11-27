@@ -77,7 +77,12 @@ impl SftpManager {
                 crate::ssh::configure_tcp_stream(&s);
                 s
             }
-            Err(e) => return Err(format!("SFTP TCP connection failed: {e}")),
+            Err(e) => {
+                return Err(format!(
+                    "SFTP TCP connection failed: {}",
+                    crate::ssh::describe_connect_error(&e)
+                ))
+            }
         };
         let mut handle = client::connect_stream(config, socket, handler)
             .await
